@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/family_ledger.dart';
 import 'package:olive_client/family_ledger_state.dart';
 import 'package:olive_client/family_profiles.dart';
+import 'package:olive_client/family_state.dart' show LocalStoreFamilyRepository;
 import 'package:olive_client/local_pin.dart' show kLocalGuardianScope;
 import 'package:olive_client/local_services.dart';
 import 'package:olive_client/local_store.dart' show LocalNamespace;
@@ -498,6 +499,186 @@ void main() {
           expect(m.group(1)!.startsWith('child_'), isFalse, reason: '$f imports ${m.group(1)}');
         }
       }
+    });
+  });
+
+  group('review fixes: the wait after a no, a failed save, true wording, seeing, and tidy put-offs', () {
+    test('a time-boxed ask repeated after a no still waits a week, and so does one moved later', () async {
+      final World w = await World.make();
+      w.now += 40 * day;
+      final WelcomeService m = w.svc(w.mom);
+      final LedgerEntry e = await m.propose(w.draft(visit(w.now)));
+      await w.svc(w.dad!).answer(e.hashHex, WelcomeAnswer.no);
+      w.now += 60000;
+      await expectRefused(m.propose(w.draft(visit(w.now))), 'wait-a-week'); // identical 3 day visit, a minute later
+      await expectRefused(m.propose(w.draft(visit(w.now + day))), 'wait-a-week'); // the same window moved later
+      await expectRefused(m.propose(w.draft(visit(w.now, days: 7))), 'wait-a-week'); // longer
+      await m.propose(w.draft(visit(w.now, days: 1))); // genuinely shorter is allowed at once
+    });
+
+    test('a carer with a set number of days, asked again after a no, waits; fewer days does not', () async {
+      final World w = await World.make();
+      w.now += 40 * day;
+      final WelcomeService m = w.svc(w.mom);
+      MemberProfile days(int n) =>
+          MemberProfile(preset: Preset.trustedCarer, caps: trusted().caps, fromMs: w.now, untilMs: w.now + n * day);
+      final LedgerEntry e = await m.propose(w.draft(days(30)));
+      await w.svc(w.dad!).answer(e.hashHex, WelcomeAnswer.no);
+      w.now += 60000;
+      await expectRefused(m.propose(w.draft(days(30))), 'wait-a-week');
+      await m.propose(w.draft(days(7)));
+    });
+
+    test('smaller means it gives less: the same rights with only the dates moved are not smaller', () {
+      final MemberProfile a = visit(1000), later = visit(1000 + 60000), shifted = visit(1000 + day);
+      expect(smallerThan(later, a), isFalse);
+      expect(smallerThan(shifted, a), isFalse);
+      expect(smallerThan(a, a), isFalse);
+      expect(wider(later, a), isTrue, reason: 'a later end date is more time');
+      expect(smallerThan(visit(1000, days: 1), a), isTrue);
+      expect(smallerThan(lookOnly(), trusted()), isTrue);
+    });
+
+    test('yes to something smaller refuses a choice that grants the same rights on other dates', () async {
+      final World w = await World.make();
+      final LedgerEntry e = await w.svc(w.mom).propose(w.draft(visit(w.now)));
+      w.now += 60000;
+      await expectRefused(w.svc(w.dad!).yesToSmaller(e.hashHex, visit(w.now)), 'not-smaller');
+    });
+
+    group('a failed save leaves nothing half-done', () {
+      test('asking', () async {
+        final World w = await World.make();
+        final FlakyFamilyRepository repo = FlakyFamilyRepository();
+        final WelcomeService s = w.svc(w.mom, repository: repo);
+        final int e0 = w.fam.entries.length, v0 = w.fam.votes.length;
+        repo.failSaves = true;
+        await expectRefused(s.propose(w.draft(trusted())), 'not-saved');
+        expect(w.fam.entries.length, e0);
+        expect(w.fam.votes.length, v0);
+        repo.failSaves = false;
+        await s.propose(w.draft(trusted())); // and it works once the disk does
+      });
+
+      test('answering and cancelling', () async {
+        final World w = await World.make();
+        final LedgerEntry e = await w.svc(w.mom).propose(w.draft(trusted()));
+        final FlakyFamilyRepository repo = FlakyFamilyRepository();
+        final WelcomeService d = w.svc(w.dad!, repository: repo);
+        final int e0 = w.fam.entries.length, v0 = w.fam.votes.length;
+        repo.failSaves = true;
+        await expectRefused(d.answer(e.hashHex, WelcomeAnswer.yes), 'not-saved');
+        expect(w.fam.entries.length, e0);
+        expect(w.fam.votes.length, v0);
+        expect((await d.overview()).forMe.single.myAnswer, isNull, reason: 'still waiting for this parent');
+        final FlakyFamilyRepository repo2 = FlakyFamilyRepository()..failSaves = true;
+        final WelcomeService m = w.svc(w.mom, repository: repo2);
+        await expectRefused(m.cancel((await m.overview()).jo), 'not-saved');
+        expect(w.fam.votes.length, v0);
+        expect((await m.overview()).jo.open, isTrue);
+      });
+
+      test('yes to something smaller leaves one road, not two', () async {
+        final World w = await World.make();
+        final LedgerEntry e = await w.svc(w.mom).propose(w.draft(trusted()));
+        final FlakyFamilyRepository repo = FlakyFamilyRepository();
+        final WelcomeService d = w.svc(w.dad!, repository: repo);
+        final int e0 = w.fam.entries.length, v0 = w.fam.votes.length;
+        repo.failSaves = true;
+        await expectRefused(d.yesToSmaller(e.hashHex, lookOnly()), 'not-saved');
+        expect(w.fam.entries.length, e0, reason: 'no orphan smaller request');
+        expect(w.fam.votes.length, v0, reason: 'no stray no');
+        final WelcomeOverview o = await w.svc(w.mom).overview();
+        expect(o.sent.where((WelcomeRequest r) => r.personName == 'Jo' && r.open).length, 1, reason: 'only the first request');
+        expect((await d.overview()).forMe.single.hashHex, e.hashHex);
+        // A later good save does not write an orphan.
+        repo.failSaves = false;
+        await d.answer(e.hashHex, WelcomeAnswer.yes);
+        expect(w.fam.entries.length, e0);
+      });
+
+      test('a put-off that cannot be saved is said in words; an answer stands even if tidying the put-off fails', () async {
+        final World w = await World.make();
+        final LedgerEntry e = await w.svc(w.mom).propose(w.draft(trusted()));
+        final MemoryWelcomeReminders mem = MemoryWelcomeReminders();
+        final WelcomeService d = w.svc(w.dad!, reminders: mem);
+        await d.askLater(e.hashHex);
+        mem.failSaves = true;
+        await expectRefused(d.askLater(e.hashHex), 'not-saved');
+        await d.answer(e.hashHex, WelcomeAnswer.yes);
+        expect((await w.svc(w.mom).overview()).jo.electors.last.answer, 'yes');
+      });
+    });
+
+    test('the one-parent line says only what is built: no pause and no right-away notice', () {
+      for (final bool np in <bool>[true, false]) {
+        for (final String rule in <String>['all', 'one']) {
+          for (final int n in <int>[1, 2]) {
+            final String all = ApprovalNeed(rule: rule, hardFloor: np, lifetimeMs: 7 * day, settleHours: 24, parentCount: n)
+                .sentences(newParent: np)
+                .join(' ')
+                .toLowerCase();
+            expect(all.contains('pause'), isFalse);
+            expect(all.contains('told right away'), isFalse);
+          }
+        }
+      }
+      expect(
+          const ApprovalNeed(rule: 'one', hardFloor: false, lifetimeMs: 7 * day, settleHours: 24, parentCount: 2)
+              .sentences(newParent: false)
+              .first,
+          'Your yes is enough. The other parents will see this on their Your village page.');
+    });
+
+    test('a parent with limits keeps the switches that let them see; the service turns the rest down', () async {
+      final World w = await World.make();
+      final MemberProfile hidden = MemberProfile(
+          preset: Preset.parentWithLimits,
+          caps: MemberProfile.defaults(Preset.parentWithLimits).caps.where((Capability c) => !kSeeingCaps.contains(c)));
+      expect(hidesFromParent(hidden), isTrue);
+      expect(hidesFromParent(MemberProfile.defaults(Preset.parentWithLimits)), isFalse);
+      expect(hidesFromParent(trusted()), isFalse);
+      await expectRefused(w.svc(w.mom).propose(w.draft(hidden)), 'hides-from-parent');
+      // Doing can still be limited.
+      final MemberProfile noPairing = MemberProfile(
+          preset: Preset.parentWithLimits,
+          caps: MemberProfile.defaults(Preset.parentWithLimits).caps.where((Capability c) => c != Capability.connectDevice));
+      await w.svc(w.mom).propose(w.draft(noPairing));
+      // No smaller choice offered for a parent takes seeing away.
+      for (final MapEntry<String, MemberProfile> o in smallerChoices(MemberProfile.defaults(Preset.parentWithLimits), w.now)) {
+        expect(hidesFromParent(o.value), isFalse, reason: o.key);
+      }
+    });
+
+    test('put-offs are tidied: refused for a request that is not waiting on me, pruned when it ends', () async {
+      final World w = await World.make();
+      final LedgerEntry e = await w.svc(w.mom).propose(w.draft(trusted()));
+      final MemoryWelcomeReminders mem = MemoryWelcomeReminders();
+      final WelcomeService m = w.svc(w.mom, reminders: mem);
+      await expectRefused(m.askLater(e.hashHex), 'not-yours-to-answer'); // my own request
+      await expectRefused(m.askLater('ab' * 32), 'not-yours-to-answer'); // unknown request
+      final WelcomeService d = w.svc(w.dad!, reminders: mem);
+      await d.askLater(e.hashHex);
+      expect(mem.snapshot.keys.toList(), <String>[e.hashHex]);
+      await m.cancel((await m.overview()).jo);
+      expect(await d.remindersDue(), isEmpty);
+      expect(await mem.load(), isEmpty, reason: 'the request ended, so its put-off is dropped');
+      await expectRefused(d.askLater(e.hashHex), 'not-yours-to-answer'); // already ended
+      // A record for a request that never existed is dropped on load.
+      await mem.save(<String, AskLater>{'cd' * 32: const AskLater(snoozes: 1, untilMs: 1)});
+      await d.remindersDue();
+      expect(await mem.load(), isEmpty);
+    });
+
+    test('clearing the family record also clears the put-offs kept beside it', () async {
+      final LocalServices svc = LocalServices.memory(isLive: true, demoSeeds: false, childId: 'c1');
+      final LocalNamespace ns = svc.area('familyledger', ownerId: kLocalGuardianScope);
+      expect(LocalStoreWelcomeReminders.key, 'welcomeasks');
+      await LocalStoreWelcomeReminders(ns).save(<String, AskLater>{'0a' * 32: const AskLater(snoozes: 1, untilMs: 5)});
+      await ns.put('family', <String, Object?>{'x': 1});
+      await LocalStoreFamilyRepository(ns).clear();
+      expect(await ns.get('family'), isNull);
+      expect(await LocalStoreWelcomeReminders(ns).load(), isEmpty);
     });
   });
 }

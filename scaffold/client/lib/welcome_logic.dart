@@ -207,7 +207,7 @@ class ApprovalNeed {
           ? 'You are the only parent, so your yes is the whole vote.'
           : 'Every parent has to say yes. You can change this in the family’s “Who must agree” setting.');
     } else {
-      out.add('Your yes is enough. The other parents are told right away and any of them can pause this person.');
+      out.add('Your yes is enough. The other parents will see this on their Your village page.');
     }
     out.add('No answer is never a yes. If nobody answers, the request ends in ${daysWords(lifetimeMs)}.');
     out.add('They also say yes on their own phone before they are in.');
@@ -244,6 +244,15 @@ List<String> electorateAt(LedgerState s, int atMs) {
 // Smaller and wider
 // ---------------------------------------------------------------------------------------------------------------
 
+/// The switches on a parent that bundle seeing with doing ("See and add expenses", "Write care notes and log a dose").
+/// A limit on a parent may only take away what they can do, never what they can see (section 2.6: neither parent can
+/// hide family activity from the other), so a parent keeps these on at every level until the design is reconciled.
+const Set<Capability> kSeeingCaps = <Capability>{Capability.careNotes, Capability.expenses};
+
+/// True when a parent-level profile has switched off something that also lets that parent see.
+bool hidesFromParent(MemberProfile p) =>
+    tierOf(p.preset) == MemberTier.parent && kSeeingCaps.any((Capability c) => kProfileTable[p.preset]![c]!.available && !p.has(c));
+
 int _presetRank(Preset p) {
   switch (p) {
     case Preset.helperPage:
@@ -265,7 +274,9 @@ int? _span(MemberProfile p) {
   return (f != null && u != null) ? u - f : null;
 }
 
-/// True when [a] gives something [b] does not: a switch, a child, or a longer time. Used for the 7 day wait.
+/// True when [a] gives something [b] does not: a higher level, a switch, a child, a longer time, or an end date that
+/// is later. Used for the 7 day wait. The time is compared by its length and its end, never by the raw start, so a
+/// visit asked again a minute later or moved later is still not smaller.
 bool wider(MemberProfile a, MemberProfile b) {
   if (_presetRank(a.preset) > _presetRank(b.preset)) return true;
   for (final Capability c in a.caps) {
@@ -277,21 +288,38 @@ bool wider(MemberProfile a, MemberProfile b) {
   final int? ua = a.untilMs, ub = b.untilMs;
   if (ua == null && ub != null) return true;
   if (ua != null && ub != null) {
+    if (ua > ub) return true;
     final int? sa = _span(a), sb = _span(b);
-    if (sa != null && sb != null) {
-      if (sa > sb) return true;
-    } else if (ua > ub) {
-      return true;
-    }
+    if (sa != null && sb != null && sa > sb) return true;
+  }
+  return false;
+}
+
+/// True when [a] gives strictly less than [b] on at least one count: a lower level, fewer switches, fewer children,
+/// a shorter time or an earlier end where [b] had none.
+bool _givesLess(MemberProfile a, MemberProfile b) {
+  if (_presetRank(a.preset) < _presetRank(b.preset)) return true;
+  for (final Capability c in b.caps) {
+    if (!a.has(c)) return true;
+  }
+  final List<String>? ak = a.children, bk = b.children;
+  if (ak != null && bk == null) return true;
+  if (ak != null && bk != null && bk.any((String k) => !ak.contains(k))) return true;
+  final int? ua = a.untilMs, ub = b.untilMs;
+  if (ua != null && ub == null) return true;
+  if (ua != null && ub != null) {
+    if (ua < ub) return true;
+    final int? sa = _span(a), sb = _span(b);
+    if (sa != null && sb != null && sa < sb) return true;
   }
   return false;
 }
 
 bool sameProfile(MemberProfile a, MemberProfile b) => jsonEncode(a.toValue()) == jsonEncode(b.toValue());
 
-/// A profile that is not wider than [big] on any count and is not the same: the only kind of "yes to something
-/// smaller" that is allowed.
-bool smallerThan(MemberProfile small, MemberProfile big) => !wider(small, big) && !sameProfile(small, big);
+/// A profile that is not wider than [big] on any count and gives less on at least one: the only kind of "yes to
+/// something smaller" that is allowed. A copy with only the dates moved is not smaller.
+bool smallerThan(MemberProfile small, MemberProfile big) => !wider(small, big) && _givesLess(small, big);
 
 /// Smaller choices to offer for "Yes to something smaller": each gives less than [big] on every count, and fits the
 /// profile table. Never empty for a profile that can be made smaller.
@@ -329,7 +357,11 @@ List<MapEntry<String, MemberProfile>> smallerChoices(MemberProfile big, int nowM
   // The same preset with the optional switches off (what is left is what cannot be turned off).
   if (big.reach != Reach.look) {
     final Map<Capability, Cell> row = kProfileTable[big.preset]!;
-    final List<Capability> kept = <Capability>[for (final Capability c in big.caps) if (row[c]!.fixed) c];
+    final bool parentTier = tierOf(big.preset) == MemberTier.parent;
+    final List<Capability> kept = <Capability>[
+      for (final Capability c in big.caps)
+        if (row[c]!.fixed || (parentTier && kSeeingCaps.contains(c))) c,
+    ];
     add('The same, with the extras switched off',
         MemberProfile(preset: big.preset, caps: kept, children: big.children, fromMs: big.fromMs, untilMs: big.untilMs));
   }
@@ -470,6 +502,7 @@ abstract class WelcomeRemindersRepository {
 class MemoryWelcomeReminders implements WelcomeRemindersRepository {
   Map<String, AskLater> _m = <String, AskLater>{};
   bool failSaves = false;
+  Map<String, AskLater> get snapshot => Map<String, AskLater>.of(_m);
   @override
   Future<Map<String, AskLater>> load() async => Map<String, AskLater>.of(_m);
   @override
@@ -555,6 +588,26 @@ class WelcomeService {
   Uint8List _bytes(int n) => Uint8List.fromList(List<int>.generate(n, (_) => _random.nextInt(256)));
 
   Future<void> _persist() => repository.save(context.snapshot());
+
+  /// Runs [body] so that it either happens in full or not at all. The lists are copied first; if anything throws
+  /// (a full disk, a failed save), both lists are put back as they were, so a half-finished change never sits in
+  /// memory waiting to be written by the next save. A failure that is not already in plain words becomes one.
+  Future<T> _all<T>(Future<T> Function() body) async {
+    final List<LedgerEntry> entries = List<LedgerEntry>.of(context.entries);
+    final List<LedgerVote> votes = List<LedgerVote>.of(context.votes);
+    try {
+      return await body();
+    } catch (e) {
+      context.entries
+        ..clear()
+        ..addAll(entries);
+      context.votes
+        ..clear()
+        ..addAll(votes);
+      if (e is WelcomeRefused) rethrow;
+      throw const WelcomeRefused('not-saved', 'That could not be saved on this phone, so nothing was changed. Please try again.');
+    }
+  }
 
   /// The parents' names by gid, from the reduced state.
   Map<String, String> _names(LedgerState s) => <String, String>{for (final LedgerMember m in s.members) m.gidHex: m.name};
@@ -729,6 +782,10 @@ class WelcomeService {
     if (profile.preset == Preset.helperPage) {
       throw const WelcomeRefused('helper-page', 'A helper page needs no welcome. Use the helper pages to write one.');
     }
+    if (hidesFromParent(profile)) {
+      throw const WelcomeRefused('hides-from-parent',
+          'A parent can always see everything about the child, so those two switches stay on. You can limit what a parent does, not what they see.');
+    }
     final String? why = profile.violation();
     if (why != null) throw WelcomeRefused('profile', 'Those choices do not fit together: ${_violationWords(why)}.');
     final String kind = tierOf(profile.preset) == MemberTier.parent ? 'guardian' : 'carer';
@@ -809,7 +866,7 @@ class WelcomeService {
     _checkMayAsk(s, d.profile, d.candidate.key, now);
     final String name = cleanName(d.personName);
     if (name.isEmpty) throw const WelcomeRefused('no-name', 'Please type the person’s name.');
-    return _sign(s, d.profile, d.candidate, name, _bytes(16), forceAll: false, now: now);
+    return _all(() => _sign(s, d.profile, d.candidate, name, _bytes(16), forceAll: false, now: now));
   }
 
   Future<LedgerEntry> _sign(LedgerState s, MemberProfile profile, DeviceRecord cand, String name, Uint8List gid,
@@ -848,8 +905,10 @@ class WelcomeService {
       throw const WelcomeRefused('not-yours', 'Only the person who asked can cancel, and only while it is waiting.');
     }
     final LedgerVote v = await LedgerVote.sign(_me, target: fromHex(r.hashHex), answer: 'withdraw', atMs: nowMs());
-    context.votes.add(v);
-    await _persist();
+    await _all(() async {
+      context.votes.add(v);
+      await _persist();
+    });
   }
 
   // ---- answering ----------------------------------------------------------------------------------------------
@@ -879,10 +938,15 @@ class WelcomeService {
     }
     final LedgerVote v = await LedgerVote.sign(_me,
         target: fromHex(hashHex), answer: a == WelcomeAnswer.yes ? 'yes' : 'no', atMs: nowMs());
-    context.votes.add(v);
-    await _persist();
-    final Map<String, AskLater> asks = await reminders.load();
-    if (asks.remove(hashHex) != null) await reminders.save(asks);
+    await _all(() async {
+      context.votes.add(v);
+      await _persist();
+    });
+    // The answer is in. Forgetting the put-off is tidying; if it cannot be saved, the answer still stands.
+    try {
+      final Map<String, AskLater> asks = await reminders.load();
+      if (asks.remove(hashHex) != null) await reminders.save(asks);
+    } catch (_) {}
   }
 
   /// "Yes to something smaller": says not this time to the big request and starts a smaller one in this grown-up's
@@ -905,23 +969,23 @@ class WelcomeService {
     _checkMayAsk(s, smaller, cand.key, now);
     // Say no to the big one in the same step, so the person is never in at the bigger level by two roads.
     final LedgerVote no = await LedgerVote.sign(_me, target: fromHex(hashHex), answer: 'no', atMs: now);
-    context.votes.add(no);
-    try {
+    return _all(() async {
+      context.votes.add(no);
       final LedgerState s2 = await context.state(nowMs: now);
-      return await _sign(s2, smaller, cand, r.personName, fromHex(r.personGidHex), forceAll: true, now: now);
-    } catch (_) {
-      context.votes.remove(no);
-      rethrow;
-    }
+      return _sign(s2, smaller, cand, r.personName, fromHex(r.personGidHex), forceAll: true, now: now);
+    });
   }
 
   // ---- ask me later -------------------------------------------------------------------------------------------
 
   /// Remember to ask again in 24 hours. Signs nothing and sends nothing; it is never a yes.
   Future<AskLater> askLater(String hashHex) async {
-    final WelcomeRequest r = await _find(hashHex);
-    if (!r.open) throw const WelcomeRefused('closed', 'That request has ended.');
-    final Map<String, AskLater> asks = await reminders.load();
+    final WelcomeOverview o = await overview();
+    final WelcomeRequest? r = o.forMe.where((WelcomeRequest x) => x.hashHex == hashHex).firstOrNull;
+    if (r == null) {
+      throw const WelcomeRefused('not-yours-to-answer', 'You can put off only a request that is waiting for your answer.');
+    }
+    final Map<String, AskLater> asks = await _pruned(o, await reminders.load());
     final AskLater cur = asks[hashHex] ?? const AskLater();
     if (cur.snoozes >= kMaxSnoozes) {
       throw const WelcomeRefused('no-more-later',
@@ -929,14 +993,35 @@ class WelcomeService {
     }
     final AskLater next = AskLater(snoozes: cur.snoozes + 1, untilMs: nowMs() + kSnoozeMs, reminders: cur.reminders);
     asks[hashHex] = next;
-    await reminders.save(asks);
+    try {
+      await reminders.save(asks);
+    } catch (_) {
+      throw const WelcomeRefused('not-saved', 'That could not be saved on this phone. Please try again.');
+    }
     return next;
+  }
+
+  /// Drops the put-offs of requests that are no longer open (answered, cancelled, lapsed, or not in this family's
+  /// record at all), so nothing piles up. Saved when something was dropped; if saving fails the clean list is still used.
+  Future<Map<String, AskLater>> _pruned(WelcomeOverview o, Map<String, AskLater> asks) async {
+    final Set<String> open = <String>{
+      for (final WelcomeRequest r in <WelcomeRequest>[...o.forMe, ...o.others, ...o.sent])
+        if (r.open) r.hashHex,
+    };
+    final int before = asks.length;
+    asks.removeWhere((String k, AskLater _) => !open.contains(k));
+    if (asks.length != before) {
+      try {
+        await reminders.save(asks);
+      } catch (_) {}
+    }
+    return asks;
   }
 
   /// Open requests that were put off and are due a quiet reminder now. At most two reminders per request, ever.
   Future<List<WelcomeRequest>> remindersDue() async {
     final WelcomeOverview o = await overview();
-    final Map<String, AskLater> asks = await reminders.load();
+    final Map<String, AskLater> asks = await _pruned(o, await reminders.load());
     final int now = nowMs();
     return <WelcomeRequest>[
       for (final WelcomeRequest r in o.forMe)

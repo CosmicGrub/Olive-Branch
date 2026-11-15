@@ -155,13 +155,20 @@ void main() {
       expect(find.byKey(const Key('welcomeAllChildren')), findsNothing, reason: 'a parent is around all the children');
       await t.tap(find.byKey(const Key('welcomePreset_parentWithLimits')));
       await t.pump();
-      await t.tap(find.byKey(const Key('welcomeCap_4'))); // care notes off
+      // Care notes and expenses let a parent see, so they cannot be switched off; pairing a tablet (doing) can.
+      await t.tap(find.byKey(const Key('welcomeCap_4')));
+      await t.tap(find.byKey(const Key('welcomeCap_5')));
+      await t.tap(find.byKey(const Key('welcomeCap_8')));
       await t.pump();
       await t.enterText(find.byKey(const Key('welcomeName')), 'Lee');
       await t.tap(find.byKey(const Key('welcomeSend')));
       await t.pump();
       expect(got.single.profile.preset, Preset.parentWithLimits);
-      expect(got.single.profile.has(Capability.careNotes), isFalse);
+      expect(got.single.profile.has(Capability.careNotes), isTrue, reason: 'a limit never hides what a parent sees');
+      expect(got.single.profile.has(Capability.expenses), isTrue);
+      expect(got.single.profile.has(Capability.connectDevice), isFalse, reason: 'doing can be limited');
+      expect(hidesFromParent(got.single.profile), isFalse);
+      expect(find.text('A parent can always see this, so it stays on'), findsNWidgets(2));
       expect(got.single.profile.has(Capability.voteWelcome), isTrue, reason: 'a limited parent keeps their voice');
       _noLoadedWords(t);
     });

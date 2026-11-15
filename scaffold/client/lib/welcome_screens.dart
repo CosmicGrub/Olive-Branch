@@ -171,7 +171,8 @@ class _WelcomeProfileScreenState extends State<WelcomeProfileScreen> {
     }
     return MemberProfile(
       preset: _preset,
-      caps: _caps,
+      // A parent keeps the switches that let them see (a limit may take away what they do, never what they see).
+      caps: tierOf(_preset) == MemberTier.parent ? <Capability>{..._caps, ...kSeeingCaps.where((Capability c) => kProfileTable[_preset]![c]!.available)} : _caps,
       children: _preset == Preset.parent || _allChildren ? null : (_kids.toList()..sort()),
       fromMs: from,
       untilMs: until,
@@ -303,12 +304,14 @@ class _WelcomeProfileScreenState extends State<WelcomeProfileScreen> {
 
   Widget _capRow(Capability c, Cell cell) {
     final String words = capabilityWords(c, widget.childName);
-    if (cell.fixed) {
+    if (cell.fixed || (tierOf(_preset) == MemberTier.parent && kSeeingCaps.contains(c))) {
       return OliveRow(
         key: Key('welcomeCap_${c.number}'),
         title: words,
-        sub: cell.on ? 'Always included' : 'Not available for this kind of person',
-        icon: cell.on ? OliveIcons.check : OliveIcons.lock,
+        sub: cell.fixed
+            ? (cell.on ? 'Always included' : 'Not available for this kind of person')
+            : 'A parent can always see this, so it stays on',
+        icon: (cell.on || !cell.fixed) ? OliveIcons.check : OliveIcons.lock,
       );
     }
     return ToggleRow(

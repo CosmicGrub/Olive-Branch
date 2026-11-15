@@ -131,8 +131,15 @@ class LocalStoreFamilyRepository implements FamilyRepository {
     });
   }
 
+  /// Also forgets the put-off welcome reminders kept beside the record, so a reset leaves nothing of the family.
   @override
-  Future<void> clear() => _ns.delete(_key);
+  Future<void> clear() async {
+    await _ns.delete(_key);
+    await _ns.delete(_remindersKey);
+  }
+
+  /// Must match LocalStoreWelcomeReminders.key (welcome_logic.dart); family_state.dart cannot import it without a cycle.
+  static const String _remindersKey = 'welcomeasks';
 }
 
 /// One device's view of its family: its keys, its ledger, and the anchors it pinned. Immutable apart from the lists.

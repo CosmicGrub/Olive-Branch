@@ -43,9 +43,9 @@ class World {
 
   MemoryWelcomeReminders remindersFor = MemoryWelcomeReminders();
 
-  WelcomeService svc(P p, {MemoryWelcomeReminders? reminders}) => WelcomeService(
+  WelcomeService svc(P p, {MemoryWelcomeReminders? reminders, FamilyRepository? repository}) => WelcomeService(
         context: ctxFor(p),
-        repository: MemoryFamilyRepository(),
+        repository: repository ?? MemoryFamilyRepository(),
         reminders: reminders ?? MemoryWelcomeReminders(),
         nowMs: () => now,
         childName: 'Ivy',
@@ -69,3 +69,13 @@ MemberProfile trusted() => MemberProfile.defaults(Preset.trustedCarer);
 MemberProfile lookOnly() => MemberProfile.defaults(Preset.viewOnly);
 MemberProfile visit(int now, {int days = 3}) =>
     MemberProfile.defaults(Preset.visit, fromMs: now, untilMs: now + days * day);
+
+/// A family record whose saves can be made to fail, to prove nothing half-done is left in memory.
+class FlakyFamilyRepository extends MemoryFamilyRepository {
+  bool failSaves = false;
+  @override
+  Future<void> save(FamilySnapshot snapshot) async {
+    if (failSaves) throw StateError('disk full');
+    return super.save(snapshot);
+  }
+}
