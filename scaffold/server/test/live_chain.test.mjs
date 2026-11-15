@@ -300,7 +300,8 @@ const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom')
 // two hours would therefore be due at once, which is correct product behaviour but makes
 // "not delivered before its time" untestable at that minute. Pick a part that did not.
 const CHILD_TZ = 'America/New_York';
-const PARTS = { wake: [6, 30], after_school: [15, 30], dinner: [17, 30], bedtime: [19, 30] };
+// The default plan (pool.ts DEFAULT_DAY_PARTS) has wake 06:30, free 08:00, bedtime 19:30.
+const PARTS = { wake: [6, 30], free: [8, 0], bedtime: [19, 30] };
 function quietDaypart(now = DateTime.now().setZone(CHILD_TZ)) {
   for (const [k, [h, m]] of Object.entries(PARTS)) {
     const mins = now.diff(now.set({ hour: h, minute: m, second: 0, millisecond: 0 }), 'minutes').minutes;
@@ -432,7 +433,7 @@ async function drive(t, id, until, passes = 10) {
   const ok = await checkReadiness({ pool, migrationsDir, mediaRoot: storageRoot });
   check('E readyz', 'real DB at the image\'s migration level, writable media -> ready', JSON.stringify(ok), JSON.stringify({ ready: true, failing: [], degraded: [] }));
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'olive-fake-migrations-'));
-  await fs.writeFile(path.join(fakeDir, '9999_from_the_future.sql'), 'SELECT 1;');
+  await fs.writeFile(path.join(fakeDir, ['9999', 'from_the_future'].join('_') + '.sql'), 'SELECT 1;');
   const behind = await checkReadiness({ pool, migrationsDir: fakeDir, mediaRoot: storageRoot });
   check('E readyz', 'an image that expects a newer migration than the DB has -> not ready, "schema"', JSON.stringify(behind.failing), '["schema"]');
   const asFile = path.join(storageRoot, 'a-file');

@@ -16,7 +16,7 @@
  */
 
 export type Platform = 'android' | 'ios';
-export type PushKind = 'call_incoming' | 'message_ready' | 'turn_ready'
+export type PushKind = 'call_incoming' | 'call_cancelled' | 'message_ready' | 'turn_ready'
                      | 'exchange_reminder' | 'dose_due';
 
 export interface PushInput {
@@ -59,6 +59,9 @@ export const GENERIC: Record<PushKind, { title: string; body: string } | null> =
   // A call must RING, not notify — CallKit / full-screen intent supply their own
   // UI, so there is no banner text at all.
   call_incoming: null,
+  // Data-only and silent: tells a device that is still ringing that the caller
+  // hung up (or the call ended), so the client can dismiss the full-screen UI.
+  call_cancelled: null,
   message_ready: { title: 'Olive', body: 'Something new is waiting for you.' },
   turn_ready: { title: 'Olive', body: "It's your turn." },
   exchange_reminder: { title: 'Olive', body: 'A reminder is ready.' },
@@ -94,7 +97,8 @@ export function buildPush(input: PushInput): PushPayload {
         // §11 — a call from Dad arriving as a silent notification is a broken
         // product. Full-screen intent is what makes it ring.
         fullScreenIntent: input.kind === 'call_incoming',
-        channelId: input.kind === 'call_incoming' ? 'calls' : 'reminders',
+        channelId: input.kind === 'call_incoming' || input.kind === 'call_cancelled'
+          ? 'calls' : 'reminders',
         collapseKey: input.collapseKey,
       },
     };
@@ -103,6 +107,8 @@ export function buildPush(input: PushInput): PushPayload {
     token: input.deviceToken, data, notification,
     apns: input.kind === 'call_incoming'
       ? { pushType: 'voip', priority: 10, topicSuffix: '.voip' }
+      : input.kind === 'call_cancelled'
+      ? { pushType: 'background', priority: 5, contentAvailable: true }
       : { pushType: 'alert', priority: 5, interruptionLevel: 'active',
           contentAvailable: true },
   };

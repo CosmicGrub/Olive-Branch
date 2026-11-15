@@ -535,6 +535,11 @@ class OliveApi {
   // -call-migration-design.md, for the fuller account.
   static const callJoin = '/v1/children/:childId/calls/:sessionId/join';
 
+  // GET .../calls/availability -- whether a call can be placed at all and
+  // whether it only works on the server's own network. Booleans and the
+  // provider name only; never a secret or the server URL.
+  static const callAvailability = '/v1/children/:childId/calls/availability';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
@@ -1170,6 +1175,13 @@ class OliveApi {
   Future<Map<String, dynamic>> joinCall(String childId, String sessionId) => _post(
       callJoin.replaceFirst(':childId', childId).replaceFirst(':sessionId', sessionId),
       const {});
+
+  /// Whether calls are switched on for this server and whether they work only on
+  /// its own network -- GET [callAvailability]. `{provider, available,
+  /// sameNetworkOnly}`. The call button reads this up front instead of finding
+  /// out from a 503 after the guardian has already tapped it.
+  Future<Map<String, dynamic>> fetchCallAvailability(String childId) =>
+      _get(callAvailability, childId: childId);
 
   /// Marks call_log's own row for [sessionId] ended — POST [callEnd],
   /// server/routes.mjs's real handler (2026-08-23). Idempotent: returns

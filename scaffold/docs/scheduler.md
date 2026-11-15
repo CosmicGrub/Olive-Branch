@@ -27,9 +27,9 @@ rather than invented here:
 
 Read `tools/scheduler.mjs`'s own header for the full design writeup —
 locking choice, exact per-job semantics, and what this deliberately does
-**not** do (it does not push to a device, and it does not resolve `on_event`
-targets — both real, separate, disclosed gaps, not silently folded in here).
-This page is the operator-facing "how do I turn it on" half.
+**not** do (it does not resolve `on_event` targets, a real, separate,
+disclosed gap; the delivery worker and its content-free `message_ready` push
+are described below). This page is the operator-facing "how do I turn it on" half.
 
 ## The delivery worker
 
@@ -53,6 +53,21 @@ Each tick (default every 30 seconds, `DELIVERY_TICK_MS`, floor 5 seconds):
 3. `claim_due_intents()` moves every `ready` row whose time has arrived to
    `delivered` and stamps `delivered_at`. `FOR UPDATE SKIP LOCKED` plus a
    compare-and-swap means two workers can never deliver the same row.
+4. One content-free `message_ready` push per child that just received something
+   (not per message), best effort: a push failure never undoes a delivery. The
+   push carries an opaque intent id and the kind and nothing else; the recipient
+   side asleep/school gate still applies, so a message that comes due in quiet
+   hours is delivered silently and is there when she opens the app. With no
+   Firebase project (`FCM_SERVICE_ACCOUNT_FILE` unset) every device reports a
+   config result and nothing is sent; the inbox still fills and the app polls.
+   `DELIVERY_PUSH=off` skips this step on purpose.
+
+There is ONE implementation of this worker (`runDeliverSweep` in
+`tools/scheduler.mjs`). The Compose `delivery` service runs it, and the server
+can host the same function in-process for a single-container deployment
+(`server/delivery_tick.mjs`, enabled by `DELIVERY_IN_SERVER=1`; the Compose files
+set it to 0 because they run the `delivery` service). Both take the same
+advisory lock (`deliver`), so running both is safe but wasted work.
 
 A message sent while a bedtime exists is stored `ready` with its delivery time
 at send time, so the worker delivers it the moment it is due rather than
@@ -67,10 +82,13 @@ delivery of rows that are already ready.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DELIVERY_TICK_MS` | `30000` | Pause between ticks. Values under 5000 are raised to 5000. |
+| `DELIVERY_PUSH` | `on` | `off` delivers but sends no wake-up push. |
+| `FCM_SERVICE_ACCOUNT_FILE` | unset | Path to the Firebase service-account JSON (mounted from outside the repository). Unset = push off. |
+| `DELIVERY_IN_SERVER` | host default | Server only: `0` stops the server hosting the worker (the `delivery` service does it). |
 
 ## What it runs
 
-Named jobs, run in this order (`rematerialize`, `deliver`, `reap-media`,
+Named jobs, run in this order (`rematerialize`, `deliver`, `end-stale-calls`, `reap-media`,
 `purge-challenges`, `expiry-digest`, `backup`, then `health-alert` — `JOB_NAMES` in
 `tools/scheduler.mjs`; `health-alert` is last so it sees the backup that just
 ran). This page said "two named jobs" from `reap-media`'s own real addition
@@ -84,6 +102,7 @@ read to understand what that service does:
 |---|---|
 | `rematerialize` | Sweeps every `delivery_intent` row still `state='pending'`, calls the real `materialize()` against a real `ChildCtx` loaded from Postgres, and writes the result back (`ready` + `scheduled_at`, `expired`, or left `pending` for a config gap that might still get fixed). |
 | `deliver` | The delivery worker's tick: `expire_stale_intents()`, then the rematerialize sweep above, then `claim_due_intents()`, which moves every `ready` intent whose time has come to `delivered` (stamping `delivered_at`) so it appears in the child's inbox. Run on its own, every `DELIVERY_TICK_MS`, by `deliver-loop` (see "The delivery worker" below). It does not push to a device. |
+| `end-stale-calls` | Ends calls still live after `CALL_MAX_AGE_MINUTES` (default 240) with reason `stale`. |
 | `reap-media` | Runs the real COPPA retention reaper (`packages/storage/src/storage.ts`'s `reap()`) against every `media_artifact` row `artifacts_due_for_reaping()` returns — deletes the real blob first, then the row, and writes a `reap_tombstone` on a genuine failure so a stuck row stays discoverable and gets retried, never silently re-attempted forever or silently dropped. |
 | `expiry-digest` | Records, per child, the unpreserved artifacts expiring within 14 days as one `expiry_digest` row per distinct set (ids, kinds, dates; no captions). Records only; sends nothing. Per-child failures are counted and the job reports not-ok. |
 | `purge-challenges` | Deletes `auth_challenge` rows (WebAuthn ceremony nonces) older than their 5-minute TTL plus a 1-hour grace. They were written on every login/registration start and never deleted, and the login-challenge endpoint is unauthenticated. |
@@ -222,18 +241,30 @@ from there instead and skip the `scheduler` Compose service entirely.
 | `SCHEDULER_INTERVAL_MS` | unset | `loop` mode only — if set, overrides the daily schedule with a fixed interval instead. Useful for a tighter cadence, or for exercising the loop itself quickly without waiting for a real UTC day boundary. |
 | `MEDIA_STORAGE_ROOT` | this file's own directory-relative default (see `server/routes.mjs`'s `DEFAULT_MEDIA_STORAGE_ROOT`) | `reap-media` only — where the real media volume is mounted. **Required in any real container deployment**, and must point at the SAME volume `server` itself writes to, not a private copy — found unset for the `scheduler` service in both Compose files by this project's own post-tier audit; `reap-media` silently deleted `media_artifact` rows while never touching the real blobs until that was fixed. |
 
+## Abandoned calls
+
+A call whose clients crashed never reaches `POST .../calls/:sessionId/end`, and its
+room would stay joinable for ever. The `end-stale-calls` job (part of the nightly run
+and runnable alone with `node tools/scheduler.mjs run end-stale-calls`) ends every call
+still live after `CALL_MAX_AGE_MINUTES` (default 240) with reason `stale`. The join
+route refuses such a session even before the job has run, so the nightly cadence is
+enough: there is deliberately no faster loop for it (delivery has its own,
+`deliver-loop`).
+
 ## What this does not do (yet)
 
 Named here rather than left implicit, matching this repo's own disclosure
 discipline:
 
-- **No push from the worker.** (Closed in part: the delivery worker now
-  exists, see below, and calls both `claim_due_intents()` and
-  `expire_stale_intents()`.) What it does not do is tell a closed app that a
-  message arrived. No push provider is configured (`DECISIONS.md` parks it), so
-  the app learns of a message by polling its inbox. When FCM credentials exist,
-  the hook goes after the claim step in `runDeliverSweep()`, which already
-  returns the claimed child ids.
+- **Push needs the owner's Firebase project.** The worker sends the
+  content-free `message_ready` push after each claim (see above), but no
+  Firebase project exists yet, so on a real deployment the push step reports
+  `fcm_config_missing` per device and nothing is sent. The sender is tested
+  against an HTTP stand-in for Google, never against Google itself. Delivery
+  does not depend on it: the app still learns of a message by polling its inbox.
+- **(Closed.) Abandoned calls.** The `end-stale-calls` job ends every call
+  session still live past `CALL_MAX_AGE_MINUTES` (default 240) with reason
+  `stale`; the join route refuses such a session even before the job runs.
 - **No `on_event` resolution.** `childCtxFor()`
   (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants` — no
   caller anywhere in this repo does. An `on_event` intent's `materialize()`

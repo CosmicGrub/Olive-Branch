@@ -5,7 +5,7 @@ Research and decisions, snapshot 2026-11-14. Sources are third-party where noted
 ## Chosen direction (now)
 
 - **Server:** the dev stack runs in Docker on the owner's PC (project `olive-fresh`, loopback port with `adb reverse` to the test devices). This is the default until the owner says otherwise.
-- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. No push yet to ring a closed app.
+- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. The server can now send the ring push (FCM sender, delivery wake-up, call_incoming and call_cancelled, with call_log written first and an honest ringState), but it has only run against an HTTP stand-in for Google: it needs the owner's Firebase project, and a closed Android app still cannot ring until the client has the native full-screen-call UI (gap G4, not built; see OPERATIONS-RUNBOOK "Server lane").
 - **Scrapped for much later:** Oracle Always Free, any VPS, the Cloudflare tunnel, and self-hosted LiveKit hosting. Their partial work is kept on branches (`feat/vps-deploy-kit`, `feat/live-server-bake`).
 
 ## Hosting options researched

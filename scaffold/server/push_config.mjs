@@ -1,61 +1,44 @@
-// OLIVE BRANCH — boot-time check of the push credentials. Server audit G4.
+// OLIVE BRANCH — push provider configuration (MASTERFILE §11), the sibling of
+// server/call_config.mjs.
 //
-// fcm.ts reads FCM_SERVICE_ACCOUNT_JSON at SEND time, so an operator who sets it wrongly
-// (a truncated paste, the wrong file, a placeholder) found out only when a real child's
-// message failed to ring, and then only as a swallowed push error. This checks it once at
-// boot instead, the way server/secrets.mjs checks the session secret:
+// Until now nothing told an operator whether the server COULD send a push: the
+// FCM sender read FCM_SERVICE_ACCOUNT_JSON lazily on the first send, the
+// compose files never passed it into the container, and a missing credential
+// only surfaced as a per-device `fcm_config_missing` result nobody reads. This
+// module makes the state visible at boot and on the operator-only metrics
+// endpoint, without ever making push a boot requirement (the app is
+// offline-first: a server with no Firebase project must still run).
 //
-//   - unset                  -> push is simply off. Not an error: the inbox still fills,
-//                               the child's app still polls. A one-line note says so.
-//   - set and well-formed    -> "on".
-//   - set and malformed      -> a boot problem (the process exits 2), because "I turned push
-//                               on and it silently never fires" is the worst failure here.
-//
-// FCM_SERVICE_ACCOUNT_FILE is the file-secret form (a path to the Firebase service-account
-// JSON, mounted from OUTSIDE the repository, e.g. a docker secret). When it is set and
-// FCM_SERVICE_ACCOUNT_JSON is not, the file's content is returned for the caller to publish
-// as FCM_SERVICE_ACCOUNT_JSON, the only place fcm.ts looks. The JSON variable wins if both
-// are set. Nothing here ever returns, logs or echoes a key: messages name the variable and
-// the missing field only.
-//
-// Honest scope: this validates SHAPE. It cannot prove Google accepts the key; live push is
-// unverified until the owner supplies a Firebase project and a device has received one.
-import { readFileSync } from 'node:fs';
+// Pure functions of an env object so tests can drive them without touching
+// process.env. Nothing here returns or logs a secret, a key, an e-mail, a
+// project id or a file path: names and booleans only.
+import { inspectFcmConfig } from '../packages/transport/src/fcm.mjs';
 
-const REQUIRED = ['client_email', 'private_key', 'project_id'];
+const APNS_KEYS = ['APNS_KEY_P8', 'APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_TOPIC'];
+
+/** Returns { fcm: {configured, source, problem}, apns: {configured}, problems: string[] }. */
+export function resolvePushConfig(env = process.env) {
+  const fcm = inspectFcmConfig(env);
+  const problems = [];
+  if (fcm.problem) problems.push(`FCM: ${fcm.problem}`);
+  const apnsSet = APNS_KEYS.filter((k) => env[k]);
+  const apns = { configured: apnsSet.length === APNS_KEYS.length };
+  // A half-configured APNs is an operator mistake worth naming; none at all is normal.
+  if (apnsSet.length > 0 && !apns.configured) {
+    problems.push(`APNs: set ${apnsSet.length} of ${APNS_KEYS.length} variables; all four are needed`);
+  }
+  return { fcm, apns, problems };
+}
 
 /**
- * @returns {{ fcm: 'off' | 'on', problems: string[], json: string | null }}
- *   `json` is the service-account JSON to publish as FCM_SERVICE_ACCOUNT_JSON (only when it
- *   came from FCM_SERVICE_ACCOUNT_FILE); null otherwise.
+ * Safe to log and to return from /internal/metrics. `androidRing` is the one
+ * line an operator actually wants: can a closed Android app be woken at all.
  */
-export function checkPushConfig(env = process.env, readFile = (p) => readFileSync(p, 'utf8')) {
-  const problems = [];
-  let raw = env.FCM_SERVICE_ACCOUNT_JSON;
-  let fromFile = false;
-  if (!raw && env.FCM_SERVICE_ACCOUNT_FILE) {
-    try { raw = readFile(env.FCM_SERVICE_ACCOUNT_FILE); fromFile = true; }
-    catch { problems.push('FCM_SERVICE_ACCOUNT_FILE is set but the file cannot be read'); }
-  }
-  if (!raw) return { fcm: 'off', problems, json: null };
-  let parsed;
-  try { parsed = JSON.parse(raw); }
-  catch {
-    problems.push(`${fromFile ? 'FCM_SERVICE_ACCOUNT_FILE' : 'FCM_SERVICE_ACCOUNT_JSON'} is not valid JSON`);
-    return { fcm: 'off', problems, json: null };
-  }
-  if (!parsed || typeof parsed !== 'object') {
-    problems.push('the FCM service account must be a JSON object');
-    return { fcm: 'off', problems, json: null };
-  }
-  for (const k of REQUIRED) {
-    if (typeof parsed[k] !== 'string' || !parsed[k].trim()) {
-      problems.push(`the FCM service account is missing required field "${k}"`);
-    }
-  }
-  if (typeof parsed.private_key === 'string' && !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(parsed.private_key)) {
-    problems.push('the FCM service account "private_key" is not a PEM private key');
-  }
-  if (problems.length) return { fcm: 'off', problems, json: null };
-  return { fcm: 'on', problems, json: fromFile ? raw : null };
+export function describePushConfig(cfg) {
+  return {
+    androidRing: cfg.fcm.configured ? 'ready' : 'not_configured',
+    fcm: { configured: cfg.fcm.configured, source: cfg.fcm.source },
+    apns: { configured: cfg.apns.configured },
+    problems: cfg.problems.length,
+  };
 }

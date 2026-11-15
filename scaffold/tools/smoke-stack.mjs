@@ -85,7 +85,8 @@ if (!SERVER_CONTAINER) {
 // A message is scheduled at the start of a day-part. One that began in the last two hours
 // is due at once (materialize()'s grace window), which would hide the "not before its time"
 // check, so pick a part that did not (the child's zone below is America/New_York).
-const PARTS = { wake: [6, 30], after_school: [15, 30], dinner: [17, 30], bedtime: [19, 30] };
+// The default plan a new child gets (pool.ts DEFAULT_DAY_PARTS): wake 06:30, free 08:00, bedtime 19:30.
+const PARTS = { wake: [6, 30], free: [8, 0], bedtime: [19, 30] };
 function quietDaypart() {
   const now = DateTime.now().setZone('America/New_York');
   for (const [k, [h, m]] of Object.entries(PARTS)) {

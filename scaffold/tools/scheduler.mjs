@@ -53,7 +53,8 @@
  *     visible in the child's inbox, and then sends one content-free
  *     `message_ready` push per child when a sender is supplied. There is ONE
  *     implementation of that worker (`runDeliverSweep`); the server host only
- *     adds a timer, a post-send nudge and a readiness signal around it.)
+ *     adds a timer, a post-send nudge and a readiness signal around it.
+ *     `end-stale-calls` ends abandoned call sessions.)
  *   - Does not resolve `on_event` targets. `childCtxFor()`
  *     (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants`
  *     (no caller anywhere in this repo does), so an `on_event` intent's
@@ -107,7 +108,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges,
+import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges, endStaleCalls,
          adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS }
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
@@ -356,7 +357,7 @@ export async function runDeliverSweep(pool, opts = {}) {
   const now = opts.now ?? DateTime.utc();
   const limit = opts.limit ?? DEFAULT_DELIVER_BATCH;
   const out = { expired: 0, rematerialized: null, delivered: 0, ids: [], children: [], errors: [],
-                pushed: 0, pushFailed: 0 };
+                pushed: 0, pushFailed: 0, silent: 0, noDevice: 0 };
 
   try {
     const r = await withSystemSession(pool, (q) => q(`SELECT expire_stale_intents() AS n`));
@@ -375,7 +376,9 @@ export async function runDeliverSweep(pool, opts = {}) {
     out.ids = claimed.map((r) => r.id);
     out.children = [...new Set(claimed.map((r) => r.child_id))];
     // One push per child however many messages landed; the ref is the newest intent id.
-    if (opts.notify) {
+    // DELIVERY_PUSH=off keeps the delivery and skips this step (a server with no Firebase
+    // project still delivers; the child finds the message when she opens the app).
+    if (opts.notify && (opts.env ?? process.env).DELIVERY_PUSH !== 'off') {
       const newest = new Map();
       for (const r of claimed) newest.set(r.child_id, r.id);
       for (const [childId, intentId] of newest) {
@@ -383,6 +386,8 @@ export async function runDeliverSweep(pool, opts = {}) {
           const results = await opts.notify(pool, { childId }, {
             kind: 'message_ready', ref: intentId, collapseKey: 'message_ready' });
           if (results.some((x) => x.ok)) out.pushed++;
+          else if (results.length === 0) out.noDevice++;
+          else out.silent++; // gated by quiet hours, or no push-capable device: delivered, not woken
         } catch (e) {
           out.pushFailed++; // the message is already delivered; a push error is not a delivery error
         }
@@ -391,6 +396,17 @@ export async function runDeliverSweep(pool, opts = {}) {
   } catch (e) { out.errors.push(`claim: ${String(e?.message ?? e).slice(0, 200)}`); }
 
   return out;
+}
+
+// ------------------------------------------------------- end-stale-calls ---
+/**
+ * A call whose clients crashed never hits /end, and its room stayed joinable
+ * (every /join mints a fresh token) for ever. This ends every call still live
+ * past CALL_MAX_AGE_MINUTES (default 240) with reason 'stale'; callSessionFor()
+ * refuses to hand a join token for such a session even before this runs.
+ */
+export async function runEndStaleCallsJob(pool, opts = {}) {
+  return { ended: await endStaleCalls(pool, opts.maxAgeMinutes) };
 }
 
 // ------------------------------------------------------ sweep-orphan-media -
@@ -730,7 +746,7 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'deliver', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'deliver', 'end-stale-calls', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -757,6 +773,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
       if (jobName === 'deliver') return runDeliverSweep(pool, { notify: opts.notify ?? notifyDevices });
+      if (jobName === 'end-stale-calls') return runEndStaleCallsJob(pool, {});
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
@@ -813,12 +830,18 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       (ok ? logLine : errLine)({
         event: 'end', job: jobName, status: ok ? 'ok' : 'failed', duration_ms: durationMs,
         delivered: r.delivered, children: r.children.length, expired: r.expired,
-        pushed: r.pushed, push_failed: r.pushFailed,
+        pushed: r.pushed, silent: r.silent, no_device: r.noDevice, push_failed: r.pushFailed,
         scanned: r.rematerialized?.scanned ?? 0, materialized: r.rematerialized?.materialized ?? 0,
         ...(ok ? {} : { error: r.errors.join('; ') }), at: DateTime.utc().toISO(),
       });
     }
     return { ok, skipped: false };
+  }
+
+  if (jobName === 'end-stale-calls') {
+    logLine({ event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
+      ended: lockResult.result.ended, at: DateTime.utc().toISO() });
+    return { ok: true, skipped: false };
   }
 
   if (jobName === 'reap-media') {

@@ -31,11 +31,11 @@ import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { checkRuntimeRole } from './db_role.mjs';
 import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
+import { resolvePushConfig, describePushConfig } from './push_config.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest, shouldLogAccess } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 import { createDeliveryTick, hostIntervalFromEnv } from './delivery_tick.mjs';
 import { checkReadiness, createReadinessCache } from './readiness.mjs';
-import { checkPushConfig } from './push_config.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -85,15 +85,19 @@ if (WEBAUTHN_CFG.problems.length) {
   process.exit(2);
 }
 
-// G4: push credentials are checked ONCE here instead of failing silently at the first send.
-// Unset is fine (the inbox still fills, the child's app polls); set-but-malformed is not.
-const bootPush = checkPushConfig(process.env);
-if (bootPush.problems.length) {
-  for (const p of bootPush.problems) console.error(`push check failed: ${p}`);
+// Push credentials are checked ONCE here instead of failing silently at the first send.
+// Unset is fine (the app is offline-first: the inbox still fills and the child's app polls, a
+// server with no Firebase project must still run). Set-but-malformed is not: "I turned push
+// on and it never fires" is the worst failure here, so a bad FCM key refuses to boot. A
+// half-configured APNs is only warned about (iOS is not shipped). Names and booleans only.
+const bootPush = resolvePushConfig(process.env);
+const pushFatal = bootPush.problems.filter((p) => p.startsWith('FCM:'));
+if (pushFatal.length) {
+  for (const p of pushFatal) console.error(`push check failed: ${p}`);
   process.exit(2);
 }
-if (bootPush.json) process.env.FCM_SERVICE_ACCOUNT_JSON = bootPush.json;
-console.log(`push: fcm ${bootPush.fcm}${bootPush.fcm === 'off' ? ' (no FCM_SERVICE_ACCOUNT_JSON or _FILE: message_ready pushes are skipped, inboxes still fill)' : ''}`);
+for (const p of bootPush.problems.filter((x) => !x.startsWith('FCM:'))) console.warn(`WARNING: push: ${p}`);
+console.log(`push: ${JSON.stringify(describePushConfig(bootPush))}`);
 
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
@@ -457,6 +461,7 @@ const server = createServer(async (req, res) => {
         pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
         game_tables_open: gameTables.size,
         delivery: deliveryTick.status(),
+        push: describePushConfig(resolvePushConfig(process.env)),
       }) });
     }
 

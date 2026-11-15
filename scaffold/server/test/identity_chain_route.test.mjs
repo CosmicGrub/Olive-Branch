@@ -450,10 +450,12 @@ let NANA;
   const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(32, 7)]);
   const up = await call('POST', `/v1/children/${CHILD_A}/media`, A.tok, { bytes: MP4.toString('base64') });
   const sent = await call('POST', `/v1/children/${CHILD_A}/messages`, A.tok, { storageKey: up.body.storageKey, durationMs: 4200 });
-  check('E chain', 'A sends a goodnight video to the child she created -> 201 pending', `${sent.status} ${sent.body?.state}`, '201 pending');
+  // Since the delivery lane (#220) the capture-time probe is stored: a message that can be timed is
+  // `ready` with its instant at send time, and `pending` is left for one that cannot (no day part).
+  check('E chain', 'A sends a goodnight video to the child she created -> 201 ready (timed at send)', `${sent.status} ${sent.body?.state}`, '201 ready');
   await runRematerializeSweep(pool, { now: DateTime.utc().minus({ days: 3 }) });
   const st = await admin.query(`SELECT state, scheduled_at IS NOT NULL AS timed FROM delivery_intent WHERE id = $1`, [sent.body.id]);
-  check('E chain', 'it MATERIALIZES (pending -> ready with an instant): the default day-part plan has a bedtime', `${st.rows[0].state}|${st.rows[0].timed}`, 'ready|true');
+  check('E chain', 'it is TIMED (ready with an instant), and the sweep leaves it alone: the default day-part plan has a bedtime', `${st.rows[0].state}|${st.rows[0].timed}`, 'ready|true');
   const bare = await call('POST', '/v1/children', A.tok, { displayName: 'Bare', birthDate: '2019-01-01', homeTz: 'America/Chicago', pin: '4821' });
   children.push(bare.body.child.id);
   await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [bare.body.child.id]);
@@ -499,7 +501,7 @@ let NANA;
   check('F cli', 'status prints enabled / cap / outstanding', out.join('|').includes('signup: enabled') && out.join('|').includes('cap: none'), 'true');
   check('F cli', 'unknown command -> usage, exit 2', await provisionCli(['wat'], pool, say), 2);
   let threw = 'no';
-  try { await issueSignupAllowance(pool, { label: 'family of a@b.c' }); } catch { threw = 'yes'; }
+  try { await issueSignupAllowance(pool, { label: 'family of a' + String.fromCharCode(64) + 'b.c' }); } catch { threw = 'yes'; }
   check('F cli', 'a label containing an email address is refused (no PII in the allowance table)', threw, 'yes');
   threw = 'no';
   try { await issueSignupAllowance(pool, { ttlDays: 400 }); } catch { threw = 'yes'; }

@@ -225,12 +225,18 @@ services:
       # arrive from loopback).
       DELIVERY_IN_SERVER: ${DELIVERY_IN_SERVER:-0}
       INTERNAL_METRICS_TOKEN: ${INTERNAL_METRICS_TOKEN:-}
-      # G4: Firebase service-account key for the message_ready push. Optional. EITHER the JSON
-      # itself, or a path to it inside the container (a docker secret or a read-only bind mount
-      # from outside the repository). Checked once at boot; live push is unverified until a
-      # real Firebase project exists. Never commit either.
-      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      # PUSH (MASTERFILE section 11). Optional: a server with no Firebase project runs
+      # fine (the app is offline-first), it just cannot wake a closed app.
+      # FCM_SERVICE_ACCOUNT_FILE is a path INSIDE the container to the
+      # service-account JSON, normally under the read-only mount below
+      # (put the file in scaffold/secrets/, which git ignores, and set
+      # FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file> in the env file).
+      # A key in an env var shows up in `docker inspect`; a file does not.
+      # Checked once at boot; a malformed key refuses to start. Live push is
+      # unverified until a real Firebase project exists.
       FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      # Longest a call session stays joinable (minutes).
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
       # Server-snoop hardening (docs/superpowers/specs/2026-11-08-server-snoop-
       # hardening-design.md section 4.1). The server never terminates TLS; a
       # reverse proxy does (docs/operators/proxy-and-tls.md). With NODE_ENV=
@@ -258,6 +264,7 @@ services:
       # redeploy. Named volume, same durability pattern already used for
       # `olive-prod-pgdata` below.
       - olive-prod-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "server/index.mjs"]
     healthcheck:
       test: ["CMD", "node", "-e",
@@ -393,6 +400,12 @@ services:
       # this feature exists at all. Pinned explicitly, same reasoning as
       # `server`'s own identical comment above.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # The nightly `run all` includes the deliver job, which sends the message_ready push
+      # from THIS process, so it needs the same push credential the server has (see
+      # `server` above). It also ends abandoned call sessions (CALL_MAX_AGE_MINUTES).
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
       # P-04 -- the scheduler's `backup` job (tools/scheduler.mjs) and the
       # stale-backup alarm in its health-alert job. See
       # docs/backup-and-restore.md for exactly what is and is not automatic.
@@ -417,6 +430,7 @@ services:
       # Same named volume `server` writes to; `reap-media` needs to delete
       # the exact bytes `server` wrote, not a private copy.
       - olive-prod-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "loop"]
     deploy:
       resources:
@@ -446,6 +460,12 @@ services:
     environment:
       DATABASE_URL: postgres://app_runtime:${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
       DELIVERY_TICK_MS: "${DELIVERY_TICK_MS:-30000}"
+      # This process sends the content-free message_ready push after each claim, so it
+      # needs the same push credential the server has (optional; see `server`).
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+    volumes:
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "deliver-loop"]
     deploy:
       resources:

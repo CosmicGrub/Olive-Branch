@@ -32,7 +32,7 @@
  */
 import pg from 'pg';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -68,6 +68,8 @@ const cleanup = async () => {
   rmSync(staged, { recursive: true, force: true });
 };
 await cleanup();
+// cleanup() removes `staged`, which was created a few lines up; put it back before anything is copied in.
+mkdirSync(staged, { recursive: true });
 await admin.query(`DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='backup_reader') THEN
     CREATE ROLE backup_reader NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS LOGIN PASSWORD 'backup_reader'; END IF;

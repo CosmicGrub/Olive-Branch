@@ -75,6 +75,7 @@ for spec in \
   "route contract: auth session (refresh, sign-out, PIN change)|server/test/auth_session_route_test.mjs" \
   "route contract: parental controls (visibility & pacing)|server/test/guardian_activity_override_route_test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
+  "push config, call helpers, call_cancelled, scheduler registry (no DB)|server/test/push_config.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
@@ -439,6 +440,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
+            "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
@@ -454,7 +456,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "letters route: real age-gated open, RLS child-owned (real DB)|server/test/letters_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "delivery chain: send, worker tick, inbox, media, receipt; day-parts + tz routes; hostile cases (real DB, real RLS)|server/test/delivery_chain.test.mjs" \
-            "live chain: sign-up, confirmed edge, caps, delivery host, readiness (real DB, real RLS)|server/test/live_chain.test.mjs" \r
+            "live chain: sign-up, confirmed edge, caps, delivery host, readiness (real DB, real RLS)|server/test/live_chain.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" \
             "db pool: no self-deadlock, limits, broken clients (real RLS)|packages/db/test/pool_concurrency.test.mjs" \
@@ -516,7 +518,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: exchange route|server/test/exchange_route.test.mjs" \
             "as app_runtime: inbox route|server/test/inbox_route.test.mjs" \
             "as app_runtime: delivery chain|server/test/delivery_chain.test.mjs" \
-            "as app_runtime: live chain|server/test/live_chain.test.mjs" \r
+            "as app_runtime: live chain|server/test/live_chain.test.mjs" \
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \

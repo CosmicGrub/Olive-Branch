@@ -1366,15 +1366,98 @@ export async function recordCallStart(pool: pg.Pool, input: {
  */
 export async function recordCallEnd(
   pool: pg.Pool, childId: string, sessionId: string,
+  /** Who is hanging up. Decides the reason when the call was never answered:
+   *  the caller ending it is 'cancelled', the child's device ending it is
+   *  'declined'. A call that WAS answered (answered_at set by the child's join)
+   *  is always 'answered'. Defaults to the caller. */
+  endedBy: 'caller' | 'callee' = 'caller',
+): Promise<{ ended: boolean; reason: 'answered' | 'cancelled' | 'declined' | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log
+          SET ended_at = now(),
+              ended_reason = CASE WHEN answered_at IS NOT NULL THEN 'answered'
+                                  WHEN $3 = 'callee' THEN 'declined'
+                                  ELSE 'cancelled' END
+        WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
+        RETURNING id, ended_reason`,
+      [sessionId, childId, endedBy],
+    );
+    return rows.length > 0
+      ? { ended: true, reason: rows[0].ended_reason } : { ended: false, reason: null };
+  });
+}
+
+/**
+ * Records, after the fact, whether the callee's device was actually rung. The
+ * call_log row is written BEFORE the ring (a ring for a call nobody can join
+ * is worse than no call), so `rang` is filled in once the push result is known.
+ */
+export async function recordCallRang(
+  pool: pg.Pool, childId: string, sessionId: string, rang: boolean,
+): Promise<void> {
+  await withSystemSession(pool, async (q) => {
+    await q(`UPDATE call_log SET rang = $3 WHERE id = $1 AND child_id = $2`,
+      [sessionId, childId, rang]);
+  });
+}
+
+/**
+ * Stamps `answered_at` the first time the CHILD (the callee) mints a join
+ * token for a live call -- the one moment the server genuinely sees an answer.
+ * Idempotent (COALESCE keeps the first instant). Returns whether the row
+ * exists, is this child's and is still live.
+ */
+export async function markCallAnswered(
+  pool: pg.Pool, childId: string, sessionId: string,
 ): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `UPDATE call_log SET ended_at = now()
+      `UPDATE call_log SET answered_at = COALESCE(answered_at, now())
         WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
         RETURNING id`,
       [sessionId, childId],
     );
     return rows.length > 0;
+  });
+}
+
+/** Free text that ends up on a lock screen or in a JWT: no control chars, collapsed, capped. */
+export function cleanDisplayName(raw: unknown, max = 40): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, max).trim();
+  return s.length ? s : null;
+}
+
+/** Default longest a call session may stay joinable: 4 hours. CALL_MAX_AGE_MINUTES overrides. */
+export const DEFAULT_CALL_MAX_AGE_MINUTES = 240;
+export function callMaxAgeMinutes(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.CALL_MAX_AGE_MINUTES);
+  return Number.isFinite(n) && n >= 1 && n <= 24 * 60 ? Math.floor(n) : DEFAULT_CALL_MAX_AGE_MINUTES;
+}
+
+/**
+ * Ends every call still live after `maxAgeMinutes` (a session whose clients
+ * crashed never calls /end, and a joinable room stays joinable forever
+ * otherwise). Reason 'stale'. A single UPDATE, so it is atomic against a
+ * concurrent /end: whichever commits first wins and the other updates zero
+ * rows. Returns how many calls were ended.
+ */
+export async function endStaleCalls(
+  pool: pg.Pool, maxAgeMinutes: number = callMaxAgeMinutes(),
+): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log SET ended_at = now(), ended_reason = 'stale'
+        WHERE ended_at IS NULL
+          AND started_at < now() - make_interval(mins => $1::int)
+        RETURNING id`,
+      [maxAgeMinutes],
+    );
+    return rows.length;
   });
 }
 
@@ -1401,13 +1484,16 @@ export async function callSessionFor(
 } | null> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at
+      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at,
+              (started_at < now() - make_interval(mins => $3::int)) AS too_old
          FROM call_log WHERE id = $1 AND child_id = $2`,
-      [sessionId, childId],
+      [sessionId, childId, callMaxAgeMinutes()],
     );
     if (!rows.length) return null;
     const row = rows[0];
-    if (row.ended_at) return null;
+    // An ended call, or one older than the maximum session age (a crashed
+    // client never ends its call), is no longer joinable.
+    if (row.ended_at || row.too_old) return null;
     return {
       id: row.id, childId: row.child_id, roomName: row.room_name, startedBy: row.started_by,
       authorizedUserIds: row.participant_ids, ladderStep: row.ladder_step,
@@ -5142,17 +5228,39 @@ export async function signUpWithAllowance(
 }
 
 /**
- * [kind, starts_local, ends_local, reachable]: a full, non-overlapping day.
- * Overnight is quiet; the evening runs wind_down -> bedtime (20:00-21:00, the
- * part the messages route targets by default).
+ * The day a brand-new child starts with, until a grown-up edits it (PUT
+ * /v1/children/:childId/day-parts replaces the whole schedule). ONE definition,
+ * used by every path that creates a child: without ANY day_part row
+ * materialize() answers `daypart_undefined` and a banked message for that child
+ * could never be scheduled.
+ *
+ * Wall-clock HH:MM in the child's own zone, every day, a full non-overlapping
+ * day (the night wraps midnight, which the day-part routes and the engine both
+ * support): she is reachable in the morning and through the day, `bedtime` is
+ * 19:30 to 20:30 (the part the messages route targets by default), and the night
+ * is unreachable so a push does not wake her. A placeholder that asserts no
+ * schedule beyond "evening is bedtime, overnight is quiet".
  */
-export const DEFAULT_DAY_PARTS: ReadonlyArray<readonly [string, string, string, boolean]> = [
-  ['asleep', '00:00', '07:00', false],
-  ['free', '07:00', '19:30', true],
-  ['wind_down', '19:30', '20:00', true],
-  ['bedtime', '20:00', '21:00', true],
-  ['asleep', '21:00', '23:59:59', false],
+export const DEFAULT_DAY_PARTS: ReadonlyArray<{
+  kind: string; startsLocal: string; endsLocal: string; reachable: boolean;
+}> = [
+  { kind: 'wake',    startsLocal: '06:30', endsLocal: '08:00', reachable: true },
+  { kind: 'free',    startsLocal: '08:00', endsLocal: '19:30', reachable: true },
+  { kind: 'bedtime', startsLocal: '19:30', endsLocal: '20:30', reachable: true },
+  { kind: 'asleep',  startsLocal: '20:30', endsLocal: '06:30', reachable: false },
 ];
+
+/** Inside the caller's transaction: writes DEFAULT_DAY_PARTS for a brand-new child. */
+async function insertDefaultDayParts(q: Query, childId: string): Promise<void> {
+  // The same per-child writer lock the day-parts PUT route takes, so the two can never interleave.
+  await q(`SELECT pg_advisory_xact_lock(hashtext('day_part:' || $1::text))`, [childId]);
+  for (const p of DEFAULT_DAY_PARTS) {
+    await q(
+      `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+       VALUES ($1, $2, $3::time, $4::time, '{0,1,2,3,4,5,6}', $5, daterange('2000-01-01', NULL))`,
+      [childId, p.kind, p.startsLocal, p.endsLocal, p.reachable]);
+  }
+}
 
 export interface OwnChild {
   id: string; displayName: string; birthDate: string; homeTz: string; role: string;
@@ -5186,10 +5294,10 @@ export type CreateChildError = 'account_not_found' | 'too_many_children';
  * `at_daypart` / `when_reachable` from day_part rows and leaves an intent
  * `pending` forever (`daypart_undefined`) for a child with none. The messages
  * route targets the `bedtime` part by default (a goodnight video), so without
- * a `bedtime` row NOTHING a guardian sends would ever deliver. No route edits
- * day parts yet. See DEFAULT_DAY_PARTS: a placeholder a guardian will be able
- * to replace; it asserts no schedule beyond "overnight is quiet, evening is
- * bedtime".
+ * a `bedtime` row NOTHING a guardian sends would ever deliver. A guardian
+ * replaces it through PUT /v1/children/:childId/day-parts (the delivery lane).
+ * See DEFAULT_DAY_PARTS: a placeholder that asserts no schedule beyond
+ * "overnight is quiet, evening is bedtime".
  */
 export async function createChildForGuardian(
   pool: pg.Pool, userId: string,
@@ -5219,12 +5327,7 @@ export async function createChildForGuardian(
       `INSERT INTO child_tz_interval (child_id, tz, valid, source)
        VALUES ($1, $2, tstzrange(now() - interval '1 year', NULL), 'manual')`,
       [c.id, input.homeTz]);
-    for (const [kind, starts, ends, reachable] of DEFAULT_DAY_PARTS) {
-      await q(
-        `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
-         VALUES ($1, $2, $3, $4, '{0,1,2,3,4,5,6}', $5, '[2020-01-01,2099-01-01)')`,
-        [c.id, kind, starts, ends, reachable]);
-    }
+    await insertDefaultDayParts(q, c.id);
     return { ok: true, child: {
       id: c.id, displayName: c.display_name, birthDate: c.birth_date, homeTz: c.home_tz,
       role: 'guardian',

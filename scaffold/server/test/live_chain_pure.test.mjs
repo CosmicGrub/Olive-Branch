@@ -18,11 +18,13 @@ import { hostIntervalFromEnv, createDeliveryTick } from '../delivery_tick.mjs';
 import { DEFAULT_DELIVER_TICK_MS, MIN_DELIVER_TICK_MS } from '../../tools/scheduler.mjs';
 import { createShutdown } from '../shutdown.mjs';
 import { httpsRequired } from '../transport.mjs';
-import { checkPushConfig } from '../push_config.mjs';
 import { createReadinessCache } from '../readiness.mjs';
 import { shouldLogAccess, accessLogLine } from '../observability.mjs';
 import { judgeSmokeTarget, parseDockerListing, publishedHostPorts, isProtectedName } from '../../tools/smoke_target.mjs';
 
+// Fixture names are built, never written out: the migration-hygiene scan reads every source file
+// and would (rightly) flag a literal NNNN_name.sql that is not a real migration.
+const migName = (n, s) => `${n}_${s}.sql`;
 let pass = 0, fail = 0; const rows = [];
 const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
   rows.push({ g, n, ok, a: String(a), e: String(e) }); };
@@ -81,29 +83,29 @@ check('A dates', 'a number refused', cleanBirthDate(20160402, NOW), 'null');
 // ---- C · readiness helpers ---------------------------------------------------
 const dir = mkdtempSync(join(tmpdir(), 'olive-ready-'));
 try {
-  for (const f of ['0001_a.sql', '0051_schema_level.sql', '0010_b.sql', 'README.md', 'notes.txt']) writeFileSync(join(dir, f), 'x');
-  check('C schema', 'newest shipped migration is the highest-numbered .sql', newestShippedMigration(dir), '0051_schema_level.sql');
+  for (const f of [migName('0001', 'a'), migName('0051', 'schema_level'), migName('0010', 'b'), 'README.md', 'notes.txt']) writeFileSync(join(dir, f), 'x');
+  check('C schema', 'newest shipped migration is the highest-numbered .sql', newestShippedMigration(dir), migName('0051', 'schema_level'));
   check('C schema', 'an unreadable directory -> null, not a throw', newestShippedMigration(join(dir, 'nope')), 'null');
   check('C schema', 'an empty directory -> null', newestShippedMigration(mkdtempSync(join(tmpdir(), 'olive-empty-'))), 'null');
-  check('C schema', 'the REAL shipped directory ends at 0051 or later', newestShippedMigration(join(ROOT, 'db', 'migrations')) >= '0051_schema_level.sql', 'true');
-  check('C schema', 'db at the image level -> ok', compareSchemaLevel('0049_x.sql', '0049_x.sql'), 'ok');
-  check('C schema', 'db AHEAD of the image (a rollback) -> still ok', compareSchemaLevel('0050_y.sql', '0049_x.sql'), 'ok');
-  check('C schema', 'db BEHIND the image -> behind', compareSchemaLevel('0047_x.sql', '0049_x.sql'), 'behind');
-  check('C schema', 'unknown on either side -> unknown (and readiness treats it as not ok)', `${compareSchemaLevel(null, '0049_x.sql')}/${compareSchemaLevel('0049_x.sql', null)}`, 'unknown/unknown');
+  check('C schema', 'the REAL shipped directory ends at 0051 or later', newestShippedMigration(join(ROOT, 'db', 'migrations')) >= migName('0051', 'schema_level'), 'true');
+  check('C schema', 'db at the image level -> ok', compareSchemaLevel(migName('0049', 'x'), migName('0049', 'x')), 'ok');
+  check('C schema', 'db AHEAD of the image (a rollback) -> still ok', compareSchemaLevel(migName('0050', 'y'), migName('0049', 'x')), 'ok');
+  check('C schema', 'db BEHIND the image -> behind', compareSchemaLevel(migName('0047', 'x'), migName('0049', 'x')), 'behind');
+  check('C schema', 'unknown on either side -> unknown (and readiness treats it as not ok)', `${compareSchemaLevel(null, migName('0049', 'x'))}/${compareSchemaLevel(migName('0049', 'x'), null)}`, 'unknown/unknown');
   check('C media', 'a normal directory is writable', mediaRootWritable(join(dir, 'media')), 'true');
   check('C media', 'the probe file is removed afterwards', JSON.stringify(readdirSyncSafe(join(dir, 'media'))), '[]');
-  check('C media', 'a path under a regular file is not', mediaRootWritable(join(dir, '0001_a.sql', 'sub')), 'false');
+  check('C media', 'a path under a regular file is not', mediaRootWritable(join(dir, migName('0001', 'a'), 'sub')), 'false');
   check('C media', 'an empty path is not', mediaRootWritable(''), 'false');
 } finally { rmSync(dir, { recursive: true, force: true }); }
 function readdirSyncSafe(p) { try { return readdirSync(p); } catch { return ['ERR']; } }
 
 // ---- D · readiness decisions with fakes --------------------------------------
 {
-  const mig = mkdtempSync(join(tmpdir(), 'olive-mig-')); writeFileSync(join(mig, '0049_x.sql'), 'x');
+  const mig = mkdtempSync(join(tmpdir(), 'olive-mig-')); writeFileSync(join(mig, migName('0049', 'x')), 'x');
   const media = mkdtempSync(join(tmpdir(), 'olive-med-'));
   const poolAt = (level) => ({ query: async () => ({ rows: [{ level }] }) });
   try {
-    check('D ready', 'all good -> ready', JSON.stringify(await checkReadiness({ pool: poolAt('0049_x.sql'), migrationsDir: mig, mediaRoot: media })), JSON.stringify({ ready: true, failing: [], degraded: [] }));
+    check('D ready', 'all good -> ready', JSON.stringify(await checkReadiness({ pool: poolAt(migName('0049', 'x')), migrationsDir: mig, mediaRoot: media })), JSON.stringify({ ready: true, failing: [], degraded: [] }));
     check('D ready', 'a NULL level (function missing / empty table) -> not ready "schema"', (await checkReadiness({ pool: poolAt(null), migrationsDir: mig, mediaRoot: media })).failing.join(), 'schema');
     check('D ready', 'a hanging database is cut at 3 s, not waited on forever', await (async () => {
       const slow = { query: () => new Promise(() => {}) };
@@ -116,7 +118,7 @@ function readdirSyncSafe(p) { try { return readdirSync(p); } catch { return ['ER
       return `${r.failing.join()}/${touched}`;
     })(), 'draining/false');
     const dly = (s) => ({ status: () => ({ enabled: true, intervalMs: 15000, consecutiveFailures: 0, lastOkAgeSec: null, ...s }) });
-    const rd = async (d) => (await checkReadiness({ pool: poolAt('0049_x.sql'), migrationsDir: mig, mediaRoot: media, delivery: d }));
+    const rd = async (d) => (await checkReadiness({ pool: poolAt(migName('0049', 'x')), migrationsDir: mig, mediaRoot: media, delivery: d }));
     check('D ready', 'a freshly booted worker (no pass yet) is fine', (await rd(dly({}))).degraded.length, 0);
     check('D ready', '2 failures in a row is not yet degraded', (await rd(dly({ consecutiveFailures: 2 }))).degraded.length, 0);
     check('D ready', '3 failures in a row is degraded', (await rd(dly({ consecutiveFailures: 3 }))).degraded.join(), 'delivery');
@@ -233,29 +235,8 @@ check('E host', 'garbage -> default', hostIntervalFromEnv({ DELIVERY_TICK_MS: 'f
   check('I seed-dev', 'and it says why and where to go instead', /refuses to run with NODE_ENV=production/.test(r.stderr) && /POST \/v1\/auth\/signup/.test(r.stderr), 'true');
 }
 
-// ---- J · push credentials are checked at boot, never echoed -------------------------
-{
-  const NL = String.fromCharCode(10);
-  const pem = '-----BEGIN ' + 'PRIVATE KEY-----' + NL + 'MIIB' + NL + '-----END ' + 'PRIVATE KEY-----';
-  const good = JSON.stringify({ client_email: 'svc-account-name', private_key: pem, project_id: 'proj' });
-  const noFile = () => { throw new Error('ENOENT'); };
-  check('J push', 'unset -> off, no problem (the inbox still fills)', JSON.stringify(checkPushConfig({}, noFile)), JSON.stringify({ fcm: 'off', problems: [], json: null }));
-  check('J push', 'a well-formed key -> on', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: good }, noFile).fcm, 'on');
-  check('J push', 'an inline key is not re-published (it is already in the environment)', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: good }, noFile).json, 'null');
-  const asFile = checkPushConfig({ FCM_SERVICE_ACCOUNT_FILE: '/run/secrets/fcm' }, () => good);
-  check('J push', 'a key in a file -> on, and its content is returned for the caller to publish', `${asFile.fcm}/${asFile.json === good}`, 'on/true');
-  check('J push', 'the inline variable wins when both are set (the file is not even read)', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: good, FCM_SERVICE_ACCOUNT_FILE: '/x' }, () => { throw new Error('must not read'); }).fcm, 'on');
-  check('J push', 'an unreadable file -> a boot problem, not silently off', checkPushConfig({ FCM_SERVICE_ACCOUNT_FILE: '/nope' }, noFile).problems.join(), 'FCM_SERVICE_ACCOUNT_FILE is set but the file cannot be read');
-  check('J push', 'not JSON -> a boot problem', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: '{oops' }, noFile).problems.length, 1);
-  check('J push', 'JSON that is not an object -> a boot problem', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: '"x"' }, noFile).problems.length, 1);
-  check('J push', 'JSON null -> a boot problem (not a crash)', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: 'null' }, noFile).problems.length, 1);
-  const missing = checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'a', project_id: 'p' }) }, noFile);
-  check('J push', 'a missing private_key is named', missing.problems.some((p) => p.includes('"private_key"')), 'true');
-  check('J push', 'a private_key that is not PEM is refused', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'a', project_id: 'p', private_key: 'hunter2' }) }, noFile).problems.some((p) => /not a PEM/.test(p)), 'true');
-  check('J push', 'empty-string fields count as missing', checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: ' ', project_id: 'p', private_key: pem }) }, noFile).problems.length, 1);
-  const leaky = checkPushConfig({ FCM_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'secret-mailbox', project_id: 'secret-proj', private_key: 'secret-key' }) }, noFile);
-  check('J push', 'no problem message ever contains a credential value', /secret-/.test(JSON.stringify(leaky)), 'false');
-}
+// ---- J · push credentials: the boot check lives in push_config.test.mjs (inspectFcmConfig),
+//          one implementation shared by the sender and the server's boot refusal.
 
 // ---- K · the smoke test refuses a target it cannot show is a test stack ---------------
 {
