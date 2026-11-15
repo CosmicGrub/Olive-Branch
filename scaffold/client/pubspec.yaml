@@ -124,6 +124,10 @@ dependencies:
   # which is a hash, not a cipher): an unaudited cipher is the one place not
   # to be clever.
   cryptography: 2.9.0
+  # The child's calm message player (lib/message_player.dart): plays a delivered video or voice message from a
+  # local file the app downloaded through its own http client. Official flutter.dev plugin (ExoPlayer on Android).
+  # Not yet built into an APK or run on a device by the change that added it.
+  video_player: ^2.14.1
 
 dev_dependencies:
   flutter_test:

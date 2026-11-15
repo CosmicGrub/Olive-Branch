@@ -72,6 +72,10 @@ String? cleanAllowanceCode(String raw) {
   return t;
 }
 
+/// The recovery code from the operator: the same rules as [cleanAllowanceCode] (the server reads both with the
+/// same 20 to 128 character window), kept as its own name so a call site says which code it holds.
+String? cleanRecoveryCode(String raw) => cleanAllowanceCode(raw);
+
 /// The invite code a grown-up was sent for a child (a UUID). Whitespace and the odd quote or bracket from a
 /// paste are removed; anything that is not a UUID after that is refused, so a typed or hostile string never
 /// reaches a URL path.
@@ -287,6 +291,7 @@ enum AccountAction {
   setPin,
   signIn,
   signOut,
+  recover,
 }
 
 /// Whether the action changes something on the server (so a lost reply leaves the outcome unknown).
@@ -351,6 +356,8 @@ const Set<String> kKnownServerReasons = <String>{
   'not_accepted', 'already_bootstrapped', 'email_already_registered', 'already_claimed',
   'already_confirmed', 'already_a_member', 'not_claimed', 'claimant_unavailable', 'edge_exists',
   'family_full', 'inviter_not_guardian',
+  // account recovery (migration 0053)
+  'recovery_code_required', 'invalid_recovery', 'recovery_locked', 'recovery_rate_limited',
   // the session
   'device_revoked', 'invalid_device_credential', 'account_deactivated', 'rate_limited',
 };
@@ -430,12 +437,27 @@ AccountProblem _problemForApi(ApiException e, AccountAction a) {
       return fix('Check her birth date. It has to be a real date that has already happened, and she must be under 18.');
     // PIN step-up
     case 'pin_incorrect':
-      return fix("That PIN isn't right.");
+      return a == AccountAction.recover
+          ? fix("That PIN isn't right for this account. After a few wrong tries the recovery code stops working "
+              'and you will need a new one.')
+          : fix("That PIN isn't right.");
     case 'pin_locked':
       return const AccountProblem('Too many wrong tries. Try again in 15 minutes.', ProblemKind.wait,
           reason: 'pin_locked');
     case 'pin_not_set':
-      return cannot("This account doesn't have a PIN yet. Set one first, then try again.");
+      return a == AccountAction.recover
+          ? cannot("This account doesn't have a PIN, so a recovery code can't be used for it. Ask whoever runs "
+              'your server for help.')
+          : cannot("This account doesn't have a PIN yet. Set one first, then try again.");
+    // account recovery
+    case 'recovery_code_required':
+      return fix('Enter the recovery code you were given. It is long, and has no spaces.');
+    case 'invalid_recovery':
+      return fix("That recovery code didn't work. It may have a typo, or it may already be used, cancelled or "
+          'have run out. Check it, or ask whoever runs your server for a new one.');
+    case 'recovery_locked':
+      return cannot('There were too many wrong PINs, so that recovery code has been cancelled. Ask whoever runs '
+          'your server for a new one.');
     // identity and session
     case 'guardian_session_required':
     case 'no_user_identity':

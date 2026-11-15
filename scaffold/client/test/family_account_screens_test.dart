@@ -1,5 +1,7 @@
 // OLIVE BRANCH — the optional family account, on screen. MASTERFILE section 8.5.13. Every screen is driven against the
 // in-memory server that checks each request against the real route table (test/support/).
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
@@ -150,13 +152,14 @@ void main() {
       expect(find.text('US Central'), findsOneWidget);
     });
 
-    testWidgets('sign in without an account explains how, and is honest that there is no recovery', (t) async {
+    testWidgets('sign in without an account explains how, and says plainly what to do when no phone is signed in', (t) async {
       await size(t);
       final Phone p = Phone(server);
       await pumpHub(t, p);
       await tapKey(t, 'tileSignIn');
       expect(find.textContaining('My own other device'), findsOneWidget);
-      expect(find.textContaining('Olive cannot sign you back in by itself'), findsOneWidget);
+      expect(find.textContaining('ask whoever runs your server for a recovery code'), findsOneWidget);
+      expect(find.byKey(const Key('haveRecoveryCode')), findsOneWidget);
     });
   });
 
@@ -455,6 +458,7 @@ void main() {
           InviteGrownUpScreen(service: s, childId: kid.id, childName: 'Ivy'),
           JoinInviteScreen(service: s),
           SignInScreen(service: s, baseUrl: kBase),
+          RecoverAccountScreen(service: s),
           SetAccountPinScreen(service: s),
           ConfirmGrownUpScreen(
               service: s,
@@ -473,6 +477,14 @@ void main() {
       });
     }
 
+    testWidgets('the recovery form reads on a big-text phone without overflowing, and offers no way to type a child\'s name', (t) async {
+      await size(t, w: 360, h: 640, scale: 2.0);
+      await t.pumpWidget(MaterialApp(home: RecoverAccountScreen(service: Phone(server).service)));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+      expect(find.byType(TextField), findsNWidgets(2));
+    });
+
     testWidgets('the hub shows no raw code, status number or underscore word anywhere', (t) async {
       await size(t);
       final Phone p = await signedUp('Sam');
@@ -482,6 +494,104 @@ void main() {
       final Iterable<String> texts = t.widgetList<Text>(find.byType(Text)).map((Text w) => w.data ?? '');
       for (final String s in texts) {
         expect(RegExp(r'[a-z]+_[a-z_]+').hasMatch(s), isFalse, reason: '"$s"');
+      }
+    });
+  });
+
+  group('getting back in with a recovery code', () {
+    const String rcode = 'recovery-code-0123456789abcdef-xyz';
+
+    Future<void> pumpRecover(WidgetTester t, Phone p) async {
+      await t.pumpWidget(MaterialApp(home: RecoverAccountScreen(service: p.service)));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('the sign-in page of a phone with no sign-in offers it, in adult words, and a screenshot block', (t) async {
+      await size(t);
+      final Phone p = Phone(server);
+      await t.pumpWidget(MaterialApp(home: SignInScreen(service: p.service, baseUrl: kBase)));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('haveRecoveryCode')), findsOneWidget);
+      expect(find.textContaining('recovery code'), findsWidgets);
+      await tapKey(t, 'haveRecoveryCode');
+      expect(find.byType(RecoverAccountScreen), findsOneWidget);
+      expect(find.byType(SensitiveScreen), findsWidgets);
+      expect(server.requests, isEmpty, reason: 'looking at the page asks the server nothing');
+    });
+
+    testWidgets('empty or malformed boxes are caught in words before anything is sent', (t) async {
+      await size(t);
+      final Phone p = Phone(server);
+      await pumpRecover(t, p);
+      await tapKey(t, 'submitRecovery');
+      expect(problemText(t), contains('Enter the recovery code'));
+      await type(t, 'recoveryCode', rcode);
+      await tapKey(t, 'submitRecovery');
+      expect(problemText(t), contains('Enter your PIN'));
+      await type(t, 'recoveryPin', '12');
+      await tapKey(t, 'submitRecovery');
+      expect(problemText(t), contains('4 to 8 digits'));
+      expect(server.requests, isEmpty);
+    });
+
+    testWidgets('a wrong PIN is a plain sentence, the PIN box is emptied, and the right PIN then gets back in', (t) async {
+      await size(t);
+      final Phone lost = await signedUp('Sam');
+      final DeviceIdentity oldId = (await lost.identities.load())!;
+      server.addRecoveryCode(oldId.targetId, rcode);
+      AuthSession.use(null); // the new phone is a different process: it has no session of its own yet
+      final Phone fresh = Phone(server);
+      await pumpRecover(t, fresh);
+      await type(t, 'recoveryCode', rcode);
+      await type(t, 'recoveryPin', '0000');
+      await tapKey(t, 'submitRecovery');
+      expect(problemText(t), contains("isn't right for this account"));
+      expect(problemText(t), isNot(contains('pin_incorrect')));
+      expect(t.widget<TextField>(find.descendant(of: find.byKey(const Key('recoveryPin')), matching: find.byType(TextField))).controller!.text, isEmpty);
+      await type(t, 'recoveryPin', '4821');
+      await tapKey(t, 'submitRecovery');
+      expect(find.byKey(const Key('recoverDone')), findsOneWidget);
+      expect(find.textContaining('signed out'), findsOneWidget);
+      expect(t.widgetList<TextField>(find.byType(TextField)), isEmpty, reason: 'the secrets are off the screen');
+      expect(await fresh.identities.load(), isNotNull);
+      expect(server.devices[oldId.deviceId]!.revoked, isTrue);
+    });
+
+    testWidgets('a code that does not work reads as a sentence with no code or status in it', (t) async {
+      await size(t);
+      final Phone p = Phone(server);
+      await pumpRecover(t, p);
+      await type(t, 'recoveryCode', 'a-code-that-was-never-issued-123');
+      await type(t, 'recoveryPin', '4821');
+      await tapKey(t, 'submitRecovery');
+      final String msg = problemText(t);
+      expect(msg, contains("didn't work"));
+      expect(RegExp(r'[a-z]+_[a-z_]+|\b40[0-9]\b|\b423\b').hasMatch(msg), isFalse, reason: msg);
+      expect(await p.identities.load(), isNull);
+    });
+
+    testWidgets('after a dead sign-in is found out, the sign-in page shows the way back in', (t) async {
+      await size(t);
+      final Phone p = await signedUp('Sam');
+      final DeviceIdentity id = (await p.identities.load())!;
+      server.devices[id.deviceId] = (userId: id.targetId, credential: id.deviceCredential!, revoked: true);
+      await t.pumpWidget(MaterialApp(home: SignInScreen(service: p.service, baseUrl: kBase)));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('haveRecoveryCode')), findsNothing, reason: 'while it looks signed in');
+      AuthSession.use(p.session);
+      await tapKey(t, 'checkSignIn');
+      expect(find.byKey(const Key('signInResult')), findsOneWidget);
+      expect(find.byKey(const Key('haveRecoveryCode')), findsOneWidget);
+    });
+
+    test('no child-side file imports the recovery screen or knows the word', () {
+      final Iterable<FileSystemEntity> files = Directory('lib').listSync().where((FileSystemEntity f) =>
+          f.path.endsWith('.dart') && RegExp(r'(child_|inbox|receipt|message_player)').hasMatch(f.uri.pathSegments.last));
+      for (final FileSystemEntity f in files) {
+        final String src = File(f.path).readAsStringSync();
+        expect(src.contains('RecoverAccountScreen'), isFalse, reason: f.path);
+        expect(src.contains('recoverAccount'), isFalse, reason: f.path);
+        expect(src.toLowerCase().contains('recovery code'), isFalse, reason: f.path);
       }
     });
   });

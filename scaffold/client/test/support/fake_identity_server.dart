@@ -20,6 +20,15 @@ class FakeUser {
   int pinFailures = 0;
 }
 
+/// An operator-issued recovery code (migration 0053): one account, five wrong PINs and it is burned.
+class FakeRecovery {
+  FakeRecovery(this.userId, this.expiresAt);
+  final String userId;
+  final DateTime expiresAt;
+  int wrong = 0;
+  bool burned = false, used = false;
+}
+
 class FakeChild {
   FakeChild(this.id, this.name, this.birthDate, this.tz);
   final String id, name, birthDate, tz;
@@ -56,6 +65,7 @@ class FakeIdentityServer {
   final List<RecordedRequest> requests = <RecordedRequest>[];
 
   final Set<String> allowances = <String>{};
+  final Map<String, FakeRecovery> recoveries = <String, FakeRecovery>{};
   final Map<String, FakeUser> users = <String, FakeUser>{};
   final Map<String, FakeChild> children = <String, FakeChild>{};
   final Map<String, Set<String>> guardianship = <String, Set<String>>{}; // childId -> userIds
@@ -76,6 +86,11 @@ class FakeIdentityServer {
 
   String addAllowance(String token) {
     allowances.add(token);
+    return token;
+  }
+
+  String addRecoveryCode(String userId, String token, {Duration life = const Duration(hours: 72)}) {
+    recoveries[token] = FakeRecovery(userId, now().add(life));
     return token;
   }
 
@@ -144,6 +159,7 @@ class FakeIdentityServer {
     final String path = req.url.path;
     // ---- no-session routes ----
     if (path == '/v1/auth/signup') return _signup(body);
+    if (path == '/v1/auth/recover') return _recover(body);
     if (path == '/v1/auth/session/refresh') return _refresh(body);
     final RegExpMatch? inv = RegExp(r'^/v1/guardian-invites/([^/]+)(?:/(accept|bootstrap))?$').firstMatch(path);
     if (inv != null && route.noSession) return _inviteOpen(req.method, inv.group(1)!, inv.group(2), body);
@@ -202,6 +218,46 @@ class FakeIdentityServer {
     return _json(201, <String, Object>{
       'token': sessionFor(u.id), 'expiresAt': now().add(const Duration(hours: 1)).toIso8601String(),
       'userId': u.id, 'deviceId': dev, 'deviceCredential': devices[dev]!.credential,
+    });
+  }
+
+  // POST /v1/auth/recover, as server/routes.mjs + packages/db/src/pool.ts recoverAccount() answer it.
+  http.Response _recover(Map<String, dynamic> b) {
+    final Object? raw = b['recoveryCode'];
+    final String code = raw is String ? raw.replaceAll(RegExp(r'\s+'), '') : '';
+    if (code.length < 20 || code.length > 128) return _json(400, <String, Object>{'error': 'recovery_code_required'});
+    final Object? pin = b['pin'];
+    if (pin is! String || !RegExp(r'^[0-9]{4,8}$').hasMatch(pin)) return _json(400, <String, Object>{'error': 'pin_required'});
+    final FakeRecovery? r = recoveries[code];
+    if (r == null || r.used || r.burned || !r.expiresAt.isAfter(now())) {
+      return _json(403, <String, Object>{'error': 'invalid_recovery'});
+    }
+    final FakeUser u = users[r.userId]!;
+    if (u.pin == null) return _json(403, <String, Object>{'error': 'pin_not_set'});
+    if (u.pinFailures >= 5) return _json(403, <String, Object>{'error': 'pin_locked'});
+    if (u.pin != pin) {
+      u.pinFailures++;
+      r.wrong++;
+      if (r.wrong >= 5) {
+        r.burned = true;
+        return _json(423, <String, Object>{'error': 'recovery_locked'});
+      }
+      return _json(403, <String, Object>{'error': 'pin_incorrect'});
+    }
+    u.pinFailures = 0;
+    r.used = true;
+    int out = 0;
+    for (final String id in devices.keys.toList()) {
+      final ({String userId, String credential, bool revoked}) d = devices[id]!;
+      if (d.userId == u.id && !d.revoked) {
+        devices[id] = (userId: d.userId, credential: d.credential, revoked: true);
+        out++;
+      }
+    }
+    final String dev = mintDevice(u.id);
+    return _json(201, <String, Object>{
+      'token': sessionFor(u.id), 'expiresAt': now().add(const Duration(hours: 1)).toIso8601String(),
+      'userId': u.id, 'deviceId': dev, 'deviceCredential': devices[dev]!.credential, 'devicesSignedOut': out,
     });
   }
 
@@ -333,13 +389,16 @@ class FakeIdentityServer {
   http.Response _inviteAct(FakeUser me, String id, String act, Map<String, dynamic> b) {
     final FakeInvite? i = invites[id];
     if (act == 'claim') {
-      if (i == null || me.email != i.email) return _json(404, <String, Object>{'error': 'not_found'});
+      // An account with an email on file must match it; one with NO email (every sign-up) may claim with the
+      // invite id alone (pool.ts claimGuardianInvite).
+      if (i == null || (me.email != null && me.email != i.email)) return _json(404, <String, Object>{'error': 'not_found'});
       if (i.revoked) return _json(410, <String, Object>{'error': 'revoked'});
       if (i.declined) return _json(410, <String, Object>{'error': 'declined'});
       if (i.confirmed) return _json(409, <String, Object>{'error': 'already_confirmed'});
       if (!i.accepted) return _json(409, <String, Object>{'error': 'not_accepted'});
       if (!i.expiresAt.isAfter(now())) return _json(410, <String, Object>{'error': 'expired'});
       if (i.claimant != null && i.claimant != me.id) return _json(409, <String, Object>{'error': 'already_claimed'});
+      if (guardianship[i.childId]?.contains(me.id) ?? false) return _json(409, <String, Object>{'error': 'already_a_member'});
       i.claimant = me.id;
       return _json(200, <String, Object>{'ok': true, 'status': 'waiting_for_confirmation'});
     }
