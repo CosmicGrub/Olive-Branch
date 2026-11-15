@@ -2052,7 +2052,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // The receipt is FIXED at this moment: the zone she was in and the
       // day-part that was active are written beside opened_at, so a later
       // edit of her schedule or time-zone timeline can never re-word an old
-      // receipt (migration 0050). Computing it can never block opening: a
+      // receipt (migration 0049). Computing it can never block opening: a
       // failure here leaves the columns NULL and the reader falls back.
       let snapCtx = null;
       try { snapCtx = await childCtxFor(pool, c.childId); } catch { snapCtx = null; }
@@ -4120,12 +4120,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         if (state === 'opened' && r.opened_at && ctx) {
           const at = DateTime.fromISO(r.opened_at, { zone: 'utc' });
           if (r.opened_zone) {
-            // Fixed when she opened it (migration 0050): later edits of her
+            // Fixed when she opened it (migration 0049): later edits of her
             // schedule or zone timeline do not touch this.
             receipt = openReceipt({ homeTz: r.opened_zone, tzIntervals: [], dayParts: [] },
               at, r.opened_part ?? null);
           } else {
-            // Opened before 0050: no snapshot exists, recompute as it always did.
+            // Opened before the snapshot columns: no snapshot exists, recompute as it always did.
             const snap = receiptSnapshot(ctx, at);
             receipt = openReceipt(ctx, at, snap.part);
           }
@@ -4252,7 +4252,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // in <tz>": it closes the interval that was open at that moment and opens a
   // new one, so history is never rewritten. (Receipts do not read it after the
   // fact: the zone and day-part are recorded when she opens a message,
-  // migration 0050, so even a back-dated move leaves an opened receipt alone.) The zone name is checked against the IANA database twice
+  // migration 0049, so even a back-dated move leaves an opened receipt alone.) The zone name is checked against the IANA database twice
   // (luxon here, olive_valid_tz() in the table's CHECK).
   const TZ_HISTORY_DAYS = 30, TZ_FUTURE_DAYS = 365;
   const tzView = (rows) => ({

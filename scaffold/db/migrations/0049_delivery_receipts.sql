@@ -2,7 +2,7 @@
 --  OLIVE BRANCH -- delivery receipts and the delivery worker's index
 --  MASTERFILE section 7.13 (delivery timestamps and receipts), section 4.5.
 --
---  Two facts the delivery chain could not record before this file:
+--  Three facts the delivery chain could not record before this file:
 --    1. WHEN a message became hers. delivery_intent only had `state` and
 --       `materialized_at` (when the sweep last scheduled it), so the inbox
 --       label "delivered N ago" was really "scheduled N ago", and a sender had
@@ -10,7 +10,9 @@
 --    2. WHEN she opened it. POST .../inbox/:id/opened flipped `state` and
 --       nothing else.
 --
---  Both columns are nullable on purpose and are NOT backfilled here: this
+--    3. WHAT was true when she opened it (zone and day-part), see below.
+--
+--  All columns are nullable on purpose and are NOT backfilled here: this
 --  file may run as the table owner under FORCE ROW LEVEL SECURITY, where an
 --  UPDATE touching rows would silently match none of them. Readers use
 --  COALESCE(delivered_at, materialized_at), which is exactly what the old
@@ -24,7 +26,27 @@ BEGIN;
 
 ALTER TABLE delivery_intent
   ADD COLUMN delivered_at timestamptz,
-  ADD COLUMN opened_at    timestamptz;
+  ADD COLUMN opened_at    timestamptz,
+  -- What was true when she opened it, so a receipt is FIXED at that moment and
+  -- a later edit of her day-parts or a back-dated zone move cannot re-word it:
+  --   opened_zone  the IANA zone she was in at that instant
+  --   opened_part  the day-part kind that was active (NULL = none)
+  -- A reader that finds opened_zone set uses it and never consults the
+  -- schedule again; NULL (rows opened before this) falls back to computing.
+  -- A zone name and a part name: never a count, never on a child surface.
+  ADD COLUMN opened_zone  text,
+  ADD COLUMN opened_part  text;
+
+ALTER TABLE delivery_intent
+  ADD CONSTRAINT delivery_intent_opened_zone_valid
+    CHECK (opened_zone IS NULL OR olive_valid_tz(opened_zone)),
+  ADD CONSTRAINT delivery_intent_opened_part_valid
+    CHECK (opened_part IS NULL OR opened_part IN
+      ('wake','before_school','school','after_school','activity',
+       'dinner','wind_down','bedtime','asleep','free')),
+  -- a part without a zone would be a half-written snapshot
+  ADD CONSTRAINT delivery_intent_opened_snapshot_whole
+    CHECK (opened_part IS NULL OR opened_zone IS NOT NULL);
 
 -- An opened row was necessarily delivered first; a row that has not been
 -- delivered cannot have been opened. (Rows from before this migration have

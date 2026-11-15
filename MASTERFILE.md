@@ -2491,7 +2491,7 @@ Owner requirement: the server must build in security against those who try to pe
 
 **Tests.** `packages/db/test/health_views_force_rls.test.mjs` (34 assertions, wired in `tools/verify.sh`) builds the production shape (the real unprivileged `app_owner` migrates and owns a fresh database) and asserts, against the superuser's raw counts: the fixture's true values (five non-zero), that the superuser, `health_monitor`, `app_owner` with no role, as a guardian, as a child and as `system` all read exactly those values, that `health_monitor` is denied every base table and row-level view (and raising `app.health_probe` or `app.role` does not help), that the flag is restored and a guardian still sees only her own family, and that `health_alert.test.mjs` passes on that database (superuser seeds, `app_owner` reads) as well as on the verify.sh-style database. `rls_coverage.test.mjs` now reads the catalog check from `health_counts()`.
 
-### 7.16 The delivery chain — as shipped (server lane `delivery`, migrations 0049 and 0050)
+### 7.16 The delivery chain — as shipped (server lane `delivery`, migration 0049)
 
 **The defect.** A message a grown-up sent was stored `pending` and nothing in the running system ever moved it to `delivered`, so the child's inbox (which lists only `delivered` and `opened` rows) stayed empty. The worker function existed (`claim_due_intents()`, migration 0002) with no caller; no route could create a day-part or a time-zone interval, so a real child's send failed with `daypart_undefined`; the inbox gave the app no media reference; and the media route did not check that a message had been delivered.
 
@@ -2501,7 +2501,7 @@ Owner requirement: the server must build in security against those who try to pe
 
 **Receipts (migration 0049).** `delivery_intent.delivered_at` is stamped inside `claim_due_intents()`; `opened_at` when she opens it. Rows delivered before the migration have neither and fall back to `materialized_at`, which is what the inbox label always used. Both are timestamps, never counts. A `CHECK` keeps `opened_at` from preceding `delivered_at`.
 
-**A receipt is fixed when she opens it (migration 0050).** `opened_zone` (the IANA zone she was in) and `opened_part` (the day-part kind that was active, or none) are written beside `opened_at`, and `GET .../sent` builds the receipt phrase from them. Editing her day-parts or recording a time-zone move, even a back-dated one, therefore cannot re-word an old receipt. A row opened before 0050 has both `NULL` and is recomputed from the current schedule as before. Both are a zone name and a part name, never a count, and neither is returned on a child surface. A `CHECK` rejects an unknown zone or kind, and a part without a zone.
+**A receipt is fixed when she opens it (also migration 0049).** `opened_zone` (the IANA zone she was in) and `opened_part` (the day-part kind that was active, or none) are written beside `opened_at`, and `GET .../sent` builds the receipt phrase from them. Editing her day-parts or recording a time-zone move, even a back-dated one, therefore cannot re-word an old receipt. A row opened before these columns existed has both `NULL` and is recomputed from the current schedule as before. Both are a zone name and a part name, never a count, and neither is returned on a child surface. A `CHECK` rejects an unknown zone or kind, and a part without a zone.
 
 **Routes.**
 - `GET .../inbox` now also returns `media_id` (the artifact id, never a storage key), omits entries past `expires_at`, and labels "delivered N ago" from `delivered_at`.
