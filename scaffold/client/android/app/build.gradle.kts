@@ -115,6 +115,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // The Jitsi SDK (React Native underneath) reads string resources at startup
+            // (org.jitsi.meet.sdk.DropboxModule). Resource shrinking removed them and a
+            // release build crashed on launch with "String resource ID #0x0". Code shrinking
+            // stays on; only unused-resource removal is off. See proguard-rules.pro.
+            isShrinkResources = false
         }
     }
 }
