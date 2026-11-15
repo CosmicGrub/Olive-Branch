@@ -5285,9 +5285,16 @@ picture is optional and works only for devices in the same place). Layers:
    approve others); a child tablet has no server-side family setting this could restrict, so no more is claimed.
 5. **Keep watch.** The device's public key is pinned. A changed key pauses the connection ("Paused: this device
    changed. Is this still her tablet?"); it is never silently trusted again. "Is this device still yours?" appears
-   after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). "Stop this
-   connection" needs the grown-up's PIN, refuses that key from then on and says plainly that the tablet keeps what
-   is on it until it is reset. A plain-language history is kept as an append-only, hash-chained list (a removed,
+   after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). **Contact is a
+   real event now:** every time the grown-up's phone scans a tablet's signed unlock picture (More > "Unlock a child's
+   device with my phone"), the tablet has proved it holds the key pinned for its certificate, so the phone records the
+   meeting (which restarts the 60-day count) or, if the key is different, unlocks nothing for that scan. A different
+   key under a known certificate id writes nothing to the book (the id is printed in the clear on the real tablet's own
+   picture, so a stranger's picture must not be able to pause the real tablet); a pause that is already in the book
+   still refuses. A tablet from before the proof existed is still answered but counts as no meeting.
+   "Stop this connection" needs the grown-up's PIN, refuses that key from then on, and says plainly that the tablet
+   keeps what is on it until it is reset; **the tablet is told it is disconnected, and stops honouring its pairing, the
+   next time it is brought to this phone** (see "Pairing hardening" below). A plain-language history is kept as an append-only, hash-chained list (a removed,
    reordered or edited line shows a warning; this is tamper-evident, not tamper-proof). "Make a new code" gives
    the picture a new salt and counter: every old photo stops matching its windows; connected devices keep working.
 **Other families.** A grown-up's picture, and a child device's picture once it belongs to a family, carry the
@@ -5297,7 +5304,7 @@ picture at scan time with neutral wording on a grown-up's phone ("This code belo
 was shared.") and silently on a child device, and a child that holds a certificate never starts an exchange with a
 window of a different family. **Not built / honest limits:** a second grown-up phone is a separate pairing and the
 "both parents must approve" switch and the helper role need a family object that does not exist yet; "Stop" does
-not wipe an offline tablet; the child gate on a device that is not yet paired is soft (it can show a public picture,
+not wipe an offline tablet (it is told, and stops honouring its pairing, only when brought to the phone); the child gate on a device that is not yet paired is soft (it can show a public picture,
 which is harmless); the Match check is about 21 bits, one try per request, a human check; an 8-digit PIN is about 26
 bits so security rests on the attempt limits; real two-device mDNS verification and the external review below are
 still outstanding; the Match values come from a new key-derivation label in `cpace.dart` (`PakeKey.match`), which
@@ -5325,12 +5332,54 @@ fingerprint, the purpose, a 2 minute expiry); the grown-up's phone (More > "Unlo
 checks it names a tablet that phone connected and has not forgotten, asks for the grown-up's PIN, and signs exactly
 those fields; the tablet verifies the signature against the grown-up key it pinned at pairing, that the nonce is the
 single outstanding one and unexpired, and consumes it. A photographed picture is useless afterwards
-(`unlock_challenge.dart`). **Phone-only** (a switch when connecting, or later in More > "Connected child devices"):
-the tablet is never given a PIN check at all, or deletes it when the next signed answer carries the flag; the
-keypad is not offered. It only ever turns on; turning it off needs the tablet connected afresh. **Forget this
-tablet** removes it from the phone's list so the phone stops answering it; the tablet keeps its connection until it
-is disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the phone)
-or its data is cleared. The connection grants no account or server access.
+(`unlock_challenge.dart`). **Phone-only is the default** for a newly connected tablet (a switch when connecting, on
+unless the grown-up turns it off, or later in More > "Connected child devices"): the tablet is never given a PIN check
+at all, or deletes it when the next signed answer carries the flag; the keypad is not offered. It only ever turns on;
+turning it off needs the tablet connected afresh. **Forget this tablet** removes it from the phone's list so the phone
+stops unlocking it or playing with it, **and marks its key as forgotten**: the next time that tablet is brought to the
+phone, the phone answers its picture with a signed "you are disconnected" notice instead of an unlock, and the tablet
+drops its pairing. A tablet that is never brought near the phone is never told (there is no server and no push), and
+can still be disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the
+phone) or have its data cleared. A forgotten tablet may be connected again on purpose; a **stopped** one is turned
+away outright. The connection grants no account or server access.
+
+**Pairing hardening: protocol version 3, no typed-code check by default, certificates that expire, revocation and live
+keeping-watch (built, headless-tested; not run on two real devices).**
+1. *Who the grown-up is travels only inside the key.* The first answer of the pairing exchange ("hello-ok") is bare: the
+   session id, the protocol version, a blinded hint for a child that already belongs to a family, and a blinded hint for
+   a child that already knows which grown-up it is looking for. The grown-up's name, family id and public key come back
+   only after key confirmation, sealed under the exchange's own key, and the child checks them (fingerprint, expected
+   grown-up, expected family) before it shows the match step or polls. A device on the same Wi-Fi holding only the
+   window handle learns nothing about the grown-up. The channel identifier of the key exchange no longer holds the
+   name or the family id; it holds the child's key and, when the child knows it from a QR or a scanned picture, the
+   grown-up's fingerprint (the session id is its own CPace input). Version 3 is the CPace draft-21 exchange with that
+   bare identifier; a build that speaks another version (2 put the name and family id in the clear and in the identifier)
+   gets silence for its key-exchange message and the child ends on its usual calm "could not connect" screen
+   (`PairingFailure.notMatched`, never a version message); nothing about the grown-up is shown to a child in either case.
+2. *No typed-code check by default.* A newly connected tablet holds no verifier of the grown-up's PIN, so a copy of its
+   files gives nothing to guess against offline; only the grown-up's phone unlocks it. A grown-up can opt in to the
+   keypad when connecting (the screen says a copy of the tablet's files could be used to guess the code). A tablet
+   connected earlier keeps its check until the grown-up turns "Only my phone unlocks it" on (the next phone unlock
+   deletes the check); nothing is changed silently.
+3. *Certificates expire; the phone renews them; the tablet is told when it is disconnected.* A pairing certificate carries
+   a signed end date (180 days; v1 certificates without one are given a 90 day grace, counted from the first run of this
+   build and not restartable, to meet the phone once). When a tablet's end date passes, the tablet stops admitting play
+   and stops accepting a typed code, but the grown-up's phone still unlocks it, and that same meeting hands it a renewed
+   certificate (offered when 90 days or less remain, or when it has none). A child sees nothing different. The tablet
+   compares the signed date with its own clock, so a tablet whose clock is set back stays good for longer.
+4. *Live keeping-watch.* See "Keep watch" above: the unlock meeting calls the trust book for a tablet that proves its key.
+**Not built / honest limits of this hardening:** a "meeting" proves that someone holding the tablet's key (or showing a
+picture of its screen within the picture's two minutes) was at the phone, not that the tablet itself was: the phone keeps
+no used-challenge list and records the meeting when it scans, before the grown-up types a code, so a photograph can
+restart the 60-day count; a lost or stolen tablet that is never brought near the phone is never
+told and keeps working until its certificate ends and (for a legacy certificate) its grace ends, and its play
+admission on the adult side is refused once the phone forgets or stops it; the adult phone does not refuse a child
+whose end date passed (the grown-up's Stop and Forget are the controls); a stolen tablet that kept its opt-in typed-code
+check can still have it guessed offline; the wording of the "paused" and "disconnected" screens on the grown-up's phone
+has not been seen by a real grown-up; the other grown-up devices of a family do not share the forgotten and stopped
+lists (a second grown-up's phone is a separate pairing); play admission between devices on the same network does not
+yet call the trust book (only the unlock meeting does); the key exchange still needs the external review below, and
+this change moved the grown-up's identity into a new sealed message that review must also cover.
 
 **Honest limits.** `cpace.dart` is still our own implementation (no maintained Dart CPace library exists). Down to
 the shared key ISK it now follows draft-irtf-cfrg-cpace-21 for CPACE-X25519-SHA512 and reproduces the draft's
@@ -5343,9 +5392,9 @@ Olive's own layer on top of ISK and are not part of CPace. The draft asks for co
 achieved**: Dart `BigInt` is not constant time, so the two password-dependent operations of the Elligator2 map
 run on randomly blinded operands (the output is unchanged; a test proves it), which narrows but does not close the
 leak for a local attacker measuring the device. The code **still needs an external cryptographic review before
-families rely on it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
-lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its keystore could brute-force a
-short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
+families rely on it**. A tablet whose grown-up opted in to the keypad keeps a salted slow hash of the grown-up's PIN (so a grown-up
+can type it there to leave the lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its
+keystore could brute-force a short PIN. Tablets connected after the pairing hardening hold no such hash by default. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
 online relay of windows through the server is **not
 built**; the server pairing routes are unchanged and still work. No device has run this yet.
 
@@ -6703,7 +6752,7 @@ drift. Nothing is written that is not in it.
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
 | `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
-| `guardian.local-guardian.trust` | On a grown-up's device: the paired devices' trust book (who each device is, when added, settling in, paused or stopped) and the plain-language history of those changes, kept in order so an edit can be noticed. Never shown on a child's screen. | **Yes** |
+| `guardian.local-guardian.trust` | On a grown-up's device: which child devices it added and when it last met them, the keys it stopped or forgot, and the plain-language, hash-chained history (added, paused, stopped, forgot). | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |

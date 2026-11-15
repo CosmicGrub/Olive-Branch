@@ -55,6 +55,10 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
       _busy = false;
       if (v == null) {
         _message = "That is not a picture from a tablet you connected, or it ran out of time. Ask the tablet for a new one.";
+      } else if (v.verdict == UnlockVerdict.paused) {
+        // The watch rule: a tablet that proves a different key than the one connected is never unlocked from here.
+        _message = "This tablet looks different from the one you connected as ${v.pausedName}. It is paused. "
+            'Forget it in "Connected child devices" and connect it again if it is yours.';
       } else {
         _view = v;
         _message = null;
@@ -79,7 +83,7 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
     // Re-check at the moment of signing: the tablet may have been forgotten, or the challenge may have run out.
     final ChallengeView? again = await widget.responder.inspect(_view!.challenge.toQr());
     if (!mounted) return;
-    if (again == null) {
+    if (again == null || again.verdict == UnlockVerdict.paused) {
       setState(() { _busy = false; _s = _S.scan; _message = 'That picture ran out of time. Ask the tablet for a new one.'; });
       return;
     }
@@ -88,9 +92,11 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
     setState(() { _busy = false; _answer = grant; _s = _S.answer; });
   }
 
-  String _what(UnlockPurpose p) => p == UnlockPurpose.forget
-      ? 'disconnect ${_view!.kid.deviceName} from you'
-      : 'unlock ${_view!.kid.deviceName}';
+  String _what(UnlockPurpose p) => _view!.verdict == UnlockVerdict.revoked
+      ? 'tell this tablet it is no longer connected to you'
+      : p == UnlockPurpose.forget
+          ? 'disconnect ${_view!.kid!.deviceName} from you'
+          : 'unlock ${_view!.kid!.deviceName}';
 
   @override
   Widget build(BuildContext context) => Scaffold(

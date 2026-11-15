@@ -102,6 +102,17 @@ await admin.query('COMMIT');
 
 const SECRET = Buffer.from('n'.repeat(32), 'utf8');
 const NOW = Date.now();
+
+// True when `shown` ('h:mm a') is the wall clock in `zone` at ANY minute between
+// the two real-clock readings taken around the request (t0 <= t <= t1, ms). The
+// route reads the live clock, so no single earlier reading can be the answer.
+const wallClockWithin = (shown, zone, t0, t1) => {
+  for (let t = t0; ; t += 60_000) {
+    const at = Math.min(t, t1);
+    if (DateTime.fromMillis(at, { zone: 'utc' }).setZone(zone).toFormat('h:mm a') === shown) return true;
+    if (at >= t1) return false;
+  }
+};
 const api = new Api(SECRET, dbPort(pool), () => NOW);
 registerRoutes(api, pool);
 
@@ -121,7 +132,13 @@ const get = (childId, tok) => api.handle(
 //     had ever exercised against an actual Postgres row before this one.
 // ===========================================================================
 {
+  // The route reads the REAL wall clock (DateTime.utc()), not this suite's
+  // frozen NOW, so the expected value is the set of minutes the clock showed
+  // from just before the request to just after it. Comparing against a single
+  // earlier reading is a minute-boundary race (it failed CI at x:46 vs x:47).
+  const t0 = Date.now();
   const res = await get(CHILD_REAL_TZ, dadTok);
+  const t1 = Date.now();
   check('A real interval', 'authorized guardian -> 200', res.status, 200);
   check('A real interval', 'zone is the REAL interval tz, not home_tz',
     res.body.zone, 'America/Los_Angeles');
@@ -129,14 +146,17 @@ const get = (childId, tok) => api.handle(
     res.body.zone === 'America/New_York', 'false');
 
   // Independently compute the expected wall-clock answer the SAME way the
-  // route does, from the SAME frozen `now` the route's Api instance uses --
+  // route does, from the real clock readings taken around the request --
   // proving the full pipeline (real row -> zone -> childLocalTime/zoneAbbr),
-  // not just that some non-home_tz string happened to come back.
-  const expected = DateTime.fromMillis(NOW, { zone: 'utc' }).setZone('America/Los_Angeles');
+  // not just that some non-home_tz string happened to come back. The zone
+  // abbreviation may legitimately change inside the window (a DST switch), so
+  // either end's abbreviation is accepted, never a third value.
+  const abbrAt = (t) => DateTime.fromMillis(t, { zone: 'utc' })
+    .setZone('America/Los_Angeles').toFormat('ZZZZ');
   check('A real interval', 'childLocalTime matches independently-computed LA wall clock',
-    res.body.childLocalTime, expected.toFormat('h:mm a'));
+    wallClockWithin(res.body.childLocalTime, 'America/Los_Angeles', t0, t1), 'true');
   check('A real interval', 'zoneAbbr matches independently-computed LA abbreviation',
-    res.body.zoneAbbr, expected.toFormat('ZZZZ'));
+    [abbrAt(t0), abbrAt(t1)].includes(res.body.zoneAbbr), 'true');
 
   // The owning child herself can also read it, and must get the identical,
   // real interval-derived answer -- not some child-safe stand-in.
@@ -151,13 +171,14 @@ const get = (childId, tok) => api.handle(
 //     genuinely undefined against the real query), not a fabricated array.
 // ===========================================================================
 {
+  const t0 = Date.now();
   const res = await get(CHILD_FALLBACK, dadTok);
+  const t1 = Date.now();
   check('B fallback', 'authorized guardian -> 200', res.status, 200);
   check('B fallback', 'zone falls back to the real child.home_tz', res.body.zone, 'America/Denver');
 
-  const expected = DateTime.fromMillis(NOW, { zone: 'utc' }).setZone('America/Denver');
   check('B fallback', 'childLocalTime matches independently-computed Denver wall clock',
-    res.body.childLocalTime, expected.toFormat('h:mm a'));
+    wallClockWithin(res.body.childLocalTime, 'America/Denver', t0, t1), 'true');
 
   // Honest absence downstream too: no custody_order row for this child, so
   // sleepsUntilHandover must be null, never a guessed countdown -- proven

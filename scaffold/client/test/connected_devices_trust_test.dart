@@ -101,6 +101,22 @@ void main() {
     expect(find.byKey(const Key('connectedEmpty')), findsOneWidget);
   });
 
+  testWidgets('forget also marks the tablet\'s key, so it is told it is disconnected when it next meets this phone', (t) async {
+    final _Rig r = await _rig(t);
+    await _show(t, r);
+    expect(await t.runAsync(() => r.trust.isRevoked(_k(1))), isFalse);
+    await t.tap(find.byKey(const Key('connectedForget_c1')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('told the next time'), findsOneWidget);
+    await _act(t, () => t.tap(find.byKey(const Key('forgetConfirm'))));
+    await t.pump(const Duration(milliseconds: 400));
+    await _pump(t);
+    expect(await r.kids.load(), isEmpty);
+    expect(await t.runAsync(() => r.trust.isRevoked(_k(1))), isTrue);
+    expect(await t.runAsync(() => r.trust.isRefused(_k(1))), isFalse, reason: 'forgotten, not turned away for good');
+    expect((await t.runAsync(() => r.trust.repo.load()))!.history.last.kind, HistoryKind.forgot);
+  });
+
   testWidgets('the history reads in plain words and warns when the chain is broken', (t) async {
     final _Rig r = await _rig(t);
     await t.runAsync(() => r.trust.note(HistoryKind.newCode));

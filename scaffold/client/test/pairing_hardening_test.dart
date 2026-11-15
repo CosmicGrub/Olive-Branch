@@ -27,8 +27,8 @@ void main() {
     final DeviceKey ak = await _key(), ck = await _key();
     final AdultWindow w = await _window(ak);
     for (int i = 0; i < 25; i++) {
-      expect(await w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid)}), isNull);
-      expect(await w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': 'x', 'Yc': 5}), isNull);
+      expect(await w.handle(<String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid)}), isNull);
+      expect(await w.handle(<String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': 'x', 'Yc': 5}), isNull);
     }
     w.addListener(() async {
       if (w.state == WindowState.awaitingApproval) await w.approve();
@@ -90,13 +90,13 @@ void main() {
     w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
     final LoopbackPairingTransport t = LoopbackPairingTransport(w);
     final Map<String, dynamic> hello = <String, dynamic>{
-      't': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, w.sid)),
+      't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, w.sid)),
     };
     final Map<String, dynamic>? ok = await t.send(hello); // the sniffed hello, replayed
     expect(ok, isNotNull);
     final PakeParty p = await PakeParty.start(isChild: true, password: '4829'.codeUnits, sid: w.sid, ci: Uint8List(0));
     final Map<String, dynamic> claim = <String, dynamic>{
-      't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'pv': kPairingProtocolVersion, 'm': 'pin', 'Yc': b64(p.share),
+      't': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(p.share),
     };
     // No signature, a signature by another key, and a signature over a made-up nonce: all dropped.
     expect(await t.send(claim), isNull);

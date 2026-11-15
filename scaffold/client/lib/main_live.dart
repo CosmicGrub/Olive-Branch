@@ -474,10 +474,25 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
       LocalStoreDeviceKeyRepository(LocalServices.current.area('devicekey')));
   // "Use my phone": a fresh signed answer to a one-time challenge (unlock_challenge.dart). A phone-only tablet
   // has no PIN check at all; a verified phone-only flag deletes it; a verified "disconnect" clears the pairing.
+  // A pairing past its signed end date is "lapsed": no typed code, no play admission (play_credentials.dart), but the
+  // grown-up's phone still unlocks it and a meeting with the phone renews it. The child sees nothing different.
+  // Read at use time, not boot: a meeting with the phone renews the certificate and the keypad choice comes back at once.
+  ChildPairing live = p;
+  bool lapsed() => live.isLapsed(DateTime.now().millisecondsSinceEpoch);
   final ChildUnlockHost host = ChildUnlockHost(
     childKey: childKey,
     adultKey: p.adultKey,
+    cert: p.cert,
     onPhoneOnly: repo.makePhoneOnly,
+    onRenewed: (PairingCert renewed) async {
+      await repo.replaceCert(renewed);
+      live = live.withCert(renewed);
+    },
+    // The phone proved (with a signature) that it stopped or forgot this tablet: drop the pairing, honour nothing.
+    onRevoked: () async {
+      await repo.clear();
+      unawaited(_startKidFirstRun());
+    },
     onForget: () async {
       await repo.clear();
       unawaited(_startKidFirstRun());
@@ -487,8 +502,8 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
     initialTheme: defaultAppTheme,
     childId: p.cert.childId,
     session: null,
-    verifyPin: unlock.verifyBool,
-    phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly),
+    verifyPin: (String pin) async => lapsed() ? false : unlock.verifyBool(pin),
+    phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly, phoneOnlyWhen: lapsed),
   ));
 }
 

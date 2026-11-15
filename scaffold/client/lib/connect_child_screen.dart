@@ -119,7 +119,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   final TextEditingController _pin = TextEditingController();
   _Stage _stage = _Stage.intro;
   bool _offerQr = false;
-  bool _phoneOnly = false;
+  // On by default: a newly connected tablet holds no typed-code check at all (nothing to guess from a copy of its files).
+  bool _phoneOnly = true;
   bool _working = false;
   String? _message;
   AdultWindow? _window;
@@ -332,7 +333,10 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
           key: const Key('connectPhoneOnly'),
           contentPadding: EdgeInsets.zero,
           title: const Text('Only my phone unlocks it'),
-          subtitle: const Text('Her device is never given a check for your PIN. You unlock it by showing it a picture from this phone.'),
+          subtitle: Text(_phoneOnly
+              ? 'Her device is never given a check for your PIN. You unlock it by showing it a picture from this phone.'
+              : 'Her device keeps a check for your PIN so a typed code works on it. Someone who copies that device\'s files could '
+                  'try to guess the code. Leave this on unless you need the keypad.'),
           value: _phoneOnly,
           onChanged: (bool v) => setState(() => _phoneOnly = v),
         ),

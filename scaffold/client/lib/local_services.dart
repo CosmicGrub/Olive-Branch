@@ -303,9 +303,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'app yet.'),
   LocalDataEntry(
       area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
-      what: 'On a grown-up\'s device: the paired devices\' trust book (who each device is, when it was added, '
-          'settling in, paused or stopped) and the plain-language history of those changes, kept in order so an '
-          'edit can be noticed. Sealed on the device; never shown on a child\'s screen.'),
+      what: 'On a grown-up\'s device: which child devices it added and when it last met them, the ones it stopped or '
+          'forgot, and a plain-language list of what happened (a device was added, paused, stopped). Sealed on the device.'),
   LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '

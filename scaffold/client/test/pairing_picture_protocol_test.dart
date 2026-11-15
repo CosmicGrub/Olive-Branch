@@ -114,11 +114,11 @@ void main() {
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final LoopbackPairingTransport t = LoopbackPairingTransport(w);
       // hello with the right public key but no signature, and with a garbage signature
-      expect(await t.send(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x'}), isNull);
-      expect(await t.send(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(Uint8List(64))}), isNull);
+      expect(await t.send(<String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x'}), isNull);
+      expect(await t.send(<String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(Uint8List(64))}), isNull);
       // pake1 straight away, skipping hello, 30 times: the budget must not move
       for (int i = 0; i < 30; i++) {
-        expect(await t.send(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(Uint8List(32))}), isNull);
+        expect(await t.send(<String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(Uint8List(32))}), isNull);
       }
       expect(w.attemptsLeft, 5);
       // and a real pairing still works afterwards, so the flood did not use up the 20-pake1 cap either
@@ -132,7 +132,7 @@ void main() {
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final Uint8List hsForOther = await signHello(ck, other.sid);
       final Map<String, dynamic> replay = <String, dynamic>{
-        't': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(hsForOther),
+        't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(hsForOther),
       };
       expect(await LoopbackPairingTransport(w).send(replay), isNull);
     });
@@ -143,7 +143,7 @@ void main() {
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final LoopbackPairingTransport t = LoopbackPairingTransport(w);
       Future<Map<String, dynamic>> byHandle(AdultWindow to, Uint8List signedOver) async => <String, dynamic>{
-            't': 'hello', 'h': b64(to.discoveryHandle), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, signedOver)),
+            't': 'hello', 'pv': kPairingProtocolVersion, 'h': b64(to.discoveryHandle), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, signedOver)),
           };
       // The child signs over the handle it addressed the window by; a proof over the session id, or over another
       // window's handle, is not what a handle-addressed hello carries.
@@ -160,11 +160,11 @@ void main() {
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final LoopbackPairingTransport t = LoopbackPairingTransport(w);
       // the other device signs for itself but presents the scanned key
-      expect(await t.send(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'hs': b64(await signHello(other, w.sid))}), isNull);
+      expect(await t.send(<String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'hs': b64(await signHello(other, w.sid))}), isNull);
       // presenting its own key with its own valid signature: valid proof, but not the scanned device
-      expect(await t.send(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(other.publicKey), 'hs': b64(await signHello(other, w.sid))}), isNull);
+      expect(await t.send(<String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(other.publicKey), 'hs': b64(await signHello(other, w.sid))}), isNull);
       // a hello whose cpk field is not even a string
-      expect(await t.send(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': 5, 'hs': 7}), isNull);
+      expect(await t.send(<String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': 5, 'hs': 7}), isNull);
     });
 
     test('the right child but a wrong PIN counts normally, on the adult device only', () async {
@@ -192,7 +192,7 @@ void main() {
       final AdultWindow w = await _window(ak, now: () => now);
       w.allowChild(childKey: ck.publicKey, childSalt: _salt(3));
       final Map<String, dynamic> hello = <String, dynamic>{
-        't': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, w.sid)),
+        't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'hs': b64(await signHello(ck, w.sid)),
       };
       expect(await w.handle(hello), isNotNull);
       now = now.add(const Duration(minutes: 11));
