@@ -299,8 +299,9 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the family\'s signed record of which grown-ups and which child devices '
           'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
           'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
-          'never holds the grown-ups-only key. Sealed on the device; nothing is uploaded; not used by the '
-          'app yet.'),
+          'never holds the grown-ups-only key. It also remembers which welcome requests you asked to see again '
+          'later, and when (a reminder, never an answer). Sealed on the device; nothing is uploaded; not used by '
+          'the app yet.'),
   LocalDataEntry(
       area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
       what: 'On a grown-up\'s device: the paired devices\' trust book (who each device is, when it was added, '
