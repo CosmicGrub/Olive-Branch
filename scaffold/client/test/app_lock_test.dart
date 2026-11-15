@@ -1,11 +1,13 @@
 // OLIVE BRANCH — adult safety: app lock, hidden recents preview, quick hide.
 // No longer UNVERIFIED — verified by CI (this file).
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/app_lock.dart';
 import 'package:olive_client/app_lock_screen.dart';
 import 'package:olive_client/local_pin.dart';
+import 'package:olive_client/olive_tokens.dart' show kBodyFont;
 
 class _Clock {
   DateTime t = DateTime(2026, 11, 14, 9);
@@ -40,6 +42,47 @@ Future<void> _type(WidgetTester tester, String pin) async {
 }
 
 void main() {
+  group('typeface', () {
+    String? familyOf(WidgetTester tester, String text) =>
+        tester.renderObject<RenderParagraph>(find.text(text)).text.style?.fontFamily;
+
+    testWidgets('the PIN cover draws in Atkinson Hyperlegible, with the app theme (colour) still applied', (tester) async {
+      final AppLockController c = await _controller(tester);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('appLockScreen')), findsOneWidget);
+      expect(familyOf(tester, 'Olive is locked'), kBodyFont);
+      expect(DefaultTextStyle.of(tester.element(find.text('Enter your PIN to open it.'))).style.fontFamily, kBodyFont);
+      final Material m = tester.widget<Material>(find.byKey(const Key('appLockScreen')));
+      expect(m.color, Theme.of(tester.element(find.byKey(const Key('appLockScreen')))).colorScheme.surface);
+    });
+
+    testWidgets('the quick-hide cover draws in Atkinson Hyperlegible too', (tester) async {
+      final AppLockController c = await _controller(tester, withPin: false);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      c.quickHide();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('quickHideCover')), findsOneWidget);
+      expect(familyOf(tester, kQuickHideTitle), kBodyFont);
+      expect(familyOf(tester, kQuickHideNotes.first), kBodyFont);
+    });
+
+    testWidgets('the PIN screen reached from quick hide keeps it', (tester) async {
+      final AppLockController c = await _controller(tester);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      await _type(tester, '4829');
+      c.quickHide();
+      await tester.pumpAndSettle();
+      await tester.longPress(find.byKey(const Key('quickHideTitle')));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('appLockPinField')), findsOneWidget);
+      expect(familyOf(tester, 'Olive is locked'), kBodyFont);
+    });
+  });
+
   testWidgets('the PIN field works when the guard sits above the Navigator (a tap must not throw)', (tester) async {
     final AppLockController c = await _controller(tester);
     await tester.pumpWidget(_hostAbove(c));

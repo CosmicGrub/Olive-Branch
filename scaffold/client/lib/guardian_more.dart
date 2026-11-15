@@ -1199,7 +1199,8 @@ class GuardianMoreScreen extends StatelessWidget {
               pin: GuardianLocalScope.maybeOf(context)?.services.pin,
               childName: childName))),
           // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
-          // pick your name on her device and type it there (a key exchange; the PIN is never sent), then say yes.
+          // tap the matching picture on her device and type it there (a key exchange; the PIN is never sent), pick the
+          // Match cards, then say yes.
           // Spec 2026-11-08-adult-gate-and-simple-pairing-design.md.
           HubTile(icon: Icons.phonelink_lock_outlined, title: "Connect a child's device",
             subtitle: 'Open a short window here, then use "A grown-up does this" on her device',

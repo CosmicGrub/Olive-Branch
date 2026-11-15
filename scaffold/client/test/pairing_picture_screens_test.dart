@@ -248,6 +248,7 @@ void main() {
       final (Future<PairingResult> run, DeviceKey ck) = await startChild(t, a);
       await _act(t, () => t.tap(find.byKey(Key('connectMatch_${a.opened!.matchChoices!.correct}'))));
       expect(find.text('Only you choose this. The device cannot choose for itself.'), findsOneWidget);
+      expect(await a.kids.load(), isEmpty, reason: 'a right pick is not an approval: nothing is added until "Yes, connect it"');
       await _act(t, () => t.tap(find.byKey(const Key('connectApprove'))));
       await _settle(t);
       final PairingResult r = await run;
@@ -302,7 +303,7 @@ void main() {
     Future<AdultWindow> window(WidgetTester t, {String fid = 'fam'}) async {
       return (await t.runAsync(() async {
         final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-        return AdultWindow.open(adultKey: ak, adultName: 'Mom', familyId: fid, childId: 'k', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
+        return AdultWindow.open(requireMatch: false, adultKey: ak, adultName: 'Mom', familyId: fid, childId: 'k', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
       }))!;
     }
 

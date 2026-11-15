@@ -145,7 +145,7 @@ void main() {
   test('pairing with phone-only gives the tablet NO PIN verifier at all', () async {
     final DeviceKey ak = await _key(), ck = await _key();
     final List<PairedKid> paired = <PairedKid>[];
-    final AdultWindow w = await AdultWindow.open(
+    final AdultWindow w = await AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'k', childName: 'Ivy', pin: '4829',
         phoneOnly: true, makeUnlockVerifier: _cheap, onPaired: paired.add);
     w.addListener(() async {

@@ -19,6 +19,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'local_pin.dart';
 import 'local_pin_recovery.dart';
 import 'local_pin_screens.dart' show LocalPinSetupForm;
+import 'scanner_unavailable.dart';
 
 /// Tests supply a stand-in for the camera: it is handed a callback to call with the scanned text.
 typedef ScannerBuilder = Widget Function(void Function(String value) onValue);
@@ -27,6 +28,8 @@ Widget _scanner(ScannerBuilder? custom, Key key, void Function(String) onValue) 
   if (custom != null) return custom(onValue);
   return MobileScanner(
       key: key,
+      // Camera denied or missing: plain words and a way to the app's settings, never the plugin's raw English text.
+      errorBuilder: scannerErrorBuilder,
       onDetect: (BarcodeCapture c) {
         final String? v = c.barcodes.isNotEmpty ? c.barcodes.first.rawValue : null;
         if (v != null) onValue(v);

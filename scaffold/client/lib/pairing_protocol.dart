@@ -177,7 +177,8 @@ class AdultWindow extends ChangeNotifier {
   /// the window stays silent to it (no answer, no attempt counted).
   final Future<bool> Function(List<int> deviceKey)? refuseKey;
 
-  /// When true, [approve] refuses until the adult picked the matching set ([pickMatch]).
+  /// When true, [approve] refuses until the adult picked the matching set ([pickMatch]). [open] defaults to TRUE so a
+  /// new caller cannot forget it: skipping the Match step takes an explicit `requireMatch: false`.
   final bool requireMatch;
 
   /// Do not give the tablet a PIN verifier at all: only the grown-up's phone will ever unlock it.
@@ -292,7 +293,7 @@ class AdultWindow extends ChangeNotifier {
     bool offerQr = false,
     bool phoneOnly = false,
     Uint8List? familyKey,
-    bool requireMatch = false,
+    bool requireMatch = true,
     Future<bool> Function(List<int> deviceKey)? refuseKey,
     Duration ttl = kWindowTtl,
     int maxAttempts = kWindowMaxAttempts,

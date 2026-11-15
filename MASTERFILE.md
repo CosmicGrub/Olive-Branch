@@ -2232,6 +2232,12 @@ fully on-device, in the shape of the tablet unlock (`unlock_challenge.dart`):
   either picture is useless afterwards; neither contains a PIN. Setting the new PIN
   never touches the links, and does not itself approve the action the prompt was
   guarding: the prompt asks for the new PIN to go on.
+- *Camera unavailable.* On the grown-up screens that scan (this one, "Reset someone's PIN", the linking screen and
+  "Unlock a child's device") a camera that cannot start shows plain words ("The camera is not available right
+  now. Olive may not be allowed to use it...") and an "Open settings" button that opens this app's page in the phone's
+  settings (`scanner_unavailable.dart`, Android `olive/app_settings` channel in MainActivity.kt; a missing native side is
+  a quiet no-op), never the plugin's raw English error text. The child side keeps its wordless calm card. *Not built:*
+  the same card on the adult gate's own scanner on the child device (it still shows the plugin's default).
 - *No second grown-up, no recovery.* Without a linked phone nothing is offered and the
   screen says so plainly (`kNoRecoveryWords`): clearing Olive's storage on the phone is
   the only reset, and it erases the family set up on that phone, including anything
@@ -5134,6 +5140,7 @@ onboarding runs again.
 - *App lock.* When a grown-up leaves the app (paused or hidden, not a mere system dialog) and returns after the chosen delay (right away, 1, 5 or 15 minutes; default 1), a PIN screen covers the app until the device PIN above is typed; it also asks on a fresh start, because Android may have ended the app while away. The app's screens stay alive underneath (a half-written form survives) but are neither drawn nor reachable. No PIN set means no lock. Wrong tries use the PIN's own five-try, 15-minute pause. Defaults are the safe ones (lock on, hide on); unreadable saved settings fall back to them, never to "off".
 - *Hide in recent apps.* Android `FLAG_SECURE` through the `olive/secure_screen` channel (MainActivity.kt, a few lines of Kotlin; kiosk and WebAuthn bridges untouched) so the recents card is blank. Honest cost, said on the screen: it also blocks screenshots in the app. A missing native side is a quiet no-op.
 - *Quick hide.* One tap on "Hide now" covers everything with a plain notes page (DRAFT content, `kQuickHideNotes`, for owner review). A plain tap does nothing; press and hold the word "Notes" to come back, which asks for the PIN when one is set. No button names Olive.
+- *Typeface.* Both covers (PIN screen and notes page) sit in `MaterialApp.builder` above the screens' own theme wrapper, so they are wrapped in the app theme with the bundled Atkinson Hyperlegible (`kBodyFont`) applied to its text themes, and no longer draw in the system font. The notes page keeps its plain look (its cream colour and wording are unchanged).
 - *Kept as:* three small settings under the key `applock` in the sealed `localpin` area (no new data area), removed by a device wipe. *Not built:* biometric unlock (needs a native plugin and a `FlutterFragmentActivity` base), a PIN-recovery path (belongs with the security lane), and "guardian mode on a child device" (the audit item A-G3 is not in the repository and is ambiguous, so it was not guessed at).
 
 **The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
@@ -5230,9 +5237,10 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
    X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
    adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
    family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
+   **What the instructions say (matches the screens).** The grown-up's phone, after the PIN: "This phone will then show a picture. On her device, tap "A grown-up does this", then "I'm the grown-up", tap the same picture, and type the same PIN." While waiting, the phone shows a nameless coloured picture (no letters to read out) and says to tap "the picture shown here"; the child's options screen says to open "Connect a child's device" on the phone "then tap the same picture here". The Match step says "Her device is showing three pictures and a colour. Tap the card here that has the same ones."
 4. The child's screen then shows **three pictures and a colour** (no words, no name; about 21 bits, derived from the
    finished key exchange). The grown-up's phone shows **four candidate sets and "None of these"** and the grown-up
-   picks the one on the child's device (**Match**). A wrong pick, or "None of these", refuses: nothing is issued,
+   picks the one on the child's device (**Match**). Both are required before anything is issued: `AdultWindow.approve()` returns false until the right card was picked (`requireMatch`, which is **on by default**; the only production caller also passes it explicitly) and a separate "Yes, connect it" tap follows; a pick alone issues no certificate (tests: `pairing_family_claim_test.dart` "no certificate without a correct Match pick and an explicit approval tap"). A wrong pick, or "None of these", refuses: nothing is issued,
    adding is off for 10 minutes and the history says so. A right pick leads to "Who is this?" (the grown-up
    chooses; in this version only "My child"; the device can never claim a role) and "Yes, connect it" or "Not
    mine". The adult device signs a **certificate** for that one child device, one child, one family
