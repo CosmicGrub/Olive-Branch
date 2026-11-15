@@ -121,6 +121,20 @@ void main() {
     expect(net.requests, isEmpty);
   });
 
+  testWidgets('a newly delivered age and name replace what an unlocked device remembered (re-pairing after a correction)', (t) async {
+    final ProfileCacheRepository repo = ProfileCacheRepository(LocalServices.current.area('profile', ownerId: 'kid-1'));
+    await repo.rememberHome(displayName: 'Old', yearsOld: 9);
+    final _Tripwire net = _Tripwire();
+    await t.pumpWidget(_local(net, age: 6));
+    await t.pumpAndSettle();
+    final ProfileCache c = (await repo.load())!;
+    expect(c.yearsOld, 6, reason: 'the corrected age wins when no grown-up locked one');
+    expect(c.displayName, 'Ivy');
+    expect(c.ageLocked, isFalse);
+    expect(_ivyGreeting, findsOneWidget);
+    expect(net.requests, isEmpty);
+  });
+
   testWidgets('the same home for a long time on a dead network: no state ever shows an error', (t) async {
     final _Tripwire net = _Tripwire();
     await t.pumpWidget(_local(net));

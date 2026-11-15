@@ -1252,7 +1252,9 @@ class GuardianMoreScreen extends StatelessWidget {
                 kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
                 adultName: local.family?.guardianName ?? 'A grown-up',
                 childName: childName,
-                childAge: childAge,
+                // Her real age or nothing: never the hub's stand-in default, which would seal a made-up age and
+                // open a wider band than hers. A missing age makes the tablet use the youngest band.
+                childAge: local.family?.age,
                 // The lasting pairing picture, who was added and the plain-language history
                 // (docs/planning/PERSISTENT-QR-PAIRING.md).
                 pictures: LocalStorePairingPictureRepository(services.area('devicekey')),

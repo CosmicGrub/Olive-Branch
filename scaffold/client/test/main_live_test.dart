@@ -24,7 +24,10 @@
 //     otherwise exercise, applied here in Dart instead of Node.
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:olive_client/child_home_live.dart';
 import 'package:olive_client/kiosk_channel.dart';
 import 'package:olive_client/kiosk_shell.dart';
@@ -54,6 +57,28 @@ void main() {
       expect(find.byType(KioskShell), findsOneWidget);
       final home = tester.widget<LiveChildHomeScreen>(find.byType(LiveChildHomeScreen));
       expect(home.childId, 'redeemed-child-42');
+    });
+
+    testWidgets('a locally paired tablet (localHome) reaches her home with no session and asks no server at all', (tester) async {
+      final List<String> requests = <String>[];
+      final http.Client dead = MockClient((http.Request r) async {
+        requests.add('${r.method} ${r.url.path}');
+        throw http.ClientException('no route to host');
+      });
+      await http.runWithClient(() async {
+        await tester.pumpWidget(const OliveLive(
+            initialTheme: defaultAppTheme, childId: 'kid-1', session: null,
+            localHome: true, localName: 'Ivy', localAge: 6));
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump(const Duration(seconds: 30));
+        final home = tester.widget<LiveChildHomeScreen>(find.byType(LiveChildHomeScreen));
+        expect(home.localOnly, isTrue);
+        expect(home.localName, 'Ivy');
+        expect(home.localAge, 6);
+        expect(find.byKey(const Key('childOfflineIcon')), findsNothing);
+        expect(find.byIcon(Icons.cloud_off), findsNothing);
+        expect(requests, isEmpty, reason: 'no request on the local path: $requests');
+      }, () => dead);
     });
 
     testWidgets('the dart-define path builds the identical tree shape',

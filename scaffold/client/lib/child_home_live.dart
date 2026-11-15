@@ -278,13 +278,17 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   Future<void> _loadLocal() async {
     final ProfileCache? cached = await _readProfileCache();
     FamilyChildSnapshot? family;
-    final String? knownName = (cached?.displayName?.trim().isNotEmpty ?? false)
-        ? cached!.displayName!.trim()
-        : (widget.localName?.trim().isNotEmpty ?? false) ? widget.localName!.trim() : null;
+    // A newly delivered name replaces the remembered one, so re-pairing after a correction takes effect.
+    final String? knownName = (widget.localName?.trim().isNotEmpty ?? false)
+        ? widget.localName!.trim()
+        : (cached?.displayName?.trim().isNotEmpty ?? false) ? cached!.displayName!.trim() : null;
     final String name = knownName ?? 'there';
-    // What this device remembers (a birthday it applied, a grown-up's PIN-locked age) wins; else what the pairing
-    // delivered; else the youngest end of the catalogue, so the age gate never fails open.
-    final int? knownAge = cached?.yearsOld ?? widget.localAge;
+    // A grown-up's PIN-locked age on this device wins; else what the latest pairing delivered (so a correction
+    // made on the grown-up's device takes effect on re-pairing); else what the device remembers; else the youngest
+    // end of the catalogue, so the age gate never fails open.
+    final int? knownAge = (cached?.ageLocked ?? false)
+        ? (cached?.yearsOld ?? widget.localAge)
+        : (widget.localAge ?? cached?.yearsOld);
     final int age = knownAge ?? _failClosedAge;
     try {
       family = await (widget.familyService ?? localFamilyService).childSnapshot(
