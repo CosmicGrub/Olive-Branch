@@ -52,6 +52,23 @@ export async function cleanup(admin, { userIds, childIds }) {
   } catch (e) { await admin.query('ROLLBACK'); throw e; }
 }
 
+/**
+ * The local start/end of a day-part laid across real time. A part that would wrap the child's local midnight
+ * (the window sits at "now + a few minutes", so this happens for about ten minutes a day in each timezone)
+ * is clamped to end at the last second of the day instead of being dropped: dropping it left a family with no
+ * bedtime part and made "a message banks" fail with daypart_undefined whenever CI ran near local midnight.
+ * Returns null only when there is no room at all before midnight.
+ */
+export function partRange(plan, a, b, tz) {
+  const s = localHMS(plan.realAt(a), tz);
+  let e = localHMS(plan.realAt(b), tz);
+  if (e <= s) {                                // wraps local midnight
+    if (s >= '23:59:59') return null;
+    e = '23:59:59';
+  }
+  return [s, e];
+}
+
 export async function seedFamily(admin, fam, { plan = null } = {}) {
   for (const g of fam.guardians) {
     await admin.query(`INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,$2,$3)`, [g.id, g.name, fam.tz]);
@@ -65,8 +82,9 @@ export async function seedFamily(admin, fam, { plan = null } = {}) {
     }
     if (plan) {
       for (const [kind, a, b] of plan.parts) {
-        const s = localHMS(plan.realAt(a), fam.tz), e = localHMS(plan.realAt(b), fam.tz);
-        if (e <= s) continue;                      // wraps local midnight: skip, never write a bad range
+        const range = partRange(plan, a, b, fam.tz);
+        if (!range) continue;
+        const [s, e] = range;
         await admin.query(
           `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
            VALUES ($1,$2,$3,$4,'{0,1,2,3,4,5,6}', $5, '[2020-01-01,2099-01-01)')`,

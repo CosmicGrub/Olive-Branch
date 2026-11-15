@@ -1,0 +1,153 @@
+name: release-smoke
+# ADVISORY (continue-on-error): builds the RELEASE APK of both entry points, boots an Android emulator and checks the
+# app survives 20 seconds after launch. Not part of the required `verify` job. Why it exists: a release APK crashed on
+# launch on both devices (the Jitsi SDK reads string resources that Flutter's release resource shrinking removed,
+# fixed in PR #204) while every debug build and every CI job was green. The cheap static half of this defence
+# (tools/check-release-shrink.mjs) runs inside `verify`; this is the real-launch half. How to read the artifacts:
+# docs/planning/OPERATIONS-RUNBOOK.md, "Release launch smoke test".
+#
+# STATUS: written without being able to run an emulator locally. Treat the first runs as calibration.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scaffold/client/**'
+      - 'scaffold/tools/release-smoke*'
+      - '.github/workflows/release-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scaffold/client/**'
+      - 'scaffold/tools/release-smoke*'
+      - '.github/workflows/release-smoke.yml'
+
+# Read-only token: nothing here writes to the repository (artifacts use the separate runtime token).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  smoke:
+    # Pinned, same reason as verify.yml (ubuntu-latest moved to 26.04). Hosted Linux runners expose /dev/kvm,
+    # which is what makes the x86_64 emulator hardware accelerated.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Advisory at first: a red smoke test must not block a merge until it has proven itself stable.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: child
+            entry: lib/main_live.dart
+            extra_defines: ''
+          - variant: guardian
+            entry: lib/main_live_guardian.dart
+            # Same define tools/device-sync.sh passes for the guardian shell. (There is no separate "screenshot"
+            # define in the client; OLIVE_DEV_LOGIN is the only dev define the device build adds.)
+            extra_defines: '--dart-define=OLIVE_DEV_LOGIN=1'
+    env:
+      API_LEVEL: '34'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.44.8', channel: stable, cache: true }
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: smoke-${{ runner.os }}-${{ hashFiles('scaffold/client/pubspec.lock', 'scaffold/client/android/**/*.gradle*', 'scaffold/client/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: smoke-${{ runner.os }}-
+
+      # The same build tools/device-sync.sh does: release, debug-signed (explicit opt-in, see app/build.gradle.kts),
+      # one API base define. DIFFERENCE: x86_64 instead of arm64, because a hosted runner can only accelerate an
+      # x86_64 emulator. Resource shrinking is independent of the ABI, so the original defect reproduces.
+      - name: build release APK (${{ matrix.variant }})
+        working-directory: scaffold/client
+        run: |
+          flutter pub get
+          flutter build apk --release --target-platform android-x64 -t ${{ matrix.entry }} \
+            --dart-define=OLIVE_API_BASE_URL=http://10.0.2.2:8123 ${{ matrix.extra_defines }} \
+            --android-project-arg=olive.allowDebugSignedRelease=true
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/smoke/${{ matrix.variant }}.apk"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Cached AVD pattern from the emulator action's README: one run creates the AVD and a clean snapshot, later
+      # runs boot from it. Keyed on everything that defines the image.
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}-google_apis-x86_64-pixel_6-emu2.38.0
+
+      # Exact version, released 2026-07-05 (well over two weeks before this was written); reviewed tag v2.38.0 =
+      # commit a421e43855164a8197daf9d8d40fe71c6996bb0d. Pinned to the commit so a moved tag cannot change it.
+      - name: create AVD and snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "AVD snapshot generated for caching."
+
+      - name: launch release APK and watch it (${{ matrix.variant }})
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # One line on purpose: the action runs a multi-line script one line at a time.
+          script: bash scaffold/tools/release-smoke.sh ${{ runner.temp }}/smoke/${{ matrix.variant }}.apk ${{ runner.temp }}/smoke/out-${{ matrix.variant }} 20
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### release launch smoke: ${{ matrix.variant }}"
+            echo '```'
+            cat "$RUNNER_TEMP/smoke/out-${{ matrix.variant }}/verdict.txt" 2>/dev/null || echo "no verdict (the build or the emulator step failed before the check ran)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Always uploaded, pass or fail: a green run's logcat is the baseline to compare a red one against.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-smoke-${{ matrix.variant }}
+          path: ${{ runner.temp }}/smoke/out-${{ matrix.variant }}
+          if-no-files-found: warn
+          retention-days: 14

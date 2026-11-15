@@ -11,14 +11,16 @@
 // session, or a rogue advertiser, derives a different key even if it knows (or guesses) the PIN, and cannot pass
 // key confirmation. Nothing is paired unless the adult then taps "Yes, that is Ivy's tablet".
 //
-// PROTOCOL VERSION 2: WHO THE ADULT IS TRAVELS ONLY INSIDE THE KEY. The answer to the first message ("hello-ok")
+// PROTOCOL VERSION 3: WHO THE ADULT IS TRAVELS ONLY INSIDE THE KEY (the key exchange itself is CPace as in
+// draft-irtf-cfrg-cpace-21, CPACE-X25519-SHA512, see cpace.dart). The answer to the first message ("hello-ok")
 // is bare: the session id, the protocol version and (for a claimed child) a blinded family hint. The adult's name,
 // family id and public key arrive in the answer to the key CONFIRMATION, sealed under the exchange's own key
 // (AES-GCM, its own associated data), so a device on the same network that merely holds the public window handle
 // learns nothing about the grown-up. The child checks them (key fingerprint, expected fingerprint, expected family)
-// BEFORE it shows the match step and before it ever polls. A build that speaks only version 1 gets silence from a
-// version 2 window and fails calmly; a version 2 child that meets a version 1 window fails calmly too
-// (PairingFailure.versionMismatch).
+// BEFORE it shows the match step and before it ever polls. A build that speaks another version (the adult's name in the
+// clear in the channel identifier, or no version at all) cannot derive the same key: the window drops its key
+// exchange message quietly, uncounted, and the child ends on its usual calm "could not connect" screen (never a
+// version message).
 //
 // WHERE THE COUNTERS LIVE. On the ADULT device ([AdultWindow]): five failed confirmations kill the window; a
 // window lasts minutes; a session id works once. The child device keeps no counter that matters here.
@@ -35,10 +37,16 @@ import 'local_pin.dart' show LocalPinRecord, constantTimeEquals, kLocalPinIterat
 import 'pairing_match.dart';
 import 'pairing_picture.dart';
 
-/// The pairing protocol version this build speaks, and the oldest it still accepts. Version 1 returned the adult's
-/// name, family id and key in the clear in hello-ok and is NOT accepted any more.
-const int kPairingProtocolVersion = 2;
-const int kMinPairingProtocolVersion = 2;
+/// The version of the pairing wire protocol. 3 = CPace as in draft-irtf-cfrg-cpace-21 (CPACE-X25519-SHA512) with the
+/// BARE channel identifier of [pairingChannelIdBare] (the child device's key, and the adult's key fingerprint only when
+/// the child already knows it from a QR or a picture), the adult's identity sealed under the exchange's own key after
+/// key confirmation, and no PIN verifier. 2 (draft-21 with the adult's name and family id in the clear and in the
+/// channel identifier) and builds before it (no version field) cannot derive the same key. The adult's `hello-ok`
+/// states its version and the child's `pake1` states its own; a mismatch ends quietly BEFORE any password-dependent
+/// step and before an attempt is counted, so an old and a new build never burn a window's tries on a mismatch they
+/// could not have won: the child simply cannot connect and shows its usual calm "could not connect" screen (never a
+/// version message).
+const int kPairingProtocolVersion = 3;
 
 const Duration kWindowTtl = Duration(minutes: 10);
 const int kWindowMaxAttempts = 5;
@@ -86,10 +94,14 @@ class Sas {
   String toString() => '$word $picture';
 }
 
-/// The channel identifier mixed into the key exchange (version 2). [adultFingerprint] is included only when the
-/// child device already knows it from outside the network (a QR or a scanned picture) and says so with `fb`.
-Uint8List pairingChannelId(List<int> sid, List<int> childKey, List<int>? adultFingerprint) => cat(<List<int>>[
-      lv(utf8.encode('olive-pair-ci/2')), lv(sid), lv(childKey), lv(adultFingerprint ?? const <int>[]),
+/// The channel identifier mixed into the key exchange (version 3), in the layout of draft-21 section 10.1.1 and of
+/// [pairingChannelId] (initiator first, responder second) but BARE on the responder side: the adult's name and family
+/// id travel only inside the key, so they cannot be in it. [adultFingerprint] is included only when the child device
+/// already knows it from outside the network (a QR or a scanned picture) and says so with `fb`. The session id is
+/// its own CPace input, not part of this.
+Uint8List pairingChannelIdBare({required List<int> childPublicKey, List<int>? adultFingerprint}) => lvCat(<List<int>>[
+      childPublicKey,
+      lvCat(<List<int>>[adultFingerprint ?? const <int>[], const <int>[], const <int>[]]),
     ]);
 
 final List<int> _aadIdentity = utf8.encode('olive-pair-id/2');
@@ -383,7 +395,7 @@ class AdultWindow extends ChangeNotifier {
   bool get isOpen => state == WindowState.open || state == WindowState.awaitingApproval;
 
   Uint8List _channelId(List<int> cpk, {required bool bindAdult}) =>
-      pairingChannelId(sid, cpk, bindAdult ? adultKey.fingerprint : null);
+      pairingChannelIdBare(childPublicKey: cpk, adultFingerprint: bindAdult ? adultKey.fingerprint : null);
 
   /// Who this adult is, sealed for the child under the exchange's own key (only a device that passed key
   /// confirmation can open it).
@@ -486,11 +498,6 @@ class AdultWindow extends ChangeNotifier {
     switch (m['t']) {
       case 'hello':
         if (state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.hello, kSourceMaxHello)) return null;
-        // Version negotiation: the child says the highest version it speaks; this window answers with the highest
-        // both speak, or stays silent (an older build then fails calmly: it never receives a version it cannot read).
-        final Object? pvRaw = m['pv'];
-        if (pvRaw is! int || pvRaw < kMinPairingProtocolVersion) return null;
-        final int agreed = pvRaw < kPairingProtocolVersion ? pvRaw : kPairingProtocolVersion;
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
         // The window id this hello was addressed by: the session id (a QR) or the discovery handle (nearby).
         final Uint8List helloId = sidOk ? sid : discoveryHandle;
@@ -521,14 +528,15 @@ class AdultWindow extends ChangeNotifier {
           }
         }
         return <String, dynamic>{
-          't': 'hello-ok', 'pv': agreed, 'sid': b64(sid),
+          't': 'hello-ok', 'pv': kPairingProtocolVersion, 'sid': b64(sid),
           if (ft != null) 'ft': b64(ft),
           if (fa != null) 'fa': b64(fa),
           if (hn != null) 'hn': b64(hn),
         };
       case 'pake1':
         if (state != WindowState.open) return null;
-        if (m['pv'] is! int || (m['pv'] as int) < kMinPairingProtocolVersion) return null; // uncounted, like any junk
+        // An older (or newer) build cannot derive the same key: stay silent, uncounted, before anything else.
+        if (m['pv'] != kPairingProtocolVersion) return null;
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
         // Mode B: a pake1 from anyone but the scanned, hello-verified child is dropped WITHOUT being counted, so a
         // device that merely photographed the child's picture cannot use up the window's budget.
@@ -700,7 +708,7 @@ class ChildPairing {
       familyKey: familyKey, graceUntilMs: graceUntilMs);
 }
 
-enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed, versionMismatch }
+enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed }
 
 class PairingResult {
   const PairingResult.ok(ChildPairing this.pairing) : failure = null;
@@ -767,12 +775,8 @@ class ChildPairingClient {
         'hs': b64(await signHello(childKey, sid ?? handle!)),
       });
       if (hello == null || hello['t'] != 'hello-ok') return const PairingResult.failed(PairingFailure.unreachable);
-      // A version 1 window answers with no version at all (and with the grown-up's details in the clear, which are
-      // ignored here): stop calmly.
-      final Object? pv = hello['pv'];
-      if (pv is! int || pv < kMinPairingProtocolVersion || pv > kPairingProtocolVersion) {
-        return const PairingResult.failed(PairingFailure.versionMismatch);
-      }
+      // A window of another version (an older build never states one): stop before any PAKE message, calmly.
+      if (hello['pv'] != kPairingProtocolVersion) return const PairingResult.failed(PairingFailure.notMatched);
       if (sid == null) {
         // Found by handle: the session id is whatever the window that answered says it is. It is a nonce, not a
         // secret; the channel identifier below binds it into the key exchange either way.
@@ -798,7 +802,7 @@ class ChildPairingClient {
       final Object? hnRaw = hello['hn'];
       // The adult's fingerprint is bound into the exchange only when this device already knows it from outside the
       // network (a QR or a scanned picture); otherwise the adult is identified after key confirmation, below.
-      final Uint8List ci = pairingChannelId(sid, childKey.publicKey, expectedAdultFingerprint);
+      final Uint8List ci = pairingChannelIdBare(childPublicKey: childKey.publicKey, adultFingerprint: expectedAdultFingerprint);
       final PakeParty party = await PakeParty.start(isChild: true, password: utf8.encode(password), sid: sid, ci: ci);
       final Map<String, dynamic>? p2 = await transport.send(<String, dynamic>{
         't': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName,

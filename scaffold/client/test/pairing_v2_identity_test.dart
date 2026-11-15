@@ -83,7 +83,7 @@ void main() {
       final DeviceKey ak = await _key(), stranger = await _key();
       final AdultWindow w = await _window(ak);
       final Map<String, dynamic>? a = await w.handle(<String, dynamic>{
-        't': 'hello', 'pv': 2, 'h': b64(w.discoveryHandle), 'cpk': b64(stranger.publicKey), 'dn': 'x',
+        't': 'hello', 'pv': kPairingProtocolVersion, 'h': b64(w.discoveryHandle), 'cpk': b64(stranger.publicKey), 'dn': 'x',
       });
       expect(a!['t'], 'hello-ok');
       expect(a.keys.toSet().difference(<String>{'t', 'pv', 'sid', 'ft', 'fa', 'hn'}), isEmpty, reason: 'only these fields may exist: ${a.keys}');
@@ -183,7 +183,7 @@ void main() {
       final DeviceKey ak = await _key(), c1 = await _key(), c2 = await _key();
       final AdultWindow w = await _window(ak), w2 = await _window(ak);
       Future<String> fa(AdultWindow win, DeviceKey c) async => (await win.handle(<String, dynamic>{
-            't': 'hello', 'pv': 2, 'sid': b64(win.sid), 'cpk': b64(c.publicKey), 'dn': 'x',
+            't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(win.sid), 'cpk': b64(c.publicKey), 'dn': 'x',
           }))!['fa'] as String;
       expect(await fa(w, c1), isNot(await fa(w, c2)));
       expect(await fa(w, c1), isNot(await fa(w2, c1)));
@@ -213,12 +213,12 @@ void main() {
       final Uint8List fk = _b(16, 5);
       final AdultWindow w = await _window(ak, fk: fk);
       Future<String> hint(DeviceKey c) async => (await w.handle(<String, dynamic>{
-            't': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(c.publicKey), 'dn': 'x',
+            't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(c.publicKey), 'dn': 'x',
           }))!['ft'] as String;
       expect(await hint(c1), isNot(await hint(c2)));
       final AdultWindow w2 = await _window(ak, fk: fk);
       final String other = (await w2.handle(<String, dynamic>{
-        't': 'hello', 'pv': 2, 'sid': b64(w2.sid), 'cpk': b64(c1.publicKey), 'dn': 'x',
+        't': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w2.sid), 'cpk': b64(c1.publicKey), 'dn': 'x',
       }))!['ft'] as String;
       expect(other, isNot(await hint(c1)));
       expect(await hint(c1), isNot(contains(b64(fk))));
@@ -226,12 +226,26 @@ void main() {
   });
 
   group('version negotiation: an old build fails calmly', () {
-    test('a version 1 child (no pv in its hello) gets silence and costs the window nothing', () async {
+    test('an old child (no pv, or another pv, in its hello) learns nothing about the grown-up and costs the window nothing', () async {
       final DeviceKey ak = await _key(), old = await _key();
       final AdultWindow w = await _window(ak);
-      expect(await w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(old.publicKey), 'dn': 'x'}), isNull);
-      expect(await w.handle(<String, dynamic>{'t': 'hello', 'pv': 1, 'sid': b64(w.sid), 'cpk': b64(old.publicKey), 'dn': 'x'}), isNull);
-      expect(await w.handle(<String, dynamic>{'t': 'hello', 'pv': 'two', 'sid': b64(w.sid), 'cpk': b64(old.publicKey)}), isNull);
+      for (final Map<String, dynamic> extra in <Map<String, dynamic>>[
+        <String, dynamic>{},
+        <String, dynamic>{'pv': 1},
+        <String, dynamic>{'pv': 2},
+        <String, dynamic>{'pv': 'three'},
+      ]) {
+        final Map<String, dynamic>? a = await w.handle(
+            <String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(old.publicKey), 'dn': 'x', ...extra});
+        expect(a!.keys.toSet().difference(<String>{'t', 'pv', 'sid', 'ft', 'fa', 'hn'}), isEmpty, reason: 'bare answer for $extra');
+        expect(a['pv'], kPairingProtocolVersion);
+        expect(
+            await w.handle(<String, dynamic>{
+              't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(old.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(_b(32, 9)), ...extra,
+            }),
+            isNull,
+            reason: 'its key exchange message is dropped for $extra');
+      }
       expect(w.attemptsLeft, 5);
       expect(w.state, WindowState.open);
     });
@@ -247,21 +261,21 @@ void main() {
       expect(w.attemptsLeft, 5);
     });
 
-    test('a window that answers like version 1 (details in the clear, no version) -> versionMismatch, no further message sent', () async {
+    test('a window that answers like version 1 (details in the clear, no version) -> calm notMatched, no further message sent', () async {
       final DeviceKey ck = await _key();
       final _Fixed t = _Fixed(<String, dynamic>{
         't': 'hello-ok', 'sid': b64(_b(16, 1)), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f',
       });
       final PairingResult r = await _client(ck, t).pair(sid: _b(16, 1), password: '4829');
-      expect(r.failure, PairingFailure.versionMismatch);
+      expect(r.failure, PairingFailure.notMatched);
       expect(t.sent.length, 1);
     });
 
-    test('a window announcing a future version this build does not speak -> versionMismatch', () async {
+    test('a window announcing another version than this build speaks -> calm notMatched', () async {
       final DeviceKey ck = await _key();
-      final PairingResult r = await _client(ck, _Fixed(<String, dynamic>{'t': 'hello-ok', 'pv': 3, 'sid': b64(_b(16, 1))}))
+      final PairingResult r = await _client(ck, _Fixed(<String, dynamic>{'t': 'hello-ok', 'pv': kPairingProtocolVersion + 1, 'sid': b64(_b(16, 1))}))
           .pair(sid: _b(16, 1), password: '4829');
-      expect(r.failure, PairingFailure.versionMismatch);
+      expect(r.failure, PairingFailure.notMatched);
     });
 
     test('a child announcing a higher version than the window speaks is answered with the window\'s own version', () async {

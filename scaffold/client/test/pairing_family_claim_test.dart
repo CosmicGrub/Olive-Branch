@@ -25,14 +25,14 @@ Future<AdultWindow> _window(DeviceKey k,
 ChildPairingClient _client(DeviceKey ck, PairingTransport t) => ChildPairingClient(
     childKey: ck, transport: t, delay: (Duration d) async {}, pollEvery: const Duration(seconds: 1), giveUpAfter: const Duration(seconds: 3));
 
-Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'};
+Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'};
 
 Future<Map<String, dynamic>?> _pake1(AdultWindow w, DeviceKey ck, String pin) async {
   final PakeParty p = await PakeParty.start(isChild: true, password: pin.codeUnits, sid: w.sid, ci: await _ci(w, ck));
-  return w.handle(<String, dynamic>{'t': 'pake1', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'm': 'pin', 'Yc': b64(p.share)});
+  return w.handle(<String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'm': 'pin', 'Yc': b64(p.share)});
 }
 
-Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => pairingChannelId(w.sid, ck.publicKey, null);
+Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => pairingChannelIdBare(childPublicKey: ck.publicKey);
 
 void main() {
   group('family tag', () {
@@ -353,8 +353,8 @@ void main() {
       for (final Map<String, dynamic> m in <Map<String, dynamic>>[
         <String, dynamic>{},
         <String, dynamic>{'t': 'hello'},
-        <String, dynamic>{'t': 'hello', 'pv': 2, 'sid': 5},
-        <String, dynamic>{'t': 'pake1', 'pv': 2, 'sid': b64(w.sid), 'cpk': 3, 'Yc': 4},
+        <String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': 5},
+        <String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': 3, 'Yc': 4},
         <String, dynamic>{'t': 'confirm', 'sid': b64(w.sid)},
       ]) {
         expect(await w.handle(m), anyOf(isNull, isA<Map<String, dynamic>>()));

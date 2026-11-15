@@ -138,6 +138,7 @@ for spec in \
   "version sync + release tooling helpers (docs/RELEASING.md)|tools/test/version_sync.test.mjs" \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
+  "CPace draft-21 appendix B.1 vectors (CPACE-X25519-SHA512), byte for byte|tools/test/cpace_draft21.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
   "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
@@ -569,6 +570,19 @@ if node tools/check-release-target.mjs >/tmp/rt.out 2>&1; then
 else
   cat /tmp/rt.out | sed 's/^/  /'
   echo "  RELEASE TARGET DRIFT — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
+echo "── Release resource shrinking ─────────────────────────────────"
+# Not counted into TOTAL_PASS (same reasoning as the release-target guard above). The Jitsi SDK reads string
+# resources at startup; Flutter enables resource shrinking for release unless the build says otherwise, and a
+# release APK crashed on launch with "String resource ID #0x0" while CI stayed green. This is the emulator-free
+# half of the defence (the emulator half is .github/workflows/release-smoke.yml; its verdict logic is unit-tested here too).
+if node tools/test/release_shrink.test.mjs >/tmp/rs.out 2>&1 && node tools/check-release-shrink.mjs >>/tmp/rs.out 2>&1 && node tools/test/release_smoke_eval.test.mjs >>/tmp/rs.out 2>&1; then
+  echo "  release resource shrinking  $(grep -c 'PASS' /tmp/rs.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/rs.out
+  echo "  RELEASE RESOURCE SHRINKING GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
 echo ""

@@ -5233,10 +5233,15 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
    in the answer. The window also budgets each source address (full IPv6 address, LRU-bounded table that never refuses
    a new source: 2 failed confirmations, 12 first messages, 6 key exchanges) and answers a source past its budget with
    the silence of a closed window; the child never sees a count or a reason, only the shared calm card.
-3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`, a CPace-style exchange over
-   X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
-   adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
-   family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
+3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`: CPace as specified in
+   draft-irtf-cfrg-cpace-21, suite CPACE-X25519-SHA512, the child device as initiator and the adult device as
+   responder; the draft's published test vectors pass byte for byte in Dart and in Node). It is never sent, and a
+   recording cannot be used to guess it offline. The session id and a channel identifier (the child device's key
+   first, then the adult device's key fingerprint, family id and name) are bound into it, so another family,
+   another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation. The first message
+   of each side carries the key-exchange **version** (`pv`, now 2): a build from before this alignment cannot
+   derive the same key, so a version mismatch ends quietly before any password-dependent step and without
+   costing an attempt, and the child just sees its usual calm "could not connect" card (no version text).
    **What the instructions say (matches the screens).** The grown-up's phone, after the PIN: "This phone will then show a picture. On her device, tap "A grown-up does this", then "I'm the grown-up", tap the same picture, and type the same PIN." While waiting, the phone shows a nameless coloured picture (no letters to read out) and says to tap "the picture shown here"; the child's options screen says to open "Connect a child's device" on the phone "then tap the same picture here". The Match step says "Her device is showing three pictures and a colour. Tap the card here that has the same ones."
 4. The child's screen then shows **three pictures and a colour** (no words, no name; about 21 bits, derived from the
    finished key exchange). The grown-up's phone shows **four candidate sets and "None of these"** and the grown-up
@@ -5338,7 +5343,7 @@ can still be disconnected from the tablet itself ("Disconnect this tablet" behin
 phone) or have its data cleared. A forgotten tablet may be connected again on purpose; a **stopped** one is turned
 away outright. The connection grants no account or server access.
 
-**Pairing hardening: protocol version 2, no typed-code check by default, certificates that expire, revocation and live
+**Pairing hardening: protocol version 3, no typed-code check by default, certificates that expire, revocation and live
 keeping-watch (built, headless-tested; not run on two real devices).**
 1. *Who the grown-up is travels only inside the key.* The first answer of the pairing exchange ("hello-ok") is bare: the
    session id, the protocol version, a blinded hint for a child that already belongs to a family, and a blinded hint for
@@ -5346,10 +5351,11 @@ keeping-watch (built, headless-tested; not run on two real devices).**
    only after key confirmation, sealed under the exchange's own key, and the child checks them (fingerprint, expected
    grown-up, expected family) before it shows the match step or polls. A device on the same Wi-Fi holding only the
    window handle learns nothing about the grown-up. The channel identifier of the key exchange no longer holds the
-   name or the family id; it holds the session id, the child's key and, when the child knows it from a QR or a scanned
-   picture, the grown-up's fingerprint. A build that speaks only version 1 gets silence from a version 2 window; a
-   version 2 child that meets a version 1 window stops calmly (`PairingFailure.versionMismatch`); nothing is shown to a
-   child in either case.
+   name or the family id; it holds the child's key and, when the child knows it from a QR or a scanned picture, the
+   grown-up's fingerprint (the session id is its own CPace input). Version 3 is the CPace draft-21 exchange with that
+   bare identifier; a build that speaks another version (2 put the name and family id in the clear and in the identifier)
+   gets silence for its key-exchange message and the child ends on its usual calm "could not connect" screen
+   (`PairingFailure.notMatched`, never a version message); nothing about the grown-up is shown to a child in either case.
 2. *No typed-code check by default.* A newly connected tablet holds no verifier of the grown-up's PIN, so a copy of its
    files gives nothing to guess against offline; only the grown-up's phone unlocks it. A grown-up can opt in to the
    keypad when connecting (the screen says a copy of the tablet's files could be used to guess the code). A tablet
@@ -5375,11 +5381,18 @@ lists (a second grown-up's phone is a separate pairing); play admission between 
 yet call the trust book (only the unlock meeting does); the key exchange still needs the external review below, and
 this change moved the grown-up's identity into a new sealed message that review must also cover.
 
-**Honest limits.** `cpace.dart` is custom cryptographic code (the Elligator2 map and transcript) that follows the
-CFRG CPace draft's structure but is not byte-compatible with it and has not been checked against its vectors; it
-agrees byte for byte with an independent Node implementation (`tools/pake_cpace.mjs`, golden vectors in
-`client/test/vectors/pake_vectors.json`) and **needs an external cryptographic review before families rely on
-it**. A tablet whose grown-up opted in to the keypad keeps a salted slow hash of the grown-up's PIN (so a grown-up
+**Honest limits.** `cpace.dart` is still our own implementation (no maintained Dart CPace library exists). Down to
+the shared key ISK it now follows draft-irtf-cfrg-cpace-21 for CPACE-X25519-SHA512 and reproduces the draft's
+appendix B.1 vectors (generator, both shares, K, ISK in both modes, session id output, and the low-order and
+non-canonical points of B.1.10) byte for byte, in Dart (`client/test/cpace_draft21_test.dart`) and in the
+independent Node reference (`tools/test/cpace_draft21.test.mjs`), both reading
+`client/test/vectors/cpace_draft21_vectors.json`; Olive's own end-to-end vectors are in
+`client/test/vectors/pake_vectors.json`. The confirmation tags, the confirmation word and the Match values are
+Olive's own layer on top of ISK and are not part of CPace. The draft asks for constant time and this is **not
+achieved**: Dart `BigInt` is not constant time, so the two password-dependent operations of the Elligator2 map
+run on randomly blinded operands (the output is unchanged; a test proves it), which narrows but does not close the
+leak for a local attacker measuring the device. The code **still needs an external cryptographic review before
+families rely on it**. A tablet whose grown-up opted in to the keypad keeps a salted slow hash of the grown-up's PIN (so a grown-up
 can type it there to leave the lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its
 keystore could brute-force a short PIN. Tablets connected after the pairing hardening hold no such hash by default. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
 online relay of windows through the server is **not
@@ -8282,7 +8295,7 @@ Each row is something this document or the product's own screens might lead a re
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
-| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is told only when it is brought to the phone, or by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange now matches the CPace draft-21 vectors but still needs an external cryptographic review, and is not constant time (the map's password-dependent operations are blinded, not constant time); the associated-data fields of the draft are empty; a vetted native library is not used. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
 | **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
@@ -9124,6 +9137,35 @@ matrix rows 179, 183, 184, 185, 189).
   single child-facing *My things* shelf page (each suite keeps its own tiles in More), and any second-device publish.
 - **Tests.** `wave7_suites_parity_test.dart` (page, switches, refusals, posture at 344/390/600/800 dp at 2.0x text, feelings
   switch and gate, heads-up flags and the new-place walk, Compass words), plus the updated settings-hub parity vector.
+
+### 8.22.8 Wave 8: child games at prototype parity (offline)
+
+Prototype rows `k.play`, `k.g.ttt`, `k.g.mem`, `k.g.war`, `k.g.word` (parity matrix rows 292, 295, 297, 298, 299). All of it
+is on this device and against the game; nothing needs a network. Every existing game stays. The shared game contract
+(PR #173) and the play transport are untouched.
+
+- **Three in a row: levels and a friend** (`game_tictactoe.dart`, `game_solo_logic.dart`). It opens on a calm *How shall we play?* panel:
+  **Easy** (a random square), **Normal** (take a win, block hers, take the middle, else random), **Hard** (full search, takes
+  the quickest win, never loses) or **Take turns with a friend** on this one screen. Every level honours the handicaps
+  (`no_centre`). Friend mode alternates turns with no thinking pause and hides *Make it fair* and the voice-note action
+  (a handicap is set by her on a grown-up, never between friends). The end banner is a quiet heart, never a trophy.
+- **Memory pairs** (`game_memory.dart`). Eight drawn symbols, each with its own shape and colour. Pairs grow with age: **3**
+  for 3 and 4, **4** for 5-7, **6** for 8-12, **8** from 13 (the early ages stay; nothing is removed). A miss waits 900 ms (1200 ms with
+  reduced motion, so more time to look) and turns back. No timer, no move count, no score; the end line is *All the pairs are
+  together.* This is not the *Our photos* game: `GameKind.memory` stays unbuilt and is never offered.
+- **War against the game** (`game_war_solo.dart`). The same card faces and flip reveal as the two-device War, with a CPU seat
+  from age 5. Higher card takes both; a tie keeps every card in the pot and the next flip settles it; 120 flips ends level.
+  Piles are pictures, never numbers. End line: *Good game.*
+- **Guess the word, on her own** (`game_hangman.dart :: GuessTheWordSolo`). A word from a per-band bank (young, middle, older)
+  with its hint, from age 6. One flower fades a little with each miss instead of eight hearts to count; a found or revealed word
+  offers *Another word*. A grown-up's typed word (guardian hub) is unchanged.
+- **Where they sit.** *Memory pairs*, *War against the game* and *Guess the word* are under **On your own** in the games list, ages
+  3, 5 and 6 (`soloGameMinAge`, kept apart from the eight pinned hub games), shown only on her shelf, never on the guardian hub, and
+  hidden or paused by the same per-game switches as the other games.
+- **Not built:** Draw and guess *the game draws* reveal (`k.g.pict`), Connect 4 same-screen two-player, Guess the word speak-the-hint,
+  the prototype's flat two-column picker (the picker keeps its sections), and wake time on the games-resting card.
+- **Tests.** `game_solo_logic_test.dart` (level, memory, word-bank and War vectors, Hard proved unbeatable), `game_wave8_screens_test.dart`
+  (screens, no score language, 344 / 390 / 600 / 800 dp at 2.0x text, ages and doors).
 
 ---
 
