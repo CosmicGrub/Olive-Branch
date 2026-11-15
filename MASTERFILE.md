@@ -2476,6 +2476,8 @@ Owner requirement: the server must build in security against those who try to pe
 
 ### 7.17 Identity lane — as shipped (migration 0050)
 
+**Migration 0050 on a database that already has invites.** Its backfill copies each already-bootstrapped invite's `bootstrap_user_id` into the new `claimant_user_id`. `guardian_invite` is FORCE row level security and the production migrator (`app_owner`) is NOBYPASSRLS, so the statement sets `app.role = 'system'` for the migration transaction first; without it the `UPDATE` matched zero rows without an error and every pre-0050 bootstrapped invite lost its claimant. `tools/test/migrate_0050_backfill.test.mjs` applies the migrations before 0050 as `app_owner`, seeds a bootstrapped, an accepted and a pending invite, applies 0050 as `app_owner`, and asserts the claimant was copied, nothing else changed, and the role did not outlive the transaction.
+
 **The defect.** A fresh server had no way to get a first account, a child or a guardianship edge except raw SQL (`server/seed-dev.mjs`, the family-sim harness). Production refuses `DEV_LOGIN`, so a production server had no first user. An accepted or bootstrapped invite gave an adult an account with no access. A started call's `sessionId` was 32 bare hex characters, which the strict-ids guard (on in production) refuses as `400 bad_path`, so no call could be joined or ended through the real server. `RP_ID` was the constant `olivebranch.local`. The ten-family simulation logged these as gaps G1 to G9; none was fixed on main. (The delivery worker, the other half of "a message reaches the child", is the delivery lane's: §7.16.)
 
 **Sign-up is invite-only.** `signup_allowance` holds operator-issued, single-use, expiring tokens, stored only as a SHA-256 (the plaintext exists once, in the operator's terminal). `signup_policy` is one row: a kill switch (`enabled`) and an optional account cap (`max_accounts`). Both tables are `ENABLE` + `FORCE` row level security with a `system`-only policy: no guardian or child session can read or write either. The operator tool is `tools/provision-signup.mjs` (`issue [--label] [--days]`, `status`, `disable`, `enable`, `cap <n|none>`), run with `docker exec`; a label may not contain an `@`.
@@ -2486,7 +2488,12 @@ POST   /v1/auth/signup                 no session. { allowanceToken, displayName
                                        One transaction: kill switch and cap (policy row locked FOR UPDATE), allowance
                                        redeemed (compare-and-swap), app_user, first PIN, enrolled device.
                                        403 invalid_allowance (unknown, expired and already-redeemed are ONE answer),
-                                       403 signup_disabled, 403 signup_cap_reached; 400 on a bad name, zone or PIN.
+                                       403 signup_disabled, 403 signup_cap_reached (only ever told to a caller who
+                                       holds a live token; a tokenless caller cannot read the kill switch or the cap);
+                                       400 on a bad name, zone or PIN. The allowance and policy are judged BEFORE the
+                                       PIN is hashed (scrypt blocks the event loop and the route is unauthenticated),
+                                       so a junk token costs one indexed lookup; a bad PIN with a junk token is 403,
+                                       with a live token 400.
                                        Per-IP limited by the /v1/auth/ prefix.
 GET    /v1/me/children                 guardian session. The children the caller holds a LIVE, unrestricted edge to.
 POST   /v1/children                    guardian session + own PIN. { displayName, birthDate, homeTz, pin } -> 201 { child }.
@@ -2499,6 +2506,12 @@ GET    /v1/children/:childId/guardian-invites
 POST   /v1/guardian-invites/:inviteId/claim     guardian session. An EXISTING account whose email IS the invited email
                                        presents an accepted invite (the "second invite to a registered email" dead end).
                                        A mismatch is 404, indistinguishable from no invite. Grants nothing.
+                                       LIMIT: this works only for accounts that HAVE an email, which today means
+                                       accounts the invite bootstrap created. Sign-up stores no email and no route
+                                       sets or verifies one, so a grown-up who signed up with their own allowance
+                                       cannot claim an invite addressed to them (404), and bootstrapping that invite
+                                       would create a second account for the same person. Closing it needs a
+                                       verified-email step (a mailer); this lane does not build one.
 POST   /v1/guardian-invites/:inviteId/confirm   inviter + own PIN. The ONLY step that creates the invited adult's
                                        guardianship edge, with the invite's role and scope, in the same transaction that
                                        consumes the invite and records a content-free `guardian_added` security event.
@@ -2511,7 +2524,7 @@ POST   /v1/guardian-invites/:inviteId/decline   inviter, no PIN. Turns away whoe
 
 **Not built (kept honest).** There is no `family` table and no server family tenant (S-D26; its text is not in the repository; gap G-02 stays open for the family-sync design). Account recovery and restore (a lost device or passkey, a forgotten PIN, undelete within the 6 to 12 month window) is not built: a grown-up who loses every enrolled device and has no second grown-up has no way back in. The device credential does not rotate and has no absolute lifetime (a stolen one is cut off by revoking the device). There is no per-device limiter on refresh (all families behind one Docker bridge address share the per-IP bucket). The LAN-paired tablet still has no server identity and no bridge to a server child. The guardian client is not yet wired to the new routes (the Dart API functions exist and are tested; no screen calls them), and the invite deep link and the paste-an-invite screen are not built. Push stays parked until a Firebase service account exists.
 
-**Tests.** `server/test/identity_chain_route.test.mjs` (real Postgres through the real `Api` with strict ids on, run as `app_owner` and again as `app_runtime`, wired in `tools/verify.sh`): sign-up (validation, replay, expiry, concurrency, kill switch, cap, refresh, RLS on both tables), children (PIN step-up, the live edge, two real families isolated from each other), the whole invite chain (claim, confirm, decline, revoke, expiry, non-inviter, closed inviter, email already registered), deactivation ending a device session, a sign-up-created child (paired device, a message that materializes, the call id surviving strict ids) and the operator tool. `server/test/webauthn_config.test.mjs` (pure): configuration validation, origin matching, the assetlinks document, and a real P-256 assertion with an Android origin. `packages/api/test/contract.test.mjs` gains the seven new routes (every one must have a Dart constant) and the `guardian-invites` identity exception.
+**Tests.** `server/test/identity_chain_route.test.mjs` (real Postgres through the real `Api` with strict ids on, run as `app_owner` and again as `app_runtime`, wired in `tools/verify.sh`): sign-up (validation, replay, expiry, concurrency, kill switch, cap, a junk token learning nothing about either, refused before the PIN is hashed, refresh, RLS on both tables), children (PIN step-up, the live edge, two real families isolated from each other), the whole invite chain (claim, confirm, decline, revoke, expiry, non-inviter, closed inviter, email already registered), deactivation ending a device session, a sign-up-created child (paired device, a message that materializes, the call id surviving strict ids) and the operator tool. `server/test/webauthn_config.test.mjs` (pure): configuration validation, origin matching, the assetlinks document, and a real P-256 assertion with an Android origin. `packages/api/test/contract.test.mjs` gains the seven new routes (every one must have a Dart constant) and the `guardian-invites` identity exception.
 
 ## §8 UI architecture
 

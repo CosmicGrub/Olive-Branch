@@ -54,7 +54,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload,
          webauthnCredentialById, updateWebauthnSignCount,
-         signUpWithAllowance, childrenOf, createChildForGuardian,
+         signUpWithAllowance, precheckSignup, childrenOf, createChildForGuardian,
          claimGuardianInvite, confirmGuardianInvite, declineGuardianInvite,
          guardianInvitesFor } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
@@ -781,6 +781,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: 400, body: { error: 'invalid_home_tz' } };
       }
       if (typeof b.pin !== 'string') return { status: 400, body: { error: 'pin_required' } };
+      // Judge the allowance and the policy BEFORE hashing the PIN: scrypt is
+      // synchronous and blocks the one event loop (~tens of ms), and this route
+      // is unauthenticated. A caller without a live token gets the same answer
+      // as a failed sign-up and costs one indexed lookup, not a hash. Judged
+      // allowance-first, so a tokenless caller also cannot read the kill
+      // switch or the cap. signUpWithAllowance() re-decides under locks.
+      const pre = await precheckSignup(pool, token, new Date());
+      if (!pre.ok) return { status: 403, body: { error: pre.reason } };
       let pinHash;
       try { pinHash = hashPin(b.pin); }
       catch { return { status: 400, body: { error: 'invalid_pin_format' } }; }

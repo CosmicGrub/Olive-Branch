@@ -85,9 +85,22 @@ ALTER TABLE guardian_invite
   ADD COLUMN declined_at      timestamptz;
 
 -- Invites that already went through bootstrap keep their claimant.
+--
+-- guardian_invite is FORCE row level security (0014) and its policy admits
+-- only app.role = 'system' (or the inviter), which a migration session sets
+-- neither of. The production migrator is app_owner (NOSUPERUSER, NOBYPASSRLS),
+-- so without this the UPDATE below matches ZERO rows and raises nothing: every
+-- pre-0050 bootstrapped invite would silently lose its claimant (confirm would
+-- answer not_claimed, bootstrap already_bootstrapped, and the inviter could
+-- never grant access). set_config(.., true) is transaction-local, needs no
+-- privilege (unlike a function-level SET, see 0040/0047), and is reset below.
+-- A superuser-run suite cannot see this, which is why
+-- tools/test/migrate_0050_backfill.test.mjs applies 0050 as app_owner.
+SELECT set_config('app.role', 'system', true);
 UPDATE guardian_invite
    SET claimant_user_id = bootstrap_user_id, claimed_at = bootstrapped_at
  WHERE bootstrap_user_id IS NOT NULL;
+SELECT set_config('app.role', '', true);
 
 ALTER TABLE guardian_invite
   ADD CONSTRAINT invite_claim_columns_paired

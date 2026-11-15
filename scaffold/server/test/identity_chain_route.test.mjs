@@ -101,6 +101,15 @@ let A, B;   // { userId, tok, deviceId, cred }
   const bogus = await signup('B'.repeat(43));
   check('A signup', 'an unknown token -> 403 invalid_allowance', `${bogus.status} ${bogus.body?.error}`, '403 invalid_allowance');
 
+  // The route judges the allowance BEFORE it hashes the PIN (scrypt blocks the
+  // one event loop and this route is unauthenticated). A junk token with a
+  // PIN that hashPin would refuse therefore gets the allowance answer, not
+  // invalid_pin_format: the PIN was never looked at. A live token still gets
+  // the PIN error (checked above with tok0).
+  const junkBadPin = await signup('J'.repeat(43), { pin: 'abcd' });
+  check('A signup', 'a junk token is refused before the PIN is even hashed (403 invalid_allowance, not 400 invalid_pin_format)',
+    `${junkBadPin.status} ${junkBadPin.body?.error}`, '403 invalid_allowance');
+
   // success
   const ok = await signup(tok0);
   check('A signup', 'a valid allowance signs a grown-up up -> 201', ok.status, 201);
@@ -156,12 +165,20 @@ let A, B;   // { userId, tok, deviceId, cred }
   check('A signup', 'kill switch off -> 403 signup_disabled', `${off.status} ${off.body?.error}`, '403 signup_disabled');
   check('A signup', 'a refused sign-up does not burn the allowance',
     (await admin.query(`SELECT count(*)::int n FROM signup_allowance WHERE token_hash = $1 AND redeemed_at IS NULL`, [signupAllowanceDigest(held)])).rows[0].n, 1);
+  // ...but a caller with no live token learns nothing about the kill switch:
+  // the allowance is judged first, so a junk token gets the uniform answer.
+  const offBogus = await signup('K'.repeat(43), { displayName: 'NoTokenWhileOff' });
+  check('A signup', 'kill switch off + junk token -> 403 invalid_allowance (the switch is not readable without a token)',
+    `${offBogus.status} ${offBogus.body?.error}`, '403 invalid_allowance');
   await setSignupPolicy(pool, { enabled: true });
   // cap
   const pol = await signupPolicyFor(pool);
   await setSignupPolicy(pool, { maxAccounts: pol.redeemed });
   const capped = await signup(held, { displayName: 'OverCap' });
   check('A signup', 'cap reached -> 403 signup_cap_reached', `${capped.status} ${capped.body?.error}`, '403 signup_cap_reached');
+  const cappedBogus = await signup('L'.repeat(43), { displayName: 'NoTokenAtCap' });
+  check('A signup', 'cap reached + junk token -> 403 invalid_allowance (the cap is not readable without a token)',
+    `${cappedBogus.status} ${cappedBogus.body?.error}`, '403 invalid_allowance');
   await setSignupPolicy(pool, { maxAccounts: pol.redeemed + 1 });
   const underCap = await signup(held, { displayName: `Second-${RUN}`, pin: '7315' });
   check('A signup', 'raising the cap by one lets exactly one more family in', underCap.status, 201);
@@ -356,6 +373,16 @@ let NANA;
   await call('POST', `/v1/guardian-invites/${second}/accept`, null);
   const dead = await call('POST', `/v1/guardian-invites/${second}/bootstrap`, null, { displayName: 'Nana' });
   check('C claim', 'bootstrap for an already-registered email -> 409 email_already_registered (no session minted)', `${dead.status} ${dead.body?.error} ${'token' in (dead.body ?? {})}`, '409 email_already_registered false');
+  // KNOWN LIMIT, recorded rather than hidden: `claim` matches app_user.email
+  // against the invited email, and no route sets or verifies an email on a
+  // sign-up-created account (POST /v1/auth/signup stores none; only the invite
+  // bootstrap writes one). B was created by sign-up, so it can never claim an
+  // invite addressed to anyone, even to the person who owns it. Closing that
+  // needs a verified-email step (a mailer), which this lane does not build.
+  const bEmail = await admin.query(`SELECT email FROM app_user WHERE id = $1`, [B.userId]);
+  check('C claim', 'a sign-up-created account has no email (claim cannot match it)', bEmail.rows[0].email, null);
+  check('C claim', 'so a sign-up-created account cannot claim an invite -> 404 (claim covers bootstrap-created accounts only)',
+    (await call('POST', `/v1/guardian-invites/${second}/claim`, B.tok)).status, 404);
   check('C claim', 'claim needs a session', (await call('POST', `/v1/guardian-invites/${second}/claim`, null)).status, 401);
   check('C claim', 'another family\'s account (different email) cannot claim it -> 404', (await call('POST', `/v1/guardian-invites/${second}/claim`, B.tok)).status, 404);
   check('C claim', 'the inviter\'s own account cannot claim it either -> 404', (await call('POST', `/v1/guardian-invites/${second}/claim`, A.tok)).status, 404);

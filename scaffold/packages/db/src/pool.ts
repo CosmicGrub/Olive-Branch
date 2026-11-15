@@ -4977,15 +4977,63 @@ async function enrolGuardianDevice(
 export type SignupError =
   | 'signup_disabled' | 'signup_cap_reached' | 'invalid_allowance';
 
+type SignupVerdict = { ok: true } | { ok: false; reason: SignupError };
+
 /**
- * POST /v1/auth/signup's real work. One transaction: policy gate, allowance
- * redemption, app_user, first PIN, device enrolment.
+ * The one decision both the cheap pre-check and the real sign-up share, so
+ * they cannot drift apart. ORDER MATTERS: the allowance is judged FIRST, so a
+ * caller who holds no valid token always gets the same `invalid_allowance`
+ * and learns nothing about the kill switch or the account cap. Only a holder
+ * of a live token is told the door is shut. `lockPolicy` takes the policy row
+ * FOR UPDATE (the real sign-up), so racing sign-ups cannot both slip under the
+ * cap; the pre-check reads without a lock.
+ */
+async function judgeSignup(
+  q: Query, token: string, now: Date, lockPolicy: boolean,
+): Promise<{ verdict: SignupVerdict; allowanceId?: string }> {
+  const [policy] = await q(
+    `SELECT enabled, max_accounts FROM signup_policy WHERE singleton${lockPolicy ? ' FOR UPDATE' : ''}`);
+  const allowance = await q(
+    `SELECT id, expires_at, redeemed_at FROM signup_allowance
+      WHERE token_hash = $1${lockPolicy ? ' FOR UPDATE' : ''}`,
+    [signupAllowanceDigest(token)]);
+  const a = allowance[0];
+  if (!a || a.redeemed_at || new Date(a.expires_at) <= now) {
+    return { verdict: { ok: false, reason: 'invalid_allowance' } };
+  }
+  if (!policy.enabled) return { verdict: { ok: false, reason: 'signup_disabled' } };
+  if (policy.max_accounts !== null) {
+    const [c] = await q(
+      `SELECT count(*)::int AS n FROM signup_allowance WHERE redeemed_at IS NOT NULL`);
+    if (c.n >= policy.max_accounts) return { verdict: { ok: false, reason: 'signup_cap_reached' } };
+  }
+  return { verdict: { ok: true }, allowanceId: a.id };
+}
+
+/**
+ * Read-only: would POST /v1/auth/signup have a chance with this token right
+ * now? The route calls it BEFORE it hashes the PIN. scrypt is deliberately
+ * slow and synchronous (it blocks the single Node event loop), and the route
+ * is unauthenticated, so without this gate any caller with a junk 20-char
+ * token could make the server burn a hash per request. Advisory only:
+ * signUpWithAllowance() decides again, under locks, and is the authority.
+ */
+export async function precheckSignup(
+  pool: pg.Pool, token: string, now: Date,
+): Promise<SignupVerdict> {
+  return withSystemSession(pool, async (q) => (await judgeSignup(q, token, now, false)).verdict);
+}
+
+/**
+ * POST /v1/auth/signup's real work. One transaction: allowance and policy
+ * gate, allowance redemption, app_user, first PIN, device enrolment.
  *
  *  - The kill switch and the cap are read FOR UPDATE on the single
  *    signup_policy row, so two racing sign-ups cannot both slip under the cap.
  *  - An unknown, expired and already-redeemed allowance are ONE outcome
  *    (invalid_allowance): an unauthenticated caller learns nothing about
- *    which tokens exist or used to.
+ *    which tokens exist or used to, and (judgeSignup) nothing about the kill
+ *    switch or the cap either: those are only reported for a live token.
  *  - The allowance row is locked FOR UPDATE before it is read, so a token
  *    cannot be redeemed twice by concurrent calls (the redeemed_at write is
  *    the compare-and-swap).
@@ -5004,22 +5052,8 @@ export async function signUpWithAllowance(
   // does the same). Everything else here is system-scoped as usual.
   const userId = randomUUID();
   return withSession(pool, { roleName: 'system', userId, childId: null }, async (q) => {
-    const [policy] = await q(
-      `SELECT enabled, max_accounts FROM signup_policy WHERE singleton FOR UPDATE`);
-    if (!policy.enabled) return { ok: false, reason: 'signup_disabled' };
-    if (policy.max_accounts !== null) {
-      const [c] = await q(
-        `SELECT count(*)::int AS n FROM signup_allowance WHERE redeemed_at IS NOT NULL`);
-      if (c.n >= policy.max_accounts) return { ok: false, reason: 'signup_cap_reached' };
-    }
-    const allowance = await q(
-      `SELECT id, expires_at, redeemed_at FROM signup_allowance
-        WHERE token_hash = $1 FOR UPDATE`,
-      [signupAllowanceDigest(input.token)]);
-    const a = allowance[0];
-    if (!a || a.redeemed_at || new Date(a.expires_at) <= input.now) {
-      return { ok: false, reason: 'invalid_allowance' };
-    }
+    const { verdict, allowanceId } = await judgeSignup(q, input.token, input.now, true);
+    if (!verdict.ok) return verdict;
     await q(
       `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, $2, $3)`,
       [userId, input.displayName, input.homeTz]);
@@ -5030,7 +5064,7 @@ export async function signUpWithAllowance(
     const redeemed = await q(
       `UPDATE signup_allowance SET redeemed_at = $2, redeemed_by = $3
         WHERE id = $1 AND redeemed_at IS NULL RETURNING id`,
-      [a.id, input.now.toISOString(), userId]);
+      [allowanceId, input.now.toISOString(), userId]);
     if (redeemed.length !== 1) throw new Error('signUpWithAllowance: allowance CAS lost');
     const device = await enrolGuardianDevice(q, userId, input.deviceLabel, input.now);
     return { ok: true, userId, ...device };
