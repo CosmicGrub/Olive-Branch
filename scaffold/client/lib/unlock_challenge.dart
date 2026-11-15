@@ -314,10 +314,14 @@ class UnlockResponder {
     if (kid == null) return null;
     int? renewTo;
     if (proved) {
-      // The tablet proved this key for this certificate id. observe(): same key = refreshed contact, other key = paused.
+      // The tablet proved this key for this certificate id. The same key refreshes contact. A DIFFERENT key under this
+      // id is refused for this scan only and writes nothing: the certificate id is printed in the clear on the real
+      // tablet's own picture, so anyone can make a self-signed picture with a stranger's key and that id, and a scan
+      // must not be able to pause the real tablet. (A pause already in the book still refuses, below.)
       final bool sameKey = constantTimeEquals(kid.childDeviceKey, c.childKey!);
+      if (!sameKey) return ChallengeView(c, kid, verdict: UnlockVerdict.paused, pausedName: kid.deviceName);
       final TrustStatus? st = t == null ? null : await t.observe(kid.certId, c.childKey!);
-      if (!sameKey || st == TrustStatus.paused) {
+      if (st == TrustStatus.paused) {
         return ChallengeView(c, kid, verdict: UnlockVerdict.paused, pausedName: kid.deviceName);
       }
     }

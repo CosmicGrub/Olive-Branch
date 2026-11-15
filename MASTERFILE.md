@@ -5275,8 +5275,10 @@ picture is optional and works only for devices in the same place). Layers:
    after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). **Contact is a
    real event now:** every time the grown-up's phone scans a tablet's signed unlock picture (More > "Unlock a child's
    device with my phone"), the tablet has proved it holds the key pinned for its certificate, so the phone records the
-   meeting (which restarts the 60-day count) or, if the key is different, pauses the connection, records it in the
-   history and unlocks nothing. A tablet from before the proof existed is still answered but counts as no meeting.
+   meeting (which restarts the 60-day count) or, if the key is different, unlocks nothing for that scan. A different
+   key under a known certificate id writes nothing to the book (the id is printed in the clear on the real tablet's own
+   picture, so a stranger's picture must not be able to pause the real tablet); a pause that is already in the book
+   still refuses. A tablet from before the proof existed is still answered but counts as no meeting.
    "Stop this connection" needs the grown-up's PIN, refuses that key from then on, and says plainly that the tablet
    keeps what is on it until it is reset; **the tablet is told it is disconnected, and stops honouring its pairing, the
    next time it is brought to this phone** (see "Pairing hardening" below). A plain-language history is kept as an append-only, hash-chained list (a removed,
@@ -5352,7 +5354,10 @@ keeping-watch (built, headless-tested; not run on two real devices).**
    certificate (offered when 90 days or less remain, or when it has none). A child sees nothing different. The tablet
    compares the signed date with its own clock, so a tablet whose clock is set back stays good for longer.
 4. *Live keeping-watch.* See "Keep watch" above: the unlock meeting calls the trust book for a tablet that proves its key.
-**Not built / honest limits of this hardening:** a lost or stolen tablet that is never brought near the phone is never
+**Not built / honest limits of this hardening:** a "meeting" proves that someone holding the tablet's key (or showing a
+picture of its screen within the picture's two minutes) was at the phone, not that the tablet itself was: the phone keeps
+no used-challenge list and records the meeting when it scans, before the grown-up types a code, so a photograph can
+restart the 60-day count; a lost or stolen tablet that is never brought near the phone is never
 told and keeps working until its certificate ends and (for a legacy certificate) its grace ends, and its play
 admission on the adult side is refused once the phone forgets or stops it; the adult phone does not refuse a child
 whose end date passed (the grown-up's Stop and Forget are the controls); a stolen tablet that kept its opt-in typed-code

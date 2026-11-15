@@ -5,12 +5,14 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/adult_gate.dart';
 import 'package:olive_client/device_keys.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/local_services.dart';
 import 'package:olive_client/pairing_protocol.dart';
 import 'package:olive_client/pairing_records.dart';
 import 'package:olive_client/pairing_trust.dart';
+import 'package:olive_client/play_credentials.dart';
 import 'package:olive_client/unlock_challenge.dart';
 
 Future<DeviceKey> _key() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
@@ -148,6 +150,33 @@ void main() {
       expect(after.graceUntilMs, isNull);
       expect(after.cert.expiresAtMs, renewed.expiresAtMs);
       expect(after.isLapsed(clock.ms), isFalse);
+    });
+
+    test('play admission follows the live store: a lapsed tablet admits nobody (the calm no-grown-up path), a renewal restores it at once', () async {
+      final LocalServices s = LocalServices.memory(isLive: true, demoSeeds: false, childId: 'c1');
+      LocalServices.install(s);
+      addTearDown(LocalServices.resetForTest);
+      final LocalStoreChildPairingRepository repo =
+          LocalStoreChildPairingRepository(s.area('childpairing'), LocalStoreLocalPinRepository(s.area('adultunlock')));
+      final DeviceKey ak = await _key(), ck = await _key();
+      final PairingCert old = await PairingCert.issue(ak, childDeviceKey: ck.publicKey, familyId: 'f', childId: 'kid', certId: 'x', issuedAtMs: 1, expiresAtMs: 2);
+      await repo.save(ChildPairing(cert: old, adultKey: ak.publicKey, adultName: 'Mom', childName: 'Ivy', unlockVerifier: null));
+      // null is exactly what a never-paired tablet gets, and LocalPairingController turns null into unpairedPlayLine
+      // (play_wiring_test.dart: calm, no error word, no digit), so the child sees the same quiet state.
+      expect(await const LocalStorePlayCredentials().load(adult: false), isNull);
+      final DateTime far = DateTime.now().add(const Duration(days: 400));
+      await repo.replaceCert(await old.renewed(ak, far.millisecondsSinceEpoch));
+      expect(await const LocalStorePlayCredentials().load(adult: false), isNotNull);
+    });
+
+    test('the keypad choice is read at use time, so a renewed tablet does not stay stuck until a restart', () async {
+      final _World w = await _world();
+      bool lapsed = true;
+      final PhoneUnlock pu = PhoneUnlock(host: w.host, phoneOnlyWhen: () => lapsed);
+      expect(pu.phoneOnly, isTrue);
+      lapsed = false;
+      expect(pu.phoneOnly, isFalse);
+      expect(PhoneUnlock(host: w.host, phoneOnly: true, phoneOnlyWhen: () => false).phoneOnly, isTrue, reason: 'a phone-only choice is never undone by renewal');
     });
 
     test('a stored renewal that does not verify under the pinned adult key is "not paired" (fails closed)', () async {
@@ -376,7 +405,7 @@ void main() {
       expect((await w.trust.devices()).single.lastContactMs, w.clock.ms);
     });
 
-    test('a tablet that proves a DIFFERENT key for the same certificate is paused, never granted, and recorded', () async {
+    test('a tablet that proves a DIFFERENT key for the same certificate is refused and never granted, and a scan writes nothing', () async {
       final _World w = await _world();
       final DeviceKey impostor = await _key();
       // The impostor holds a copy of the certificate and signs with its own key.
@@ -385,12 +414,13 @@ void main() {
       expect(v!.verdict, UnlockVerdict.paused);
       expect(v.pausedName, 'Ivy tablet');
       await expectLater(w.phone.grant(v), throwsStateError);
+      // HOSTILE: the certificate id is public (it is in the real tablet's own picture), so a stranger's picture must not
+      // be able to pause the real tablet. The refusal is for that scan only: the book is untouched.
       final TrustedDevice d = (await w.trust.devices()).single;
-      expect(d.status, TrustStatus.paused);
-      expect((await w.trust.repo.load()).history.last.kind, HistoryKind.paused);
-      // The real tablet is paused too until the grown-up reconnects it: nothing slips through afterwards.
+      expect(d.status, TrustStatus.active);
+      expect((await w.trust.repo.load()).history.map((HistoryEntry e) => e.kind), isNot(contains(HistoryKind.paused)));
       final (ChallengeView? again, _) = await w.show();
-      expect(again!.verdict, UnlockVerdict.paused);
+      expect(again!.verdict, UnlockVerdict.ok, reason: 'the real tablet is still answered after a stranger picture was scanned');
     });
 
     test('hostile: a forged or damaged proof gets nothing and does not touch the book', () async {

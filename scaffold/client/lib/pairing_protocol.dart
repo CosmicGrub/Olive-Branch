@@ -742,6 +742,8 @@ class ChildPairingClient {
   /// neutral advertisement: the session id then comes back in the hello answer);
   /// [password] is the typed PIN or the QR secret ([viaQr]); [expectedAdultFingerprint] comes from the QR.
   /// [onMatched] fires when the adult device proved it knows the secret: show the name and the pair.
+  /// A foreign family is stopped BEFORE any key exchange only when [expectedFamilyKey] is given (the blinded hint needs
+  /// it); [expectedFamilyId] alone is checked after key confirmation, so a caller that holds an id must pass the key too.
   Future<PairingResult> pair({
     Uint8List? sid,
     Uint8List? handle,

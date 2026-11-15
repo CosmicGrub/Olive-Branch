@@ -28,9 +28,13 @@ enum AdultGateStage { card, choose, keypad, phone }
 /// The grown-up's phone as a way to unlock this tablet (unlock_challenge.dart): a one-time challenge shown here,
 /// answered by a picture the phone shows. [phoneOnly] hides the keypad altogether.
 class PhoneUnlock {
-  const PhoneUnlock({required this.host, this.phoneOnly = false, this.scannerBuilder});
+  const PhoneUnlock({required this.host, this._phoneOnly = false, this.phoneOnlyWhen, this.scannerBuilder});
   final ChildUnlockHost host;
-  final bool phoneOnly;
+  final bool _phoneOnly;
+
+  /// Read each time the gate looks (a lapsed tablet is phone-only until a meeting renews it, with no restart).
+  final bool Function()? phoneOnlyWhen;
+  bool get phoneOnly => _phoneOnly || (phoneOnlyWhen?.call() ?? false);
 
   /// Tests supply a stand-in for the camera; null uses the real scanner.
   final Widget Function(void Function(String value) onValue)? scannerBuilder;
