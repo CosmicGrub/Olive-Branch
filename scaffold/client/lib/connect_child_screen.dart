@@ -4,9 +4,11 @@
 //
 // The grown-up types THEIR OWN PIN on THIS device first (checked by the local PIN service: lockout, constant
 // time). That opens a short-lived window (10 minutes, five failed tries, one use) that exists only on this
-// screen. Then, on the child's device, they open "A grown-up does this", pick their own name, and type the
-// same PIN there. The two devices prove to each other they know it without sending it (cpace.dart). This screen
-// then names the child's device and shows the same word and picture the child's device shows; one tap says yes.
+// screen. Then, on the child's device, they open "A grown-up does this", tap the nameless picture that matches the
+// one this screen shows, and type the same PIN there. The two devices prove to each other they know it without
+// sending it (cpace.dart). This screen then asks the grown-up to PICK, among four cards, the three pictures and
+// colour the child's device is showing (the Match step, pairing_match.dart); only a right pick unlocks the
+// "Yes, connect it" tap, and a wrong pick or "None of these" refuses.
 // Leaving the screen closes the window.
 //
 // The optional picture (QR) is offered by a switch and only shows while the window is open.
@@ -304,8 +306,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         Text('Open a short window for ${widget.childName}\'s device',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('Type your PIN here. Then, on her device, tap "A grown-up does this", pick the letters this phone '
-            'will show, and type the same PIN. Your PIN is never sent between the devices.'),
+        const Text('Type your PIN here. This phone will then show a picture. On her device, tap "A grown-up does this", '
+            'then "I\'m the grown-up", tap the same picture, and type the same PIN. Your PIN is never sent between the devices.'),
         const SizedBox(height: 16),
         TextField(
           key: const Key('connectPinField'),
@@ -452,7 +454,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       steps: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text("Waiting for ${widget.childName}'s device", key: const Key('connectWaiting'), style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('Open Olive on it and tap "A grown-up does this", then choose the picture shown here and type your PIN there. '
+        const Text('On her device, tap "A grown-up does this", then "I\'m the grown-up", tap the picture shown here and type your PIN there. '
             'This window closes in 10 minutes, after five wrong tries, or when you leave this screen.'),
         if (_scannedChild) const Padding(padding: EdgeInsets.only(top: 8), child: Text("Looking for the device whose picture you scanned. Nothing else can connect.", key: Key('connectScannedNote'))),
         if (_message != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_message!, key: const Key('connectMessage'))),
@@ -537,7 +539,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     return ListView(key: const Key('connectMatchStep'), children: <Widget>[
       Text("Which one is on ${widget.childName}'s device?", key: const Key('connectMatchTitle'), style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 4),
-      const Text('Look at the device in your hand. Pick the pictures that match.'),
+      const Text('Her device is showing three pictures and a colour. Tap the card here that has the same ones.'),
       const SizedBox(height: 12),
       LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
         final double cardW = ((box.maxWidth - 12) / 2).clamp(120.0, 360.0);

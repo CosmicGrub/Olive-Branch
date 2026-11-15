@@ -1,11 +1,13 @@
 // OLIVE BRANCH — adult safety: app lock, hidden recents preview, quick hide.
 // No longer UNVERIFIED — verified by CI (this file).
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/app_lock.dart';
 import 'package:olive_client/app_lock_screen.dart';
 import 'package:olive_client/local_pin.dart';
+import 'package:olive_client/olive_tokens.dart' show kBodyFont;
 
 class _Clock {
   DateTime t = DateTime(2026, 11, 14, 9);
@@ -40,6 +42,47 @@ Future<void> _type(WidgetTester tester, String pin) async {
 }
 
 void main() {
+  group('typeface', () {
+    String? familyOf(WidgetTester tester, String text) =>
+        tester.renderObject<RenderParagraph>(find.text(text)).text.style?.fontFamily;
+
+    testWidgets('the PIN cover draws in Atkinson Hyperlegible, with the app theme (colour) still applied', (tester) async {
+      final AppLockController c = await _controller(tester);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('appLockScreen')), findsOneWidget);
+      expect(familyOf(tester, 'Olive is locked'), kBodyFont);
+      expect(DefaultTextStyle.of(tester.element(find.text('Enter your PIN to open it.'))).style.fontFamily, kBodyFont);
+      final Material m = tester.widget<Material>(find.byKey(const Key('appLockScreen')));
+      expect(m.color, Theme.of(tester.element(find.byKey(const Key('appLockScreen')))).colorScheme.surface);
+    });
+
+    testWidgets('the quick-hide cover draws in Atkinson Hyperlegible too', (tester) async {
+      final AppLockController c = await _controller(tester, withPin: false);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      c.quickHide();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('quickHideCover')), findsOneWidget);
+      expect(familyOf(tester, kQuickHideTitle), kBodyFont);
+      expect(familyOf(tester, kQuickHideNotes.first), kBodyFont);
+    });
+
+    testWidgets('the PIN screen reached from quick hide keeps it', (tester) async {
+      final AppLockController c = await _controller(tester);
+      await tester.pumpWidget(_hostAbove(c));
+      await tester.pumpAndSettle();
+      await _type(tester, '4829');
+      c.quickHide();
+      await tester.pumpAndSettle();
+      await tester.longPress(find.byKey(const Key('quickHideTitle')));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('appLockPinField')), findsOneWidget);
+      expect(familyOf(tester, 'Olive is locked'), kBodyFont);
+    });
+  });
+
   testWidgets('the PIN field works when the guard sits above the Navigator (a tap must not throw)', (tester) async {
     final AppLockController c = await _controller(tester);
     await tester.pumpWidget(_hostAbove(c));
@@ -84,6 +127,27 @@ void main() {
       await tester.runAsync(() => c.update(c.prefs.copyWith(hideRecents: false)));
       expect(calls, <Object?>[true, false]);
       c.dispose();
+    });
+
+    testWidgets('a development build never sets the flag, so screenshots work; the saved preference is unchanged', (tester) async {
+      final List<Object?> calls = <Object?>[];
+      const MethodChannel ch = MethodChannel('olive/secure_screen');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(ch, (MethodCall m) async {
+        calls.add(m.arguments);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(ch, null));
+      final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1000);
+      final AppLockController c = AppLockController(
+          pin: pin, repo: MemoryAppLockPrefsRepository(const AppLockPrefs()), secure: SecureScreen(ch), allowScreenshots: true);
+      await tester.runAsync(c.start);
+      expect(calls, <Object?>[false], reason: 'hide-recents is on by default but a dev build must not set FLAG_SECURE');
+      expect(c.prefs.hideRecents, isTrue, reason: 'the saved preference is not changed');
+      c.dispose();
+    });
+
+    test('the default build keeps the flag (the constant is off unless a dev build defines it)', () {
+      expect(kAllowScreenshotsDev, isFalse);
     });
 
     test('a missing native side is not an error', () async {

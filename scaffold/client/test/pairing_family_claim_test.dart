@@ -162,7 +162,7 @@ void main() {
   group('a stopped device', () {
     test('is not answered at all: no hello-ok, no pake2, no attempt used', () async {
       final DeviceKey ak = await _key(), stopped = await _key(), other = await _key();
-      final AdultWindow w = await AdultWindow.open(
+      final AdultWindow w = await AdultWindow.open(requireMatch: false,
           adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'k', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap,
           refuseKey: (List<int> k) async => b64(k) == b64(stopped.publicKey));
       expect(await w.handle(_hello(w, stopped)), isNull);
@@ -222,6 +222,58 @@ void main() {
     test('without requireMatch the old approve path still works (the PIN path stays primary)', () async {
       final (AdultWindow w, _) = await run(requireMatch: false);
       expect(await w.approve(), isTrue);
+    });
+
+    // The security property, end to end on the adult side: a window opened with NO special arguments (the default a new
+    // caller gets) issues no certificate, and hands the child device nothing, until the grown-up has picked the right
+    // Match card AND then separately approved. A pick alone is not an approval. (A human tapping on the phone early is
+    // not the app skipping a step: every one of these taps is the grown-up's.)
+    Future<(AdultWindow, Future<PairingResult>, List<PairedKid>)> defaultWindow() async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final List<PairedKid> paired = <PairedKid>[];
+      final AdultWindow w = await AdultWindow.open(
+          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829',
+          makeUnlockVerifier: _cheap, onPaired: paired.add);
+      final Future<PairingResult> f = ChildPairingClient(
+              childKey: ck, transport: LoopbackPairingTransport(w), pollEvery: const Duration(milliseconds: 5), giveUpAfter: const Duration(seconds: 10))
+          .pair(sid: w.sid, password: '4829');
+      while (w.state != WindowState.awaitingApproval && w.state != WindowState.closed) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      return (w, f, paired);
+    }
+
+    test('no certificate without a correct Match pick and an explicit approval tap (default window)', () async {
+      final (AdultWindow w, Future<PairingResult> f, List<PairedKid> paired) = await defaultWindow();
+      expect(w.requireMatch, isTrue, reason: 'the Match step is on unless a caller explicitly turns it off');
+      expect(w.state, WindowState.awaitingApproval);
+      expect(await w.approve(), isFalse, reason: 'an approval before any pick issues nothing');
+      expect(paired, isEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(w.state, WindowState.awaitingApproval, reason: 'the child polling changes nothing');
+      expect(w.pickMatch(w.matchChoices!.correct), isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(paired, isEmpty, reason: 'a right pick alone is not an approval: no certificate yet');
+      expect(w.state, WindowState.awaitingApproval);
+      expect(await w.approve(), isTrue);
+      expect(paired, hasLength(1));
+      final PairingResult r = await f;
+      expect(r.ok, isTrue);
+    });
+
+    test('a wrong pick or "None of these" on a default window: nothing issued, the child device gets nothing', () async {
+      for (final int? pick in <int?>[null, 99]) {
+        final (AdultWindow w, Future<PairingResult> f, List<PairedKid> paired) = await defaultWindow();
+        expect(w.pickMatch(pick), isFalse);
+        expect(await w.approve(), isFalse);
+        expect(paired, isEmpty);
+        expect((await f).ok, isFalse);
+      }
+      final (AdultWindow w, Future<PairingResult> f, List<PairedKid> paired) = await defaultWindow();
+      expect(w.pickMatch((w.matchChoices!.correct + 2) % 4), isFalse);
+      expect(await w.approve(), isFalse);
+      expect(paired, isEmpty);
+      expect((await f).ok, isFalse);
     });
 
     test('an out-of-range pick is a wrong pick', () async {

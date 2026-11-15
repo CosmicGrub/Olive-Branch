@@ -103,6 +103,19 @@ class MainActivity : FlutterActivity() {
         // discoverable-credential requirement this bridge is built around.
         WebAuthnBridge.register(this, MethodChannel(messenger, WebAuthnBridge.METHOD_CHANNEL))
 
+        // Opens THIS app's page in the phone's settings, so a grown-up whose camera permission was refused can allow
+        // it again (scanner_unavailable.dart). The activity is the app's own; nothing is sent anywhere.
+        MethodChannel(messenger, "olive/app_settings").setMethodCallHandler { call, result ->
+            if (call.method == "open") {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", packageName, null)))
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("unavailable", null, null)
+                }
+            } else result.notImplemented()
+        }
         // Adult safety (app_lock.dart): FLAG_SECURE blanks this app in the recent-apps
         // list (and blocks screenshots). Only the guardian app ever calls it; the child
         // side and the kiosk/WebAuthn bridges are untouched.

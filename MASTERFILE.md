@@ -2232,6 +2232,12 @@ fully on-device, in the shape of the tablet unlock (`unlock_challenge.dart`):
   either picture is useless afterwards; neither contains a PIN. Setting the new PIN
   never touches the links, and does not itself approve the action the prompt was
   guarding: the prompt asks for the new PIN to go on.
+- *Camera unavailable.* On the grown-up screens that scan (this one, "Reset someone's PIN", the linking screen and
+  "Unlock a child's device") a camera that cannot start shows plain words ("The camera is not available right
+  now. Olive may not be allowed to use it...") and an "Open settings" button that opens this app's page in the phone's
+  settings (`scanner_unavailable.dart`, Android `olive/app_settings` channel in MainActivity.kt; a missing native side is
+  a quiet no-op), never the plugin's raw English error text. The child side keeps its wordless calm card. *Not built:*
+  the same card on the adult gate's own scanner on the child device (it still shows the plugin's default).
 - *No second grown-up, no recovery.* Without a linked phone nothing is offered and the
   screen says so plainly (`kNoRecoveryWords`): clearing Olive's storage on the phone is
   the only reset, and it erases the family set up on that phone, including anything
@@ -5134,6 +5140,7 @@ onboarding runs again.
 - *App lock.* When a grown-up leaves the app (paused or hidden, not a mere system dialog) and returns after the chosen delay (right away, 1, 5 or 15 minutes; default 1), a PIN screen covers the app until the device PIN above is typed; it also asks on a fresh start, because Android may have ended the app while away. The app's screens stay alive underneath (a half-written form survives) but are neither drawn nor reachable. No PIN set means no lock. Wrong tries use the PIN's own five-try, 15-minute pause. Defaults are the safe ones (lock on, hide on); unreadable saved settings fall back to them, never to "off".
 - *Hide in recent apps.* Android `FLAG_SECURE` through the `olive/secure_screen` channel (MainActivity.kt, a few lines of Kotlin; kiosk and WebAuthn bridges untouched) so the recents card is blank. Honest cost, said on the screen: it also blocks screenshots in the app. A missing native side is a quiet no-op.
 - *Quick hide.* One tap on "Hide now" covers everything with a plain notes page (DRAFT content, `kQuickHideNotes`, for owner review). A plain tap does nothing; press and hold the word "Notes" to come back, which asks for the PIN when one is set. No button names Olive.
+- *Typeface.* Both covers (PIN screen and notes page) sit in `MaterialApp.builder` above the screens' own theme wrapper, so they are wrapped in the app theme with the bundled Atkinson Hyperlegible (`kBodyFont`) applied to its text themes, and no longer draw in the system font. The notes page keeps its plain look (its cream colour and wording are unchanged).
 - *Kept as:* three small settings under the key `applock` in the sealed `localpin` area (no new data area), removed by a device wipe. *Not built:* biometric unlock (needs a native plugin and a `FlutterFragmentActivity` base), a PIN-recovery path (belongs with the security lane), and "guardian mode on a child device" (the audit item A-G3 is not in the repository and is ambiguous, so it was not guessed at).
 
 **The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
@@ -5230,9 +5237,10 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
    X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
    adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
    family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
+   **What the instructions say (matches the screens).** The grown-up's phone, after the PIN: "This phone will then show a picture. On her device, tap "A grown-up does this", then "I'm the grown-up", tap the same picture, and type the same PIN." While waiting, the phone shows a nameless coloured picture (no letters to read out) and says to tap "the picture shown here"; the child's options screen says to open "Connect a child's device" on the phone "then tap the same picture here". The Match step says "Her device is showing three pictures and a colour. Tap the card here that has the same ones."
 4. The child's screen then shows **three pictures and a colour** (no words, no name; about 21 bits, derived from the
    finished key exchange). The grown-up's phone shows **four candidate sets and "None of these"** and the grown-up
-   picks the one on the child's device (**Match**). A wrong pick, or "None of these", refuses: nothing is issued,
+   picks the one on the child's device (**Match**). Both are required before anything is issued: `AdultWindow.approve()` returns false until the right card was picked (`requireMatch`, which is **on by default**; the only production caller also passes it explicitly) and a separate "Yes, connect it" tap follows; a pick alone issues no certificate (tests: `pairing_family_claim_test.dart` "no certificate without a correct Match pick and an explicit approval tap"). A wrong pick, or "None of these", refuses: nothing is issued,
    adding is off for 10 minutes and the history says so. A right pick leads to "Who is this?" (the grown-up
    chooses; in this version only "My child"; the device can never claim a role) and "Yes, connect it" or "Not
    mine". The adult device signs a **certificate** for that one child device, one child, one family
@@ -5328,6 +5336,79 @@ lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with
 short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
 online relay of windows through the server is **not
 built**; the server pairing routes are unchanged and still work. No device has run this yet.
+
+### 8.5.12 The family ledger: one family across several devices (foundation; built and headless-tested; **not used by anything yet**)
+
+Owner request 2026-11-14 (design: `docs/planning/FAMILY-IDENTITY-DESIGN.md` and `docs/planning/VILLAGE-WELCOME-DESIGN.md`).
+Today a "family" on a device is only the string `local-<fingerprint>` computed from whichever grown-up phone opens the
+pairing window, so a tablet connected by one parent is a stranger to the other parent's phone. This section is the first
+three build steps of the identity design: **the pure logic and the stored state, with no screen and no change to how
+pairing behaves.** Every client file keeps the UNVERIFIED header; nothing here has run on a device.
+
+**Built (`client/lib/family_*.dart`, tests `client/test/family_*_test.dart`).**
+- **A signed, append-only ledger** (`family_ledger.dart`, `family_ledger_state.dart`). A family is a random 128-bit id plus the
+  hash of its signed genesis entry (both pinned; a second genesis with the same id is ignored). Entries are signed by an
+  Ed25519 device key, hash-linked to the entries they follow, in one canonical byte encoding that an independent Node
+  implementation reproduces byte for byte (`tools/family_ledger.mjs`, `client/test/vectors/family_ledger_vectors.json`).
+  Entry types: `genesis`, `member.add` (a grown-up or a carer, with tier, preset, capabilities, children, time box and a
+  proposal with its electorate, rule and expiry), `device.add` (a child device, a grown-up's extra phone, or a legacy tablet),
+  `device.revoke` and its cancel, `guardian.leave`, `guardian.remove`, `policy.set`, `key.rotate`. Six more are **reserved**
+  (valid and recorded, no effect): `access.pause`, `access.resume`, `access.end`, `limits.agree`, `limits.tighten`,
+  `standing.ok`.
+- **Approvals are separate signed votes** that name one entry by its hash, so a yes cannot be replayed onto another entry,
+  position or proposal. Silence is never yes: an unanswered request lapses at its expiry and a late yes is ignored. Any
+  no from a required person (or the candidate, or the proposer's withdrawal) ends the proposal for good, **but only if it
+  is dated before the last required yes: once an approval is complete it is final, and a later no or withdrawal changes
+  nothing** (taking a grown-up out is `guardian.remove`, which needs that grown-up's own yes).
+- **The rules, tested on hostile input:** a forked ledger is reported and never silently resolved; removal beats a
+  concurrent add (what a revoked phone did on another branch is void, a mutual revoke voids both, a device key claimed twice
+  goes to the earlier claim); a wrong signer, a child key or a carer key can never sign an entry; a pending person holds
+  nothing (no listed key, no authority, no wrapped key); loosening a family rule needs the other grown-ups while the rule is
+  "all", tightening needs nobody, and no entry can express a rule below the floor; **a new parent (with or without limits)
+  needs ALL existing parents whatever the family's own setting says**; a new phone settles in and cannot shape the family
+  until it has; another grown-up's phone is revoked only after a visible 72 hour notice its owner can cancel; one grown-up
+  cannot remove the other without their yes; a revoked key or a departed person can never be added back.
+- **The permission table** of the village design as data (`family_profiles.dart`): tiers, six presets, C1 to C13, fixed versus
+  settable cells, reach computed (Look, Act, Parent), proposal lifetimes. A cell test is generated from the table.
+- **Two keys on purpose** (`family_keys.dart`): the family key (every device including a child's) and the grown-up-only key
+  (grown-up devices only). A child device's keyring cannot store the grown-up-only key, the sealed store refuses it and drops
+  one found on load, and a key rotation never wraps it to a non-grown-up's device. A key reaches one device as an X25519 +
+  HKDF + ChaCha20-Poly1305 wrap whose associated data binds family, epoch, kind and recipient; each device's agreement key
+  is certified by its own signing key so no one can substitute theirs.
+- **Founding and migration** (`family_state.dart`): a family can be founded on a grown-up's device, and an existing
+  `local-<fingerprint>` family can be carried into a ledger without changing pairing: the genesis records the old id, each
+  paired tablet becomes a flagged `device.add` with its original issue time, and every version-1 certificate is still
+  recognised (`acceptsLegacyCert`), a tampered family id or another key's signature is not. It only reads the paired-tablets
+  list. Stored in the new sealed area `familyledger` (§8.16.4).
+- **The pure parts of pairing channel v2** (`family_channel_v2.dart`): the identifier that binds the family, mode and ledger
+  head into the PAKE, a per-window family commitment (nothing stable names the family on the Wi-Fi), the member claim, a
+  member's silent refusal of a foreign window, the post-join key-confirmation tag, and the version rules.
+
+**Not built (read this before saying "families work across phones").**
+- **Nothing is wired.** The live pairing flow, the connect screens, onboarding and every screen are unchanged and do not call
+  any of this: `connect_child_screen.dart` still computes `local-<fingerprint>`, the PAKE channel identifier still carries the
+  family id in the clear, a tablet still pins exactly one grown-up key, and no device has founded a ledger. A child device does
+  not hold the ledger yet, and a tablet connected by one parent is still a stranger to the other parent's phone.
+- Identity steps 4 to 10 and the village steps W2 to W11: a tablet that trusts every grown-up in the ledger and the in-place
+  upgrade of version-1 tablets; the second-grown-up join (window, one-time code, role choice, offline approval travelling by
+  gossip); the combined device list, forgetting, leaving and revoking screens and the plain sentence for a fork with its
+  one-tap accept; rekey on contact and the "not yet updated" list; the Welcome screens, profile picker, rate limits and
+  cooldown, the 72 hour hold for a family of one, pause, resume, end, limits agreements, standing OK, time-box enforcement;
+  the Helper page (it has no key and is never a ledger member); narrowing a limited parent's voice on Look-reach welcomes.
+- **No server side.** No family table, tenant lock, routes, sync or countersignature (identity steps 8 and 9). No server
+  migration was needed or written. Question 5 (who decides who is a guardian in server mode) is still open.
+- **The merge rule is provisional** (design section 11): a first model, hostile-tested, not fuzzed or mutation-tested at
+  scale. Times are the signers' own claims checked against the verifying device's clock; a stolen phone can claim a time
+  inside a notice window. **Known limit: a revoke is not final against someone who still holds the revoked key.** That
+  key can sign with a claimed time between the revoke and its effective time, naming the revoke as its parent, and the
+  reducer cannot tell it from an honest entry (it has no record of when an entry reached the device). Closing it needs a
+  receipt time or a witness, which is not built; until then, treat a lost phone as compromised for the notice period.
+- **Sizes and defaults are recommendations awaiting the owner:** 6 grown-ups, 12 child devices, 8 carers, 4 phones per
+  grown-up, a 72 hour notice, a 24 hour settle-in, "all" as the default for carers who can act. The limits are applied
+  where an entry takes effect (in the one canonical order), so proposing many before any is accepted cannot pass them.
+  Where several entries race for the last place on different branches, the later one in canonical order is the one skipped.
+- **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT** (decision D2, now covering the ledger, the wraps and
+  channel v2). No device, network or real two-phone behaviour has been checked.
 
 ## §8.6 Her colour
 
@@ -6609,6 +6690,8 @@ drift. Nothing is written that is not in it.
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
+| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
+| `guardian.local-guardian.trust` | On a grown-up's device: the paired devices' trust book (who each device is, when added, settling in, paused or stopped) and the plain-language history of those changes, kept in order so an edit can be noticed. Never shown on a child's screen. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -6625,6 +6708,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
 | `child.<id>.coordination` | Care and coordination, grown-up side only (§8.24.7): the medicines a guardian wrote and their dose log (who gave it and when; never edited or deleted), the expenses a guardian recorded and each answer to them (append-only events, with the explicit self-accept marker), and the handover log (notes in a hash chain with the same framing as the server and the court export). Every word is a guardian's; the app adds no medical text and no amounts and moves no money. Never in her app. | **Yes** |
+| `child.<id>.aboutchild` | The care profile ("About her", §8.24.8), grown-up side only: what a guardian wrote under Keep her safe, her everyday, what helps, health history and moods and habits (the last two behind the guardian PIN); today's heads-up (one note for one local day, never kept as a log; not shown after local midnight and removed the next time the profile is opened or changed); the people it is shown to on this phone and until when; the dates for the "is this still right?" prompts and her birthday if a guardian gave it; a short edit history of each entry (who changed it and when; not an evidence log, not hashed, not exported). Every word is a guardian's; the app adds no medical text and works out no dose. Never in her app. | **Yes** |
+| `child.<id>.aboutplans` | Photos of a doctor's plan (an asthma or allergy action plan) that a guardian chose to keep, each with a label the guardian typed (§8.24.8). The app never takes, edits or reads one; the picker's temporary copy is deleted once the sealed copy is made. Guardian side only. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 | `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
@@ -8139,7 +8224,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **43 areas, 23 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **47 areas, 27 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -8150,6 +8235,7 @@ Each row is something this document or the product's own screens might lead a re
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
 | **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
@@ -8161,6 +8247,7 @@ Each row is something this document or the product's own screens might lead a re
 | **Server sync** between a family's devices and homes | None. Every on-device area is per device (§8.16.7). Server tables and routes exist for Parent Learn (migration 0035) and the emergency card's version history (0036). | The client does not call the `/v1/learn` routes (it uses the on-device store), and the family structure's server half was parked (§8.18). Sharing a routine, bag, place, helper, story or shelf between homes is parked in every suite. |
 | **Captions** (live captions and translation, §8.4) | A per-child switch that records a wish (§8.21.8); a per-person language (`packages/i18n`). | Nothing shows captions; `captionsActive` is false whatever the switch says. |
 | **Voice navigation, a dyslexia typeface, a TalkBack pass on a real device** | Read-aloud, reduced motion, roomier reading, larger targets (§8.21). | Not built, or not run (§8.21.9). |
+| **Care guides: the content** (who to call, choking, a bump to the head, a high fever, making the home safe) | The whole engine, **built but gated** (§8.30): one schema, a lossless converter proven by a content hash and a structural check, a loader with a hard review gate (the drafts themselves are not bundled in the app), and the guardian screens (library with the emergency button first, one guide with age tabs, who to call, a new carer's first screen, helper-page selection) with sources, retrieved date and last-reviewed always on screen. | **No medical text is shown to anyone.** All five guides are `DRAFT_UNREVIEWED`; a release build cannot display them. It needs a qualified clinician's review of each guide (and a hands-on first-aid instructor for choking), the 66 parent-facing strings that still talk to the reviewer or point at material the app does not carry rewritten, the reviewer's answers recorded in each guide's `review` block, and the block headings signed off. Also not built: the About-child profile the "For Mia" strip reads from (the strip renders nothing until it exists), saving the helper-page choice, sharing the helper page with a helper, and region choice beyond the guide's own region. |
 | **iOS, the SMS bridge, a no-install web path** | An `sms` channel value in the schema and an `sms_to_adult` route token in the transport; an Android client and a Windows kiosk bridge. | No `ios/` or web target; no SMS sender. |
 | **A real-device pass of any of the above, and of this release** | `flutter analyze` and `flutter test` in CI for every client change. | The Windows kiosk bridge is still marked UNVERIFIED (no Visual Studio C++ workload to run `flutter build windows`); the Wear OS companion has never paired with a watch. No Fold5 or Tab S9 FE run was done for the changes in v0.50.0 or v0.51.0, and their CHANGELOG entries say so; the v0.51.0 unified live build was installed on both devices on 2026-11-08 but not exercised. The only release artifact is a debug-signed preview APK built with no server address by `tools/cut-release.mjs` (`docs/RELEASING.md`): no release has been signed with a real key. |
 | **A rendered court-export PDF and a print-ready Year Book PDF** | The certified export bundle and the assembled Year Book. | No PDF is produced (§12). |
@@ -8485,7 +8572,8 @@ where things are kept. Nothing is generated about a new partner or a family chan
 - **Guardian:** Settings hub, **Her** group, "Growing" (time capsule, first times, growing
   marks); Settings hub, **Family** group, "Care" (care binder, hospital mode, picture
   stories, appointment prep). Each hub carries a switch per suite; a suite switched off is
-  not offered. Care is reachable only from the guardian shell.
+  not offered. Care is reachable only from the guardian shell. The care binder's sections are
+  also copied once into the care profile, "About her" (§8.24.8); the binder keeps its own copy.
 - **Her:** the "Keep and grow" section of the child **More** hub (`child_more.dart`). It exists
   only when the family-structure model says so: the youngest band's home has no More hub
   (`ChildView.hasTile('more')`), so it gets nothing; from the 5 to 7 band up all five
@@ -9219,6 +9307,135 @@ the custody schedule's two-week list with swap markers, the month calendar with 
 exchange bag merged with the packing list ("medicines that travel"), reminders for due medicines, and
 the per-tile counts on the guardian home.
 
+### 8.24.8 The care profile ("About her")
+
+The guardian-only care binder, emergency card and medicines log, grown into **one profile a grown-up
+writes about the child**, kept on this device and shown in her app **never**. Design source:
+`docs/planning/QR-VETTING-BRAINSTORM.md` ("About the child: the care profile") and mockups H0 to H11 in
+`docs/planning/qr-vetting-mockups.html`. Code: `client/lib/care_profile_logic.dart` (the rules, pure),
+`care_profile_store.dart` (the sealed document, the PIN on the locked parts, the photo store) and
+`care_profile_screens.dart` (the screens).
+
+**It loses nothing.** The binder's sections are copied in once each (allergies to Keep her safe; routines,
+school and notes to Her everyday; a blank section waits until it has words; each copied entry says "from the
+care binder" and the date, because the binder never recorded who wrote it); the binder is not changed or
+emptied and stays reachable. **The copy is made once and the two then drift:** a later edit in the binder does
+not reach the profile or the doctor sheet, and the hub says so; write changes in the profile. The emergency card and the medicines log are **read where they are kept**,
+never copied, so they cannot drift: the card's allergies, conditions, doctor and contacts go on the doctor
+sheet, and the Medicines part opens the existing medicines screen with its dose log and double-dose guard
+unchanged (`care_local.dart`).
+
+**What the app writes: nothing medical.** Every entry is a grown-up's words with "written by <name>, <date>".
+The app supplies section names, plain instructions and the honest notes on each screen. It gives no advice,
+no suggested wording, no pre-written prompt, and works out no dose (a medicine line is the dose and the gap
+the grown-up typed). The neutral writing prompts of the design ("What helps when she's upset?") are **not
+shipped**: they are app-written strings and need clinical and child-development review first.
+
+| Part | What it holds | Who may be shown it |
+|---|---|---|
+| **Keep her safe** | Entries a grown-up wrote (allergies, what must not be missed, who to call), the photos of a doctor's plan, and the emergency card on the sheet. | A grown-up with a say in her care: always. Others: only if a parent chose. |
+| **Her everyday** | Food, sleep, routines, school, what she likes. | Same rule. |
+| **What helps** | What calms, what overwhelms, how a break is asked for. | Same rule. |
+| **Today's heads-up** | One short note for one local day. **Not shown after local midnight, and removed from the sealed file the next time the profile is opened or changed (nothing runs at midnight itself); never logged, never revised, never on the doctor sheet.** | Same rule, and only on its day. |
+| **Medicines** | The existing list and dose log. | Same rule (shown as written: name, dose, times, the gap set, the note, who gave the last dose). |
+| **Health history** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
+| **Moods and habits** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
+
+**The child never sees any of it.** `careProfileVisibleToChild` is false for every part (the shape of
+`careNoteVisibleTo`); only the guardian shell imports the profile files, and no file whose name marks it as her side
+(child_, kid_, journal_, my_marks, her_colour_, kiosk_) reaches them directly or through anything it imports,
+or can name its types or areas (`care_profile_structure_test.dart` reads the real sources; the guarantee rests on
+the importer check, and the role gate in each screen decides at run time);
+every screen of the profile is the guardian shell and refuses a non-guardian with one neutral line before
+reading anything; a service call from a child or no principal is refused `guardian_only` for reads and writes
+alike. No label, count, score, streak or place is stored (P1 to P11).
+
+**Rules held in the service, not the screens.**
+- **The PIN on the locked parts.** Health history and Moods and habits can be read or written only after the
+  guardian PIN check accepts the PIN, and only for five minutes after the last use (use slides the window; the
+  screen closes them on leaving). The window belongs to the phone's shared service, not to one guardian: after one parent enters the PIN, another guardian using the same app on that phone can open those parts until it closes, and it keeps running while the app is in the background. A read before the PIN does not contain those entries at all. With no PIN on
+  the device they stay closed and the screen says to set one. The file itself is sealed with the phone's own key,
+  not the PIN: the PIN decides who sees it in the app.
+- **The tone guard.** What describes her (Her everyday, What helps, Today's heads-up, Moods and habits) goes
+  through the care note's `careNoteBanned` list plus a few labels (`careProfileLabelWords`: "bad mood",
+  "naughty", "spoiled", "attention seeking", "manipulative", "a brat", "bad girl", "bad boy") **before** an entry
+  is created or edited; a refused entry is never written, and the screen names the phrase and says to describe
+  what is needed or what helps. Keep her safe and Health history are not checked (a doctor's wording stays
+  verbatim). Entries copied from the binder are not checked (they are what a grown-up already wrote).
+- **Never a silent overwrite; both versions.** A grown-up changes only what they wrote (`not_yours`
+  otherwise). To differ with the other parent they **write their version beside** the entry (same part, same
+  title). Two active entries with the same title, by different writers, saying different things are shown
+  side by side under "These differ. Both are shown until you agree", each with its writer. "Use this one" puts
+  the others away: they are kept, shown under "Put away", and can be brought back. The same grouping shows on
+  the doctor sheet ("the grown-ups wrote this differently").
+- **The edit history is not an evidence log.** Changing your own entry keeps what it said before, with who
+  changed it and when, for the last 8 changes only. It is not hashed or chained, uses nothing from the court
+  export, is in no export, and the screen says it is a plain note and not a record of anything. The care-note
+  rule stands.
+- **Sharing on one device, and honest about it.** A grown-up adds the people a part may be shown to (a trusted
+  carer, a visit, view only, a helper page), switches each shareable part on or off for each, and can time-box
+  each grant (just tonight until 6 in the morning, 24 hours, 7 days, until taken back). New people start with the
+  table's defaults (a carer: Keep-safe, everyday, the heads-up; a visit: Keep-safe and the heads-up until the
+  next 6 in the morning; the other two: nothing). **Health history and Moods and habits can never be granted**
+  (refused in the service and dropped on read); a view-only person can be given Keep-safe and nothing else.
+  "Show for tonight" is one tap. The enforcement that exists is `cpViewFor`: **"Show as <name>"** on this phone
+  shows exactly the granted, un-ended parts (the heads-up only on its day, put-away entries never), and the
+  screen says that leaving it is not locked (use the phone's own screen pinning to hand it over). **Sharing
+  between phones is not built**, and every sharing screen says so in plain words; nothing is sent.
+- **Keeping it true.** A review prompt ("is what you wrote still right?") appears at her birthday (if a
+  grown-up gave the month and day; 29 February is 1 March in a common year), every 90 days, and after a medicine
+  change (the list changed, not a dose given: a fingerprint of names, doses, times, gaps, notes and retired
+  state). "Yes, still right" resets the count; "Not now" hides it for the visit. Nothing is scheduled or sent.
+- **The photo of a doctor's plan.** A grown-up chooses a photo (the phone's picker, gallery only) and types a
+  label; it is kept sealed in `child.<id>.aboutplans`. JPEG or PNG by its first bytes only, 600 KB at most, 6 at
+  most. The app never takes, crops, enhances, reads or turns one into text, and keeps the file exactly as the picker gave it (no resizing or recompression), deleting the picker's temporary copy afterwards; a person granted Keep-safe is shown
+  it in "Show as". The sheet lists it by label only.
+- **The doctor sheet.** A print-style one-page text built only from what grown-ups wrote: Keep her safe, the
+  emergency card's allergies, conditions, doctor and contacts, the medicines as written, the labels of the
+  plan photos, and (each a chip) Her everyday, What helps and, only if the PIN was given, Health history and
+  Moods and habits. It is selectable text with a copy button, like the binder's print view; there is no print
+  dialog and nothing is sent. The heads-up is never on it.
+- **A teen's "My health sheet".** Behind a flag that **defaults OFF** and is a grown-up's preview only: when on,
+  and she is 13 to 17, a grown-up can see what the sheet would hold (Keep her safe and the medicines list,
+  nothing else). **There is no door to it on any child's device**; whether a teen should have one, and the
+  step where a teen agrees before anything private is shared with a carer, are owner decisions still open.
+
+**Storage.** Two sealed (AES-256-GCM) catalogued areas, per child: `child.<id>.aboutchild` (4 MiB) and
+`child.<id>.aboutplans` (6 MiB), both in §8.16.4 and listed by the "Data on this phone" screen
+("About her: the care profile (grown-up side)", "Photos of a doctor's plan (grown-up side)"); the device wipe
+and "forget this child" remove both. One document, written atomically, one write at a time; a full box refuses
+the write (`full`) and keeps what it had; an unreadable file reads as an empty profile.
+
+**Where it is reached.** Settings, **Family**, "About <child>" (new row `aboutprofile`), and the first row of
+**Care and coordination** ("About <child>") in the offline guardian shell. Both open the same screens. Settings
+is behind the local PIN where one is set.
+
+**Verified** by `care_profile_logic_test` (the rules: tone guard, both-versions grouping, who may be shown
+what, defaults, "tonight", the review reasons including 29 February, the sheet, the teen rule, a tolerant
+read), `care_profile_store_test` (guardian-only denials, the PIN window, no silent overwrite, the bounded
+history, the heads-up leaving the file for good, sharing refusals, the binder copied once with the binder
+untouched, the medicine-change fingerprint with the real medicines log and its double-dose guard, the photo
+limits, sealed storage and restart, a full box), `care_profile_screens_test` (every screen driven by taps, the
+child and no-principal lines, the PIN box, posture at 344, 390, 600 and 800 dp at 2.0x text) and
+`care_profile_structure_test` (no child-side file reaches the profile; no network, no export, no hash; one
+photo door; no unit-bearing number in what the app writes). **Not run on a device.**
+
+**Not built, and why.**
+- **Sharing between phones** (no sync exists; the grants are enforced only by "Show as" and the sheet on this
+  phone), a helper page a sitter can open on their own phone, and the carer's own first screen ("About her,
+  tonight" in front of "Who to call" when a carer is welcomed): they need a connected family and the village
+  welcome.
+- **The "For <child>" strip beside the care guides** and its "follow her doctor's plan" line: the guides are an
+  unreviewed draft and ship nothing; the strip waits for clinician review.
+- **A teen's own view on a child's device**, and a teen's agreement before private notes are shared (owner
+  decision pending; the flag defaults OFF and only previews for a grown-up).
+- **Neutral writing prompts and the skippable "Tell us about <child>" onboarding** (app-written text needs
+  clinical and child-development review).
+- **Editing the other parent's entry in place** (deliberately not: write your version beside it); a restricted
+  co-parent profile (with equal guardians on one device no profile hides anything from a parent).
+- **Reminders or notifications for a review**, a print dialog or PDF, reading a plan photo as text, adding
+  appointment prep or hospital-mode notes to the sheet.
+
 ---
 
 *End of MASTERFILE v0.50.0. Amend in place. Bump version. Log in CHANGELOG.
@@ -9286,7 +9503,7 @@ app cannot verify guardianship and an agreement signed in it is not a legal inst
 
 ## §8.29 Care guides, and the About Mia profile (PLANNED, NOT BUILT)
 
-**Nothing in this section is built, and no medical text is in the app.** The rule in §8.19.2 stays in force (§8.19.5
+**The About Mia profile is not built, and no medical text is in the app. The care-guide engine (schema, review-gated loader, guardian screens) is built but gated: see §8.30.** The rule in §8.19.2 stays in force (§8.19.5
 records how it may be lifted, guide by guide). Planning: `docs/planning/DECISIONS.md` (the adopted decisions), the
 fuller design text in `docs/planning/QR-VETTING-BRAINSTORM.md` (the reshaped version is on open PR #198 and is not in
 the repo until that merges), the drafts and the clinician packet in `docs/care-guides/` (merged, PR #200),
@@ -9316,3 +9533,23 @@ sealed area in the on-device catalogue (§8.16.4), exclusion from the court expo
 
 **Not verified or open:** counsel's view of the §12.5 exception; any region's rules on health information about a child;
 whether the guides' authorities have changed since they were read (each draft records its research date).
+
+---
+
+## §8.30 Care guides: the engine is built and gated; no medical content is shipped (owner request 2026-11-14)
+
+> **Status.** Built and tested in CI, **UNVERIFIED on a device**. The five draft guides (`docs/care-guides/*.json`, status `DRAFT_UNREVIEWED`) are **not bundled in the app at all**: they live under `docs/care-guides/app-draft/`, and `client/assets/care_guides/` holds only an empty `index.json`, so a release build contains none of their text and nothing can be extracted from it. Two independent locks: the draft text is not in the asset set, and, if a draft were ever put there, the loader would still refuse it. The app ships no pre-written medical advice before a qualified clinician has reviewed it (§2.1, §5.23.2); this section is the mechanism that keeps that true once the guides are in the app.
+
+**One schema** (`docs/care-guides/SCHEMA.md`). The five drafts had drifted (`callDoctorSameDay` vs `medicalReviewAfterEpisode`, renamed age keys in the head-injury guide, clinician-only blocks as objects with `displayToParents:false` in the choking guide, `source` as a number or a list, a different text key in every list). `tools/care-guides-convert.mjs` maps all five to one schema (`docs/care-guides/converted/`) by renaming keys and regrouping values only. `tools/test/care_guides.test.mjs` proves it changed no word: a normalised (Unicode NFC) hash of every string, number and boolean in each draft equals the hash of its converted file. The hash is an unordered multiset, so it cannot see regrouping; a second, independently written structural check proves each item, helpline (name, number and region together), age band, label and note keeps its own context and companions (and the test shows the hash alone would miss a moved source id or swapped numbers). An unknown key in a draft makes the converter throw. The drafts themselves are untouched.
+
+**What the app would bundle once a guide is reviewed** (`client/assets/care_guides/`, today only an empty index; `docs/care-guides/app-draft/` holds the same shape for the drafts). A guide is promoted by copying it in, rewriting the flagged sentences and listing it in the index (`SCHEMA.md`, "Promoting a guide"); `test/care_guide_structure_test.dart` fails if any non-REVIEWED file sits in that directory, if the index and directory disagree, or if the pubspec names the `docs/` copies. The parent-facing fields only, and the per-item `action` triage word is left out too (no screen renders it, see "What review must still do"). The reviewer-only material (disagreements, unverified items, reviewer questions, the change log, the clinician-only dose conflicts, the `displayToParents:false` blocks, the reviewer remark on a helpline and the explanation of the head-injury first line) stays in the full converted files and is **not in the bundle**, and `CareGuide.fromJson` has no field to put it in. A block flagged `displayToParents:false`, clinician-only or unverified therefore cannot be rendered anywhere.
+
+**The review gate** (`client/lib/care_guide_gate.dart`, `care_guide_loader.dart`). The loader reads the bundled JSON offline and returns a guide only if (a) its status is `REVIEWED`, its `review` block names the date (`YYYY-MM-DD`), a reviewer role and the regions covered, and the region of the guide is one of them, **and** (b) none of its parent-facing strings contains the reviewer's vocabulary (the word clinician, `source N`, any mention of disagreements, a pointer to a list, block, section or rule the app does not bundle such as "see the emergency list", the words reviewer, needs review and unverified, a bare `[N]` citation marker, `DRAFT`, `not reviewed`); the review date must be a real calendar date; and each helpline number is digits and dialling punctuation only. Anything else is refused, and any read or parse error drops the guide (fail closed). A debug/preview switch (`careGuidesDraftPreview`, off by default, set nowhere in the code, **ignored in a release build**) can load `DRAFT_UNREVIEWED` guides only, and every screen then carries the permanent banner "Draft, not reviewed"; any other status is never shown. Today no guide is bundled, so the library is empty and the guardian hub shows no entry. The lint is a denylist and cannot prove a guide has no dangling pointer; the reviewer's read-through is the real check. **Helplines are drawn only for the regions the review record covers** (a previewed draft: its own region), so a number in a region nobody signed for is never shown. The review record is self-attested text in the file: nothing signs it, so the gate is a safety net against accidents, not a defence against someone who edits the asset on purpose.
+
+**Screens** (`care_guide_screens.dart`, guardian shell only; every screen refuses a non-guardian role). G1 the library, **the emergency button always first** (even with nothing available); G2 one guide: the emergency and urgent signs first whatever order they are stored in (a fixed block order, emergency first), the "For <child>" strip, age tabs, the remaining blocks; G3 who to call (the same guide with its phone numbers right after the emergency signs; **every number comes from guide data**, none is written in code, and the app never dials); G4 a new carer's first screen (the emergency button, then links to the guides the guardian chose); G5 helper-page selection. Every guide screen keeps **last reviewed, the date the sources were retrieved and the source list** on screen in a footer. The entry in the guardian More hub renders nothing until a guide passes the gate.
+
+**"For <child>"** is written against `ChildPlanSource` (`care_guide_plan.dart`). Until the About-child profile exists the source answers null and the strip renders nothing, not even the rule line. With a plan it shows the plan lines the guardian wrote and, **only on a REVIEWED guide that is not emergency-tier** (category emergency, or any guide with an emergency block, so never on who-to-call or choking, where it could delay a call for help), the rule line "If Mia's plan says something different from this guide, follow her plan and call her doctor." That sentence is app-written and is on the clinician sign-off list (`docs/care-guides/HEADING-SIGNOFF.md`).
+
+**The child never sees any of it.** No child-side file imports a care-guide file (`test/care_guide_structure_test.dart` allows exactly one importer outside the care-guide files, the guardian hub, and only for the hub tile).
+
+**What review must still do.** Rewrite the 66 parent-facing strings the current lint flags (who-to-call 4, choking 8, head-injury 24, high-fever 26, childproofing-home 4; the first, narrower lint found 20, and the rest are dangling pointers such as "see disagreements" and "see the emergency list", plus helpline numbers that carry prose), settle the open questions in `docs/care-guides/CLINICIAN-REVIEW-PACKET.md` and `SCHEMA.md` (including whether the high-fever items filed under `callEmergencyNow` with the action words `urgent` and `emergencyOrCare` belong in the urgent tier), sign off every app-written heading and each guide-and-heading pairing in `docs/care-guides/HEADING-SIGNOFF.md` (the choking aftercare block now sits under the neutral "After the episode", not "Same-day doctor"; the headings are labels but can change how a sentence reads), decide the high-fever tier question for real (the app drops the per-item action word, so all `callEmergencyNow` items are drawn identically under "Emergency signs"), then fill each guide's `review` block and set its status. Nothing else changes in the app.

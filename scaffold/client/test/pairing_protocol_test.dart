@@ -16,7 +16,7 @@ Future<DeviceKey> _key() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
 
 Future<AdultWindow> _window(DeviceKey k, {String name = 'Mom', String fid = 'fam-1', String cid = 'kid-1', String pin = '4829',
     bool qr = false, DateTime Function()? now, int attempts = 5, List<PairedKid>? paired}) =>
-    AdultWindow.open(
+    AdultWindow.open(requireMatch: false,
         adultKey: k, adultName: name, familyId: fid, childId: cid, childName: 'Ivy', pin: pin, offerQr: qr, now: now,
         maxAttempts: attempts, makeUnlockVerifier: _cheapVerifier, onPaired: paired?.add);
 
