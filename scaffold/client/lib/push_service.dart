@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — starting push for a connected child device, and what each push means. MASTERFILE §11, §7.18.
 //
 // [PushService.start] is the ONE guarded door to push. It decides, in this order, whether to do anything at all:

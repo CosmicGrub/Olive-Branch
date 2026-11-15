@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — "is a call on this screen right now". Two tiny process-wide facts the incoming-call logic
 // reads and nothing else owns. MASTERFILE §5.25, §5.20.
 //

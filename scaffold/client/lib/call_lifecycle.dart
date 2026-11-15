@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — the client half of the call log's life: can a call be placed, did it ring, how does it end.
 // MASTERFILE §5.25.2, §7.18. Pure Dart, no platform, covered by test/call_lifecycle_test.dart.
 //

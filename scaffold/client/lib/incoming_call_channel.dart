@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — the Dart end of the Android incoming-call bridge. MASTERFILE §5.25.2, §7.18.
 //
 // Mirrors android/app/.../IncomingCallBridge.kt. The names below are contract-checked against it by

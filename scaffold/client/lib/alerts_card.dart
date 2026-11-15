@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — "Alerts on this tablet": the grown-up's card for what the phone allows. MASTERFILE §11, §7.18.
 //
 // WHERE IT LIVES: inside Guardian mode (guardian_escalation_screen.dart), which a grown-up reaches only after the

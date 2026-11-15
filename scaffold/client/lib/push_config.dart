@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — the Firebase settings a build is given, and nothing else. MASTERFILE §11, §7.18.
 //
 // WHY THIS FILE EXISTS. A checkout has no Firebase project, so it has no push. The app is offline-first

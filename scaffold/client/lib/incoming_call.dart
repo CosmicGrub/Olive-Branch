@@ -1,3 +1,4 @@
+// UNVERIFIED on a real device and against Google: covered by flutter test only (MASTERFILE 7.19).
 // OLIVE BRANCH — a call arrives on the child's device. MASTERFILE §5.25.2, §5.20, §7.18.
 //
 // ONE PLACE decides whether a ring becomes a knock on the child's screen. It is reached from three roads and
