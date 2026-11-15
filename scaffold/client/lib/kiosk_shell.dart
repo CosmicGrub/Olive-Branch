@@ -38,6 +38,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'guardian_escalation_screen.dart';
+import 'call_presence.dart' show KioskSurfaceSignal;
 import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
@@ -90,13 +91,23 @@ class KioskShell extends StatefulWidget {
 class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   late final KioskChannel _channel;
   StreamSubscription<String>? _sub;
-  lock.LockState _state = lock.initialState(lock.LockMode.none);
+  lock.LockState _stateValue = lock.initialState(lock.LockMode.none);
+
+  // Every change of the lock state also publishes WHICH surface is showing, so an incoming ring can tell
+  // whether a grown-up is in Guardian mode (incoming_call.dart: a ring never covers a grown-up). A setter, so no
+  // call site can change the state without the signal following.
+  lock.LockState get _state => _stateValue;
+  set _state(lock.LockState v) {
+    _stateValue = v;
+    KioskSurfaceSignal.current.value = v.surface;
+  }
 
   @override
   void initState() {
     super.initState();
     _channel = widget.channel ?? KioskChannel();
     WidgetsBinding.instance.addObserver(this);
+    KioskSurfaceSignal.current.value = _stateValue.surface;
     _engage();
   }
 
@@ -207,6 +218,7 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    KioskSurfaceSignal.current.value = null;
     _sub?.cancel();
     super.dispose();
   }

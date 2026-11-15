@@ -69,7 +69,8 @@ Full list with evidence in [GAP-REGISTER.md](GAP-REGISTER.md); numbers in bracke
 | 20 | Real TLS proxy and domain | Caddy, when hosting resumes. |
 | 21 | Certificate pin values | Pin the leaf key plus a backup once a stable address exists. |
 | 22 | Networked checkers token header and retiring plaintext checkers | Do after the play-wiring work lands (the wiring is merged, #182). |
-| 23 | LiveKit, FCM, APNs credentials | Needed only when online calls and push resume. FCM and APNs tokens come from Google and Apple consoles. |
+| 23 | LiveKit, FCM, APNs credentials | Needed only when online calls and push resume. FCM and APNs tokens come from Google and Apple consoles. For Android the client side is built (MASTERFILE 7.20); the owner's part is the list in HOSTING-AND-CALLS "What the owner must provide for push and calls". |
+| 51 | What the caller is told when a child says "Not now" or a knock is not answered (MASTERFILE 5.25.2: "she did not come to it", "she is busy just now") | The server has no channel from the child's side to the caller, so today the caller only sees the call room stay empty. Recommend a small content-free "not now" / "not answered" state on the call log that the caller's app reads, worded as in 5.25.2 and never as a decline. Not built; needs your yes because it adds a server route and a caller-facing sentence. |
 | 24 | Ops values: per-child quota, alert routing | Defaults chosen by the team; adjust later. |
 | 25 | Free always-on server | None is fully reliable. Oracle Always Free was researched and scrapped for now; a small paid VPS is the fallback when real families depend on it. |
 

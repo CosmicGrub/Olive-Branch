@@ -41,6 +41,11 @@ class Knock {
 
 const int knockWaitsSeconds = 90;
 
+/// How a knock ended, told to whoever presented it (incoming_call.dart) so the phone's own ring surface can be
+/// put away. Nothing here is ever shown to the child and none of it is reported to the caller as a decline:
+/// [notNow] is a real answer (see [notNowOutcome]), [timedOut] is "she did not come to it".
+enum KnockEnd { answered, notNow, timedOut, joinFailed }
+
 Knock knock(String from, String at) => Knock(from: from, at: at);
 
 class KnockUnanswered {

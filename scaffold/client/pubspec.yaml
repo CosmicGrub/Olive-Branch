@@ -65,6 +65,11 @@ dependencies:
   # this actually produces, and MASTERFILE §11 / CHANGELOG for the same
   # caveat stated at the server side (fcm.ts/apns.ts's own missing-credential
   # errors).
+  # UPDATE (MASTERFILE 7.20): Firebase now starts at RUN time from four --dart-define values
+  # (lib/push_config.dart; tools/fcm-defines.mjs makes them from the owner's google-services.json
+  # into the git-ignored scaffold/secrets/ folder). No Google services Gradle plugin is applied
+  # and no JSON file belongs in this repo. A build without the values has push off and never
+  # touches the plugin, which is the honest state of this checkout.
   firebase_core: ^4.13.0
   firebase_messaging: ^16.5.0
   # §8.8.5 — on-device read-aloud (tts_channel.dart). Federated across

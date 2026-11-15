@@ -35,6 +35,11 @@ scaffold/.env
 # (DB passwords, SESSION_SECRET) never belong in git.
 scaffold/.env.prod
 
+# A Firebase client config file is the owner's, never the repository's. The client reads its Firebase settings from
+# --dart-define values (client/lib/push_config.dart), made by tools/fcm-defines.mjs into scaffold/secrets/.
+**/google-services.json
+**/GoogleService-Info.plist
+
 # Push credential (FCM service-account JSON) mounted read-only into the server
 # and scheduler containers at /run/olive-secrets. Never commit it.
 scaffold/secrets/

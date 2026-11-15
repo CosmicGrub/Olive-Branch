@@ -35,6 +35,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'call_modes.dart';
 import 'call_provider.dart';
+import 'call_presence.dart';
 import 'call_provider_registry.dart';
 import 'degradation_banner.dart';
 import 'form_factors.dart' as ff;
@@ -136,6 +137,7 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
+    CallPresence.enter();
     _startCall();
   }
 
@@ -266,6 +268,7 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    CallPresence.leave();
     _qualityTicker?.cancel();
     unawaited(_sub?.cancel());
     final p = _provider;

@@ -32,6 +32,16 @@ node_modules/
 .env.*
 !.env.example
 
+# Push credentials and settings. scaffold/secrets/ holds the FCM service-account key (the compose files mount it
+# read-only into the server and scheduler containers at run time) and the client's fcm.defines.json (Firebase
+# project id, app id, API key, sender id). .gitignore covers neither for `docker build`, and the build stage's
+# `COPY . .` would otherwise copy them into a cached layer. A running container still gets them from the mount.
+secrets/
+**/secrets/
+**/fcm.defines.json
+**/google-services.json
+**/GoogleService-Info.plist
+
 # OS/editor cruft.
 .DS_Store
 Thumbs.db

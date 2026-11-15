@@ -81,6 +81,9 @@ class CallKnockScreen extends StatefulWidget {
     this.knownWsURL,
     this.speak,
     this.onTimedOut,
+    this.apiProvider,
+    this.onEnded,
+    this.onCallEnded,
   });
 
   /// Who's knocking, shown and spoken verbatim. See this file's own header
@@ -141,6 +144,17 @@ class CallKnockScreen extends StatefulWidget {
   /// observe the timeout without inspecting navigator state directly.
   final VoidCallback? onTimedOut;
 
+  /// A fresh, signed-in client at the moment of answering. Wins over [baseUrl]/[sessionToken]: those were
+  /// captured when the push channel started, and a short session may have been renewed since. Real wiring is
+  /// `apiFor(...)` (auth_session.dart), which renews through the installed AuthSession.
+  final Future<OliveApi> Function()? apiProvider;
+
+  /// Told exactly once how this knock ended (see [KnockEnd]); never carries text.
+  final void Function(KnockEnd end)? onEnded;
+
+  /// Passed to the call this knock turns into, so the call log gets its end. Best-effort, record-keeping only.
+  final Future<void> Function()? onCallEnded;
+
   @override
   State<CallKnockScreen> createState() => _CallKnockScreenState();
 }
@@ -151,6 +165,13 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
   _KnockOutcome _outcome = _KnockOutcome.waiting;
   Timer? _timeoutTimer;
   Timer? _notNowDismissTimer;
+  bool _endReported = false;
+
+  void _report(KnockEnd end) {
+    if (_endReported) return;
+    _endReported = true;
+    widget.onEnded?.call(end);
+  }
 
   @override
   void initState() {
@@ -183,6 +204,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     // knockUnanswered() — never reported as missed, declined, or ignored.
     // Quiet, not an error state: no setState into an alarming screen, just
     // leave whichever screen was underneath.
+    _report(KnockEnd.timedOut);
     widget.onTimedOut?.call();
     if (mounted) Navigator.of(context).maybePop();
   }
@@ -199,10 +221,12 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     // this is for.
     if (widget.knownToken != null) {
       if (!mounted) return;
+      _report(KnockEnd.answered);
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
           who: widget.who, displayName: widget.displayName, initialMode: mode,
-          knownToken: widget.knownToken, knownWsURL: widget.knownWsURL))));
+          knownToken: widget.knownToken, knownWsURL: widget.knownWsURL,
+          onCallEnd: widget.onCallEnded))));
       return;
     }
 
@@ -210,28 +234,39 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
     // other than a real push (a test, or a future non-push call site), or
     // it genuinely has nothing to resolve — CallScreen falls back to its
     // own token-fetch exactly as it always did in that case.
-    if (widget.sessionId == null || widget.baseUrl == null ||
-        widget.childId == null || widget.sessionToken == null) {
+    final bool canJoin = widget.sessionId != null && widget.childId != null &&
+        (widget.apiProvider != null || (widget.baseUrl != null && widget.sessionToken != null));
+    if (!canJoin) {
       if (!mounted) return;
+      _report(KnockEnd.answered);
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
-          who: widget.who, displayName: widget.displayName, initialMode: mode))));
+          who: widget.who, displayName: widget.displayName, initialMode: mode,
+          onCallEnd: widget.onCallEnded))));
       return;
     }
 
     setState(() => _outcome = _KnockOutcome.answering);
     try {
-      final api = OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current);
-      final joined = await api.joinCall(widget.childId!, widget.sessionId!);
-      api.close();
+      final api = widget.apiProvider != null
+          ? await widget.apiProvider!()
+          : OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current);
+      final Map<String, dynamic> joined;
+      try {
+        joined = await api.joinCall(widget.childId!, widget.sessionId!);
+      } finally {
+        api.close();
+      }
       // The grant says WHICH engine carries this call (jitsi or livekit); a
       // body that is not a usable grant is a calm "didn't happen" below.
       final grant = CallGrant.fromJson(joined);
       if (!mounted) return;
+      _report(KnockEnd.answered);
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
           who: widget.who, displayName: widget.displayName, initialMode: mode,
-          knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL))));
+          knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL,
+          onCallEnd: widget.onCallEnded))));
     } catch (e) {
       // Honest, not alarming — the same calm posture knockUnanswered() and
       // _handleNotNow() below already established for "this didn't happen,"
@@ -241,6 +276,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       // debugging, never shown to her as an error.
       debugPrint('[olive.call] join failed: $e');
       if (!mounted) return;
+      _report(KnockEnd.joinFailed);
       setState(() => _outcome = _KnockOutcome.joinFailed);
       _notNowDismissTimer = Timer(const Duration(milliseconds: 1500), () {
         if (mounted) Navigator.of(context).maybePop();
@@ -250,6 +286,7 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 
   void _handleNotNow() {
     _timeoutTimer?.cancel();
+    _report(KnockEnd.notNow);
     setState(() => _outcome = _KnockOutcome.notNow);
     _notNowDismissTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted) Navigator.of(context).maybePop();
