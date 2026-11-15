@@ -6,8 +6,10 @@
 //
 // HONEST LIMITS (do not overclaim in any screen):
 //  - Every clock here is the ADULT device's clock. A child device's clock is never trusted for anything.
-//  - "Stopped" works on the adult side: the key is refused from then on. A child tablet that is offline keeps its
-//    certificate and what is on it until it next meets a family device; nothing here wipes it.
+//  - "Stopped" and "Forgotten" work on the adult side at once: the key is refused from then on. A child tablet that is
+//    offline keeps its certificate and what is on it until it next meets this phone: the phone then hands it a
+//    signed notice (unlock_challenge.dart) and the tablet stops honouring its pairing. Nothing here wipes it, and a
+//    tablet that is never brought near this phone is never told.
 //  - The history is tamper-EVIDENT (a removed, reordered or edited line breaks the chain), not tamper-proof: the
 //    owner of the adult device can rewrite the whole file.
 //  - "Settle in" is a badge plus limits on the adult side (a New device cannot add or approve others). A child
@@ -119,7 +121,7 @@ class TrustedDevice {
   }
 }
 
-enum HistoryKind { opened, added, refusedOtherFamily, refusedMatch, refusedNotMine, paused, stillYours, stopped, newCode, adultStopped }
+enum HistoryKind { opened, added, refusedOtherFamily, refusedMatch, refusedNotMine, paused, stillYours, stopped, newCode, adultStopped, forgot }
 
 /// The history line in plain words, written for a parent. Never the words key, certificate or fingerprint.
 String describeHistory(HistoryKind k, String who) => switch (k) {
@@ -133,6 +135,7 @@ String describeHistory(HistoryKind k, String who) => switch (k) {
       HistoryKind.stopped => 'You stopped the connection with $who.',
       HistoryKind.newCode => 'You made a new code. Old copies stopped working.',
       HistoryKind.adultStopped => 'Adding devices was turned off.',
+      HistoryKind.forgot => 'You forgot $who. This phone will not connect to it again.',
     };
 
 class HistoryEntry {
@@ -217,13 +220,18 @@ class AddingLock {
 }
 
 class TrustState {
-  const TrustState(this.devices, this.history, this.refusedKeys, this.settle);
+  const TrustState(this.devices, this.history, this.refusedKeys, this.settle, [this.forgottenKeys = const <String>{}]);
   final List<TrustedDevice> devices;
   final List<HistoryEntry> history;
 
   /// Public keys (base64url) of stopped devices: refused from now on.
   final Set<String> refusedKeys;
   final SettleIn settle;
+
+  /// Public keys (base64url) of devices the grown-up FORGOT: this phone no longer unlocks or plays with them, and
+  /// tells them they are disconnected the next time one is brought to it. Unlike a stopped key this does not block a
+  /// deliberate re-connection (adding the device again removes it from this set).
+  final Set<String> forgottenKeys;
 }
 
 abstract class TrustRepository {
@@ -256,7 +264,8 @@ class LocalStoreTrustRepository implements TrustRepository {
     ];
     final Set<String> r = <String>{for (final Object? e in (raw['r'] is List ? raw['r'] as List : const <Object?>[])) if (e is String) e};
     final SettleIn s = SettleIn.values.asNameMap()[raw['s']] ?? SettleIn.day;
-    return TrustState(d, h, r, s);
+    final Set<String> f = <String>{for (final Object? e in (raw['f'] is List ? raw['f'] as List : const <Object?>[])) if (e is String) e};
+    return TrustState(d, h, r, s, f);
   }
 
   @override
@@ -265,6 +274,7 @@ class LocalStoreTrustRepository implements TrustRepository {
         'h': <Object?>[for (final HistoryEntry e in s.history) e.toJson()],
         'r': s.refusedKeys.toList(),
         's': s.settle.name,
+        'f': s.forgottenKeys.toList(),
       });
 }
 
@@ -281,13 +291,13 @@ class TrustBook {
 
   Future<void> setSettleIn(SettleIn v) async {
     final TrustState s = await repo.load();
-    await repo.save(TrustState(s.devices, s.history, s.refusedKeys, v));
+    await repo.save(TrustState(s.devices, s.history, s.refusedKeys, v, s.forgottenKeys));
   }
 
   Future<PairingHistory> _history(TrustState s) async => PairingHistory(s.history);
 
-  Future<void> _write(TrustState s, PairingHistory h, {List<TrustedDevice>? devices, Set<String>? refused}) =>
-      repo.save(TrustState(devices ?? s.devices, h.entries, refused ?? s.refusedKeys, s.settle));
+  Future<void> _write(TrustState s, PairingHistory h, {List<TrustedDevice>? devices, Set<String>? refused, Set<String>? forgotten}) =>
+      repo.save(TrustState(devices ?? s.devices, h.entries, refused ?? s.refusedKeys, s.settle, forgotten ?? s.forgottenKeys));
 
   /// Records a refusal or other event with no device change.
   Future<void> note(HistoryKind kind, {String who = ''}) async {
@@ -299,6 +309,40 @@ class TrustBook {
 
   /// A key an adult stopped earlier is refused outright, before any exchange.
   Future<bool> isRefused(List<int> deviceKey) async => (await repo.load()).refusedKeys.contains(b64(deviceKey));
+
+  /// Every key this phone has turned away (stopped) or forgotten, decoded (a malformed entry is skipped). These are
+  /// the tablets that are TOLD they are disconnected when one is brought to this phone.
+  Future<List<Uint8List>> revokedKeyList() async {
+    final TrustState s = await repo.load();
+    final List<Uint8List> out = <Uint8List>[];
+    for (final String k in <String>{...s.refusedKeys, ...s.forgottenKeys}) {
+      try {
+        out.add(unb64(k));
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  /// True when [deviceKey] was stopped OR forgotten.
+  Future<bool> isRevoked(List<int> deviceKey) async {
+    final TrustState s = await repo.load();
+    final String enc = b64(deviceKey);
+    return s.refusedKeys.contains(enc) || s.forgottenKeys.contains(enc);
+  }
+
+  /// "Forget this tablet": this phone stops treating [deviceKey] as its own, and from then on tells the tablet it is
+  /// disconnected when it is brought here. A device in the book with that key is marked stopped (never "active" again);
+  /// no trust record is needed. A forgotten tablet may be connected again on purpose (unlike a stopped one). Idempotent.
+  Future<void> forget(List<int> deviceKey, {String who = ''}) async {
+    final TrustState s = await repo.load();
+    final String enc = b64(deviceKey);
+    final PairingHistory h = await _history(s);
+    final List<TrustedDevice> next = <TrustedDevice>[
+      for (final TrustedDevice d in s.devices) b64(d.deviceKey) == enc ? d.copyWith(status: TrustStatus.stopped) : d,
+    ];
+    if (!s.forgottenKeys.contains(enc) && !s.refusedKeys.contains(enc)) await h.append(HistoryKind.forgot, _ms, who: who);
+    await _write(s, h, devices: next, forgotten: <String>{...s.forgottenKeys, enc});
+  }
 
   /// The adult said "Yes, connect it" and chose the role. Starts the New period. [role] is the ADULT's choice.
   Future<TrustedDevice?> add({
@@ -317,7 +361,9 @@ class TrustBook {
     );
     final PairingHistory h = await _history(s);
     await h.append(HistoryKind.added, now, who: d.name);
-    await _write(s, h, devices: <TrustedDevice>[...s.devices.where((TrustedDevice x) => x.certId != certId), d]);
+    // Connecting a forgotten tablet again on purpose ends its "disconnected" mark, or its new pairing would be revoked.
+    final Set<String> forgotten = <String>{...s.forgottenKeys}..remove(b64(deviceKey));
+    await _write(s, h, devices: <TrustedDevice>[...s.devices.where((TrustedDevice x) => x.certId != certId), d], forgotten: forgotten);
     return d;
   }
 

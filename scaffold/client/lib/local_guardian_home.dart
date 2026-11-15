@@ -22,6 +22,7 @@ import 'calendar_day_logic.dart' show formatTimeOfDay, hhmmNow;
 import 'guardian_home.dart';
 import 'guardian_local_scope.dart';
 import 'local_family.dart';
+import 'screen_share_ui.dart' show ShareScreenAction;
 
 class LocalGuardianHome extends StatelessWidget {
   const LocalGuardianHome({super.key, required this.family, this.nowHhmm});
@@ -44,12 +45,17 @@ class LocalGuardianHome extends StatelessWidget {
             width: double.infinity,
             color: scheme.secondaryContainer,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              local?.onConnect != null
-                  ? 'On this device only. To share it with your family, connect it in Settings, under Account.'
-                  : 'On this device only.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer),
-            ),
+            child: Row(children: <Widget>[
+              Expanded(
+                child: Text(
+                  local?.onConnect != null
+                      ? 'On this device only. To share it with your family, connect it in Settings, under Account.'
+                      : 'On this device only.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer),
+                ),
+              ),
+              const ShareScreenAction(),
+            ]),
           ),
           Expanded(
             child: GuardianHome(

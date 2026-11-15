@@ -299,18 +299,33 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the family\'s signed record of which grown-ups and which child devices '
           'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
           'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
-          'never holds the grown-ups-only key. Sealed on the device; nothing is uploaded; not used by the '
-          'app yet.'),
+          'never holds the grown-ups-only key. It also remembers which welcome requests you asked to see again '
+          'later, and when (a reminder, never an answer). Sealed on the device; nothing is uploaded; not used by '
+          'the app yet.'),
   LocalDataEntry(
       area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
-      what: 'On a grown-up\'s device: the paired devices\' trust book (who each device is, when it was added, '
-          'settling in, paused or stopped) and the plain-language history of those changes, kept in order so an '
-          'edit can be noticed. Sealed on the device; never shown on a child\'s screen.'),
+      what: 'On a grown-up\'s device: which child devices it added and when it last met them, the ones it stopped or '
+          'forgot, and a plain-language list of what happened (a device was added, paused, stopped). Sealed on the device.'),
+  LocalDataEntry(
+      area: 'familysync', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
+      what: 'On a grown-up\'s device: the updates the grown-ups\' phones have shared with each other (so far, '
+          'the emergency card), each one sealed and signed by the phone that wrote it, and a note of what the other '
+          'phone last said it holds. Only grown-ups\' phones can open them: a child\'s device holds none and sees '
+          'nothing of it. Sealed on the device; nothing is uploaded; an update leaves this phone only when a grown-up '
+          'copies it.'),
   LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '
           'turning a setting off forgets what it stored.'),
+  LocalDataEntry(
+      area: 'screenshares', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * _mib,
+      what: 'Screens shared between grown-ups, on a grown-up\'s device only: the pictures of a screen another '
+          'grown-up sent here (at most three, each until it expires or is put away), what this phone sent and is '
+          'still waiting to hand over or take back, a mark for each one put away or taken back so a late copy is '
+          'dropped, and one quiet line of family history for each share (who shared a screen with whom, never the '
+          'picture). Never on a child\'s device and never shown in her app. Sealed on the device; nothing is '
+          'uploaded.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a

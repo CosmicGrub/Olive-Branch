@@ -57,6 +57,7 @@ import 'handover_notes.dart';
 import 'meds_care.dart';
 import 'message_banking.dart';
 import 'morning_briefing.dart';
+import 'screen_share_ui.dart' show ShareRedact;
 import 'send_time_guard.dart';
 import 'tiered_tile.dart';
 
@@ -174,8 +175,8 @@ class GuardianHome extends StatelessWidget {
             // clock and the zone no longer fit on one line, and a Row overflowed. The
             // clock stays dominant either way.
             Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 4, children: [
-                Text(childName, style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600)),
+                ShareRedact(child: Text(childName, style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600))),
                 // The CHILD's clock is dominant — same titleMedium weight as
                 // her name, well above the actor line below (§8.2.3).
                 Text(childLocalTime, style: Theme.of(context).textTheme.titleMedium
@@ -196,10 +197,10 @@ class GuardianHome extends StatelessWidget {
             // exactly as subordinate as they were.
             // Always one sentence: the caller's when it has one, else the honest
             // fallback (guardian_state_line.dart), never blank and never invented.
-            Text(guardianStateLine(childName: childName, sentence: childStateSentence,
+            ShareRedact(child: Text(guardianStateLine(childName: childName, sentence: childStateSentence,
                 connected: baseUrl != null, dayPart: dayPart),
               key: const Key('guardianStateLine'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
             const SizedBox(height: 4),
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
@@ -209,9 +210,9 @@ class GuardianHome extends StatelessWidget {
               child: FilledButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const CallScreen(who: 'dad', displayName: 'Dad'))),
-                child: Text('Call $childName'))),
+                child: ShareRedact(child: Text('Call $childName')))),
           ])),
-        _Ribbon(label: "$childName's day", bands: childBands, height: 20),
+        ShareRedact(child: _Ribbon(label: "$childName's day", bands: childBands, height: 20)),
         const SizedBox(height: 8),
         _Ribbon(label: 'you', bands: actorBands, height: 13),
         if (overlapLabel != null) Padding(

@@ -20,6 +20,7 @@ import 'local_pin.dart';
 import 'local_pin_recovery.dart';
 import 'local_pin_screens.dart' show LocalPinSetupForm;
 import 'scanner_unavailable.dart';
+import 'screen_privacy.dart';
 
 /// Tests supply a stand-in for the camera: it is handed a callback to call with the scanned text.
 typedef ScannerBuilder = Widget Function(void Function(String value) onValue);
@@ -146,7 +147,9 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Forgot your PIN?')),
@@ -302,7 +305,9 @@ class _GuardianPhonesScreenState extends State<GuardianPhonesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text("Other grown-ups' phones")),
@@ -449,7 +454,9 @@ class _ApprovePinResetScreenState extends State<ApprovePinResetScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text("Reset someone's PIN")),

@@ -5183,10 +5183,12 @@ onboarding runs again.
 
 **Adult safety on this device** (`app_lock.dart`, `app_lock_screen.dart`; Settings, Safety, "App lock and privacy"). Grown-up app only; the child shell never loads it.
 - *App lock.* When a grown-up leaves the app (paused or hidden, not a mere system dialog) and returns after the chosen delay (right away, 1, 5 or 15 minutes; default 1), a PIN screen covers the app until the device PIN above is typed; it also asks on a fresh start, because Android may have ended the app while away. The app's screens stay alive underneath (a half-written form survives) but are neither drawn nor reachable. No PIN set means no lock. Wrong tries use the PIN's own five-try, 15-minute pause. Defaults are the safe ones (lock on, hide on); unreadable saved settings fall back to them, never to "off".
-- *Hide in recent apps.* Android `FLAG_SECURE` through the `olive/secure_screen` channel (MainActivity.kt, a few lines of Kotlin; kiosk and WebAuthn bridges untouched) so the recents card is blank. Honest cost, said on the screen: it also blocks screenshots in the app. A missing native side is a quiet no-op.
+- *Screens on this phone: Private or Screenshots allowed.* Settings, Safety, App lock and privacy (`app_lock_screen.dart`), per phone, set by the grown-up who owns it. **Private is the default**: Android `FLAG_SECURE` through the `olive/secure_screen` channel (MainActivity.kt, a few lines of Kotlin; kiosk and WebAuthn bridges untouched) makes the recents card blank AND blocks screenshots and screen recordings (Android treats those as one flag, and the screen says so). **Screenshots allowed** needs the grown-up's PIN on this phone (none set: it stays Private and says to set one) and shows one calm sentence first. The rule lives in the controller, not only the dialog: `AppLockController.update` refuses a change from Private to allowed unless a PIN check (`confirmAllowScreenshots`) passed in the last two minutes, and each check allows one change; a saved allowed choice with no confirmation mark (written by an older build) is read as Private, so the grown-up says yes again with the PIN: "Anyone with this phone can then take pictures of what is on screen, and send them anywhere." Anything unreadable is Private. **Sensitive screens stay blocked even when screenshots are allowed** (`SensitiveScreen`, `screen_privacy.dart`): the PIN cover and the quick-hide page, set/change/forgotten PIN and the other-phones linking screens, the pairing window (`ConnectChildScreen`), the PIN box and the locked parts of About her, and the doctor sheet while health history or moods are on it. The flag is one rule in `secureFlagWanted`: child device, Private, a sensitive screen showing, or covered, unless the developer switch is set. **A child's device always blocks screenshots**: `ChildScreenShield` sits at the root of every screen a child (or a not-yet-assigned) device can show, sets the flag and never clears it; there is no setting in her app and the child side never imports the app lock (a test reads every file in `lib` outside a named list of grown-up files, in relative and `package:` import forms). The stored key is still `recents` in the `applock` record, with a `shots` confirmation mark beside it. **Developer switch, unchanged:** `--dart-define=OLIVE_ALLOW_SCREENSHOTS=true` (`kAllowScreenshotsDev`) makes a development build never set the flag at all; a store cut never passes it. A missing native side is a quiet no-op.
 - *Quick hide.* One tap on "Hide now" covers everything with a plain notes page (DRAFT content, `kQuickHideNotes`, for owner review). A plain tap does nothing; press and hold the word "Notes" to come back, which asks for the PIN when one is set. No button names Olive.
 - *Typeface.* Both covers (PIN screen and notes page) sit in `MaterialApp.builder` above the screens' own theme wrapper, so they are wrapped in the app theme with the bundled Atkinson Hyperlegible (`kBodyFont`) applied to its text themes, and no longer draw in the system font. The notes page keeps its plain look (its cream colour and wording are unchanged).
 - *Kept as:* three small settings under the key `applock` in the sealed `localpin` area (no new data area), removed by a device wipe. *Not built:* biometric unlock (needs a native plugin and a `FlutterFragmentActivity` base), a PIN-recovery path (belongs with the security lane), and "guardian mode on a child device" (the audit item A-G3 is not in the repository and is ambiguous, so it was not guessed at).
+
+**Sharing a screen with another grown-up, inside the app** (`screen_share.dart`, `screen_share_ui.dart`; `guardian.local-guardian.screenshares`, sealed). Owner decisions: adult to adult only, never a child, never the phone's share sheet. **Built and tested (headless):** a quiet "Share this screen" icon in the bar of the care screens (Care and coordination, Medications, Shared expenses, Handover notes, Her time your time) and on the local home band; it is **hidden** when there is nobody to send to (a family with one grown-up, or no family record on the phone), on a child device, and on any sensitive screen. It captures the screen itself, inside the app, so it works while system screenshots are blocked. The preview shows the picture, who it goes to ("This goes to Sam only, inside Olive"), **Hide names and photos** (solid blocks, not a blur, over the places a screen marked with `ShareRedact`; where nothing is marked the switch is off and says so rather than promise what it cannot do. **Plainly: this covers only places a screen has marked with `ShareRedact`; today that is the Her time your time clock card and the guardian home, so on Medications, Handover notes, Shared expenses and Care and coordination the child's name and the text go to the other grown-up as shown, and the preview is the check**; marking more places is a later step. The preview picture and the Hide flag are always the same render: Send waits while a picture is being drawn and a stale draw is dropped), an optional note (200 characters), and how long it lasts (1, 3, 7 default, 14 or 30 days). **Only a grown-up can be chosen**: the recipient list comes from the family ledger and holds only active grown-up devices with a certified agreement key, not this phone, not a carer, not a child device, not someone still settling in; `sealShare` refuses anyone else, and `openShare` refuses to open anything unless this phone is itself an active grown-up device, so a child device can neither send nor receive (a child's service object has no recipients and refuses everything). The picture is sealed to one phone (an ephemeral X25519 exchange with the recipient's agreement key, HKDF, ChaCha20-Poly1305) and signed by the sender's device key; every field is bound, so a flipped bit, a changed recipient, time or expiry, a forged sender, or a sender who has since been removed opens nothing. It expires by itself on both phones; **the sender can take it back at any time** (a signed notice; one that arrives before the picture leaves a mark so the picture is dropped when it does arrive, and only the sender's own shares can be taken back). A received picture opens on a screen that blocks capture and has **no send, share or save action**; it can only be put away. The family history keeps one quiet line ("Mom shared a screen with Sam"), never the picture. Plainly said in the app: a grown-up who receives a picture could photograph it with another device. At most three pictures are held and three waiting (the sealed area allows 16 MiB, enough for six pictures of the largest allowed size, and a test fills it; a full area makes `receive` answer "full" instead of failing). A test reads the library, the manifest and `pubspec.yaml` and fails if the phone's share sheet (any share plugin or send intent) ever appears. **NOT BUILT:** (1) **there is no road to the other phone yet**: `NoShareTransport` delivers nothing, so a picture waits sealed in the outbox ("Sam isn't nearby. It will go when your phones meet.") until family sync exists (`docs/planning/FAMILY-SYNC-DESIGN.md`); (2) the family ledger is not yet founded by the live app (FAMILY-IDENTITY wiring is a later wave), so on a real phone today the recipient list is empty and the action does not appear; (3) telling both parents when a screen goes to a third grown-up needs sync; (4) the sealed format has had no outside cryptographic review (decision D2). Not an evidence chain, in line with the care-note rule.
 
 **The local PIN** (`guardian.local-guardian.localpin`, sealed). A 4 to 8 digit code, **separate from the server PIN.**
 **Easy-guess PINs are refused** when a guardian chooses one (setup form and change-PIN): every digit the same (0000), or a straight run up or down (1234, 4321, 0123, 7890), with the gentle adult-side line "That PIN is easy to guess. Please choose one that is harder for someone else to work out." Checking an existing PIN is unaffected, and a child never sets a PIN. **Every guardian PIN is 4 to 8 digits, everywhere:** setup, change PIN, the adult-only keypad (`PinGate`, digits 0-9, confirmed with OK, which waits for 4 digits), the kiosk gate for the server PIN as well as the local one (the old fixed 4-digit keypad is gone), and the server (`hashPin` accepts 4 to 8; `kiosk-pin/verify` hardcodes no length).
@@ -5330,9 +5332,16 @@ picture is optional and works only for devices in the same place). Layers:
    approve others); a child tablet has no server-side family setting this could restrict, so no more is claimed.
 5. **Keep watch.** The device's public key is pinned. A changed key pauses the connection ("Paused: this device
    changed. Is this still her tablet?"); it is never silently trusted again. "Is this device still yours?" appears
-   after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). "Stop this
-   connection" needs the grown-up's PIN, refuses that key from then on and says plainly that the tablet keeps what
-   is on it until it is reset. A plain-language history is kept as an append-only, hash-chained list (a removed,
+   after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). **Contact is a
+   real event now:** every time the grown-up's phone scans a tablet's signed unlock picture (More > "Unlock a child's
+   device with my phone"), the tablet has proved it holds the key pinned for its certificate, so the phone records the
+   meeting (which restarts the 60-day count) or, if the key is different, unlocks nothing for that scan. A different
+   key under a known certificate id writes nothing to the book (the id is printed in the clear on the real tablet's own
+   picture, so a stranger's picture must not be able to pause the real tablet); a pause that is already in the book
+   still refuses. A tablet from before the proof existed is still answered but counts as no meeting.
+   "Stop this connection" needs the grown-up's PIN, refuses that key from then on, and says plainly that the tablet
+   keeps what is on it until it is reset; **the tablet is told it is disconnected, and stops honouring its pairing, the
+   next time it is brought to this phone** (see "Pairing hardening" below). A plain-language history is kept as an append-only, hash-chained list (a removed,
    reordered or edited line shows a warning; this is tamper-evident, not tamper-proof). "Make a new code" gives
    the picture a new salt and counter: every old photo stops matching its windows; connected devices keep working.
 **Other families.** A grown-up's picture, and a child device's picture once it belongs to a family, carry the
@@ -5342,7 +5351,7 @@ picture at scan time with neutral wording on a grown-up's phone ("This code belo
 was shared.") and silently on a child device, and a child that holds a certificate never starts an exchange with a
 window of a different family. **Not built / honest limits:** a second grown-up phone is a separate pairing and the
 "both parents must approve" switch and the helper role need a family object that does not exist yet; "Stop" does
-not wipe an offline tablet; the child gate on a device that is not yet paired is soft (it can show a public picture,
+not wipe an offline tablet (it is told, and stops honouring its pairing, only when brought to the phone); the child gate on a device that is not yet paired is soft (it can show a public picture,
 which is harmless); the Match check is about 21 bits, one try per request, a human check; an 8-digit PIN is about 26
 bits so security rests on the attempt limits; real two-device mDNS verification and the external review below are
 still outstanding; the Match values come from a new key-derivation label in `cpace.dart` (`PakeKey.match`), which
@@ -5370,12 +5379,81 @@ fingerprint, the purpose, a 2 minute expiry); the grown-up's phone (More > "Unlo
 checks it names a tablet that phone connected and has not forgotten, asks for the grown-up's PIN, and signs exactly
 those fields; the tablet verifies the signature against the grown-up key it pinned at pairing, that the nonce is the
 single outstanding one and unexpired, and consumes it. A photographed picture is useless afterwards
-(`unlock_challenge.dart`). **Phone-only** (a switch when connecting, or later in More > "Connected child devices"):
-the tablet is never given a PIN check at all, or deletes it when the next signed answer carries the flag; the
-keypad is not offered. It only ever turns on; turning it off needs the tablet connected afresh. **Forget this
-tablet** removes it from the phone's list so the phone stops answering it; the tablet keeps its connection until it
-is disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the phone)
-or its data is cleared. The connection grants no account or server access.
+(`unlock_challenge.dart`). **Phone-only is the default** for a newly connected tablet (a switch when connecting, on
+unless the grown-up turns it off, or later in More > "Connected child devices"): the tablet is never given a PIN check
+at all, or deletes it when the next signed answer carries the flag; the keypad is not offered. It only ever turns on;
+turning it off needs the tablet connected afresh. **Forget this tablet** removes it from the phone's list so the phone
+stops unlocking it or playing with it, **and marks its key as forgotten**: the next time that tablet is brought to the
+phone, the phone answers its picture with a signed "you are disconnected" notice instead of an unlock, and the tablet
+drops its pairing. A tablet that is never brought near the phone is never told (there is no server and no push), and
+can still be disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the
+phone) or have its data cleared. A forgotten tablet may be connected again on purpose; a **stopped** one is turned
+away outright. The connection grants no account or server access.
+
+**Pairing hardening: protocol version 3, no typed-code check by default, certificates that expire, revocation and live
+keeping-watch (built, headless-tested; not run on two real devices).**
+1. *Who the grown-up is travels only inside the key.* The first answer of the pairing exchange ("hello-ok") is bare: the
+   session id, the protocol version, a blinded hint for a child that already belongs to a family, and a blinded hint for
+   a child that already knows which grown-up it is looking for. The grown-up's name, family id and public key come back
+   only after key confirmation, sealed under the exchange's own key, and the child checks them (fingerprint, expected
+   grown-up, expected family) before it shows the match step or polls. A device on the same Wi-Fi holding only the
+   window handle learns nothing about the grown-up. The channel identifier of the key exchange no longer holds the
+   name or the family id; it holds the child's key and, when the child knows it from a QR or a scanned picture, the
+   grown-up's fingerprint (the session id is its own CPace input). Version 3 is the CPace draft-21 exchange with that
+   bare identifier; a build that speaks another version (2 put the name and family id in the clear and in the identifier)
+   gets silence for its key-exchange message and the child ends on its usual calm "could not connect" screen
+   (`PairingFailure.notMatched`, never a version message); nothing about the grown-up is shown to a child in either case.
+2. *No typed-code check by default.* A newly connected tablet holds no verifier of the grown-up's PIN, so a copy of its
+   files gives nothing to guess against offline; only the grown-up's phone unlocks it. A grown-up can opt in to the
+   keypad when connecting (the screen says a copy of the tablet's files could be used to guess the code). A tablet
+   connected earlier keeps its check until the grown-up turns "Only my phone unlocks it" on (the next phone unlock
+   deletes the check); nothing is changed silently.
+3. *Certificates expire; the phone renews them; the tablet is told when it is disconnected.* A pairing certificate carries
+   a signed end date (180 days; v1 certificates without one are given a 90 day grace, counted from the first run of this
+   build and not restartable, to meet the phone once). When a tablet's end date passes, the tablet stops admitting play
+   and stops accepting a typed code, but the grown-up's phone still unlocks it, and that same meeting hands it a renewed
+   certificate (offered when 90 days or less remain, or when it has none). A child sees nothing different. The tablet
+   compares the signed date with its own clock, so a tablet whose clock is set back stays good for longer.
+4. *Live keeping-watch.* See "Keep watch" above: the unlock meeting calls the trust book for a tablet that proves its key.
+**Not built / honest limits of this hardening:** a "meeting" proves that someone holding the tablet's key (or showing a
+picture of its screen within the picture's two minutes) was at the phone, not that the tablet itself was: the phone keeps
+no used-challenge list and records the meeting when it scans, before the grown-up types a code, so a photograph can
+restart the 60-day count; a lost or stolen tablet that is never brought near the phone is never
+told and keeps working until its certificate ends and (for a legacy certificate) its grace ends, and its play
+admission on the adult side is refused once the phone forgets or stops it; the adult phone does not refuse a child
+whose end date passed (the grown-up's Stop and Forget are the controls); a stolen tablet that kept its opt-in typed-code
+check can still have it guessed offline; the wording of the "paused" and "disconnected" screens on the grown-up's phone
+has not been seen by a real grown-up; the other grown-up devices of a family do not share the forgotten and stopped
+lists (a second grown-up's phone is a separate pairing); play admission between devices on the same network does not
+yet call the trust book (only the unlock meeting does); the key exchange still needs the external review below, and
+this change moved the grown-up's identity into a new sealed message that review must also cover.
+
+**A connected tablet's home never asks a server (built, headless-tested, not yet run on the real tablet; owner-reported
+2026-11-14).** A real Tab S9 FE paired to a Fold5 by the steps above: the Fold listed it as connected, but the tablet
+then drew the connected home's no-signal state (a crossed-out cloud and a retry button) because the home loader asked
+the server for her profile and a device paired this way has no server account or session (log: `not_signed_in`).
+Now the tablet boots the home with `localOnly` (`child_home_live.dart`, `main_live.dart` `_bootLocalPaired`): it makes
+**no server request at all** and reads everything from the device. Her name and age come from what the connection
+delivered: the sealed credential gains one field, her age in whole years (`ca`, accepted only for 3 to 17,
+`pairing_protocol.dart`, kept in `pairing_records.dart`); the name was already in it. The device's own profile
+memory wins when it has one (a birthday applied at local midnight, which is now remembered; an age a grown-up locked
+with their PIN), then the delivered age, then the youngest end of the catalogue so the age gate never fails open. Her
+home band, My people and birthday line are derived on the device exactly as in the no-signal home. The credential
+still never carries a PIN or the guardian-only key, and an older credential with no age still opens a calm home. She
+sees no cloud picture, no retry button, no count and no error sentence on this path in any state (hostile tests:
+`client/test/child_home_local_test.dart`: dead network, no session, nothing delivered, a long idle). A device that
+does have a server session is unchanged (the same test file pins that). **Not built:** a server session for such a
+tablet (the Tier-1 item in `docs/planning/ANDROID-ROADMAP.md`); anything on her home that needs a server (messages
+from the server, presence, calls, homework capture) shows its quiet no-signal form, as in the offline home.
+
+**Android's "App is pinned" notice (read from the code; not changed; not yet seen on the tablet).** `KioskShell`
+asks Android to pin the app (`startLockTask`, `KioskBridge.kt`) the moment her home opens, on every device, paired
+locally or not. The app is not a device owner, so Android shows its **own** screen-pinning notice ("App is pinned";
+a grown-up can leave with Back and Overview held together), and the app reports the mode as `pinned`, never
+`locked`. The notice belongs to Android and the app draws nothing for it. **Open risk, to be checked on the tablet:**
+`KioskShell` treats a Flutter `paused` or `inactive` lifecycle as the kiosk being defeated and drops to the adult
+gate; if Android's pinning notice ever produced one of those states she would meet the adult-gate card (a picture
+and "A grown-up does this", no keypad until a grown-up taps) rather than her home. Kiosk policy is unchanged.
 
 **Honest limits.** `cpace.dart` is still our own implementation (no maintained Dart CPace library exists). Down to
 the shared key ISK it now follows draft-irtf-cfrg-cpace-21 for CPACE-X25519-SHA512 and reproduces the draft's
@@ -5388,9 +5466,9 @@ Olive's own layer on top of ISK and are not part of CPace. The draft asks for co
 achieved**: Dart `BigInt` is not constant time, so the two password-dependent operations of the Elligator2 map
 run on randomly blinded operands (the output is unchanged; a test proves it), which narrows but does not close the
 leak for a local attacker measuring the device. The code **still needs an external cryptographic review before
-families rely on it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
-lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its keystore could brute-force a
-short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
+families rely on it**. A tablet whose grown-up opted in to the keypad keeps a salted slow hash of the grown-up's PIN (so a grown-up
+can type it there to leave the lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its
+keystore could brute-force a short PIN. Tablets connected after the pairing hardening hold no such hash by default. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
 online relay of windows through the server is **not
 built**; the server pairing routes are unchanged and still work. No device has run this yet.
 
@@ -6747,8 +6825,10 @@ drift. Nothing is written that is not in it.
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
-| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
-| `guardian.local-guardian.trust` | On a grown-up's device: the paired devices' trust book (who each device is, when added, settling in, paused or stopped) and the plain-language history of those changes, kept in order so an edit can be noticed. Never shown on a child's screen. | **Yes** |
+| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds, and which welcome requests that grown-up asked to see again later and when (a reminder, never an answer). A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
+| `guardian.local-guardian.trust` | On a grown-up's device: which child devices it added and when it last met them, the keys it stopped or forgot, and the plain-language, hash-chained history (added, paused, stopped, forgot). | **Yes** |
+| `guardian.local-guardian.screenshares` | On a grown-up's device only: the pictures of a screen another grown-up sent here (at most three, until each expires or is put away), what this phone sent and is still waiting to hand over or take back, a mark for each one put away or taken back so a late copy is dropped, and one quiet family-history line per share (who shared a screen with whom, never the picture). Never on a child's device, never in her app (section 8.5.9). | **Yes** |
+| `guardian.local-guardian.familysync` | On a grown-up's device: the updates the grown-ups' phones have shared with each other (so far the emergency card, §8.24.9), each one sealed and signed by the phone that wrote it, a note of what the other phone last said it holds, and a short note of any refused duplicate-counter update (§8.24.9). A child's device holds none and cannot open one. Nothing is uploaded; an update leaves the phone only when a grown-up copies it. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -8281,7 +8361,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **47 areas, 27 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **49 areas, 29 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -8291,8 +8371,9 @@ Each row is something this document or the product's own screens might lead a re
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
-| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange now matches the CPace draft-21 vectors but still needs an external cryptographic review, and is not constant time (the map's password-dependent operations are blinded, not constant time); the associated-data fields of the draft are empty; a vetted native library is not used. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Run on two real devices once (a Fold5 and a Tab S9 FE paired; the tablet then showed a no-signal home, fixed in [Unreleased] and not re-run on the tablet yet). (2) The key exchange now matches the CPace draft-21 vectors but still needs an external cryptographic review, and is not constant time (the map's password-dependent operations are blinded, not constant time); the associated-data fields of the draft are empty; a vetted native library is not used. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then, and its home is drawn wholly on the device: section 8.5.11, "A connected tablet's home never asks a server"). (7) The "App is pinned" notice has not been seen on the tablet. |
 | **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
+| **Sharing a screen between grown-ups: the road** | Everything in section 8.5.9 "Sharing a screen with another grown-up": the sealed format, the rules, the inbox, take-back and expiry, tested headless. | A transport to the other grown-up's phone (same Wi-Fi, the sealed relay or a meeting of the phones, `FAMILY-SYNC-DESIGN.md`) and the live app founding the family ledger, so a real phone has a second grown-up to choose. Until both exist the action does not appear on a real phone. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
@@ -8301,7 +8382,7 @@ Each row is something this document or the product's own screens might lead a re
 | **Networked games** | Live checkers through the server's table relay (`packages/game-sync`, `networked_checkers_*`): tests and a server-side end-to-end run. | No two-device run over a real network is recorded. The games played during a call need calls. |
 | **Read together and Watch together, server and transports** (§8.26) | The pure core (`packages/co-view`), its Dart port, `CoViewLeader` and `CoViewFollower` over an abstract transport (a loopback in tests) and the screens. | No real transport (neither the call data channel nor a game-sync table is connected), no server route or storage for sessions or the daily-time total, the screens are not reachable from the app's navigation, and there is no Watch together. |
 | **Custody and medication entry** | The custody schedule engine and a **read-only** order view (`GET .../custody-order`); the medication list and dose log (`GET .../medications`, `POST .../doses`). | No route or screen creates or edits a custody order or a medication; a guardian cannot enter either in the app. |
-| **Server sync** between a family's devices and homes | None. Every on-device area is per device (§8.16.7). Server tables and routes exist for Parent Learn (migration 0035) and the emergency card's version history (0036). | The client does not call the `/v1/learn` routes (it uses the on-device store), and the family structure's server half was parked (§8.18). Sharing a routine, bag, place, helper, story or shelf between homes is parked in every suite. |
+| **Server sync** between a family's devices and homes | None on the server. On devices, a first slice shares the emergency card between two grown-ups' phones by a copied and pasted sealed update (§8.24.9); it is not reachable from any menu and has not run on two real phones. Every other on-device area is per device (§8.16.7). Server tables and routes exist for Parent Learn (migration 0035) and the emergency card's version history (0036). | The client does not call the `/v1/learn` routes (it uses the on-device store), and the family structure's server half was parked (§8.18). Sharing a routine, bag, place, helper, story or shelf between homes is parked in every suite. |
 | **Captions** (live captions and translation, §8.4) | A per-child switch that records a wish (§8.21.8); a per-person language (`packages/i18n`). | Nothing shows captions; `captionsActive` is false whatever the switch says. |
 | **Voice navigation, a dyslexia typeface, a TalkBack pass on a real device** | Read-aloud, reduced motion, roomier reading, larger targets (§8.21). | Not built, or not run (§8.21.9). |
 | **Care guides: the content** (who to call, choking, a bump to the head, a high fever, making the home safe) | The whole engine, **built but gated** (§8.30): one schema, a lossless converter proven by a content hash and a structural check, a loader with a hard review gate (the drafts themselves are not bundled in the app), and the guardian screens (library with the emergency button first, one guide with age tabs, who to call, a new carer's first screen, helper-page selection) with sources, retrieved date and last-reviewed always on screen. | **No medical text is shown to anyone.** All five guides are `DRAFT_UNREVIEWED`; a release build cannot display them. It needs a qualified clinician's review of each guide (and a hands-on first-aid instructor for choking), the 66 parent-facing strings that still talk to the reviewer or point at material the app does not carry rewritten, the reviewer's answers recorded in each guide's `review` block, and the block headings signed off. Also not built: the About-child profile the "For Mia" strip reads from (the strip renders nothing until it exists), saving the helper-page choice, sharing the helper page with a helper, and region choice beyond the guide's own region. |
@@ -9528,6 +9609,51 @@ photo door; no unit-bearing number in what the app writes). **Not run on a devic
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*
 
+### 8.24.9 Sharing the emergency card between two grown-ups' phones (first slice of family sync; built, not reachable)
+
+Spec: `docs/planning/FAMILY-SYNC-DESIGN.md` (sections 3, 5, 6 and 13; build steps S1, S2, S3, road E of S4 and the emergency-card half of S5).
+Code: `family_sync_event.dart` (one signed, sealed event), `family_sync_engine.dart` (what a phone holds, waits on and sends),
+`family_sync_bundle.dart` (the copy-and-paste update), `family_sync_emergency.dart` (the emergency card on top of it) and
+`family_sync_screen.dart` (the grown-ups' screen). New sealed area `familysync` (§8.16.4).
+
+- **What a grown-up can do.** Share this phone's emergency card; copy an update for the other phone; paste an update from the other phone;
+  see the shared card beside this phone's card; "Use this card on this phone"; or, when two grown-ups shared different cards at the same time,
+  see both and "Keep this card" on one. Words are plain ("update", "card", "the other phone"); nothing says key, ledger or sync.
+- **Nothing changes by itself.** Receiving an update never alters the card on this phone, so hospital mode and the card screen read exactly
+  what they did before. "Use this card on this phone" goes through the card service (guardian only, stale-version check, size limits, history).
+  A shared card that breaks the card's own limits, or that the card's reader would have had to trim, shows as unreadable and can never be used.
+  A blank card is never shared (it would look like erasing the other phone's card).
+- **Never a silent overwrite, never a winner picked.** Two cards shared at once are two ends of one stream; both are shown; the choice a
+  grown-up makes is a new event that names both ends, so every phone converges on it. The clock orders a list; it never decides who is right.
+- **Who can write.** Only a device the family record lists as a grown-up's. A child tablet, a stranger and a grown-up who has left are refused
+  even though they may hold an old key. A child device holds no guardian key and cannot open or make an event or an update.
+- **What a carrier sees.** An event shows only a version label, a key number and a size bucket; an update is sealed again, so a messenger
+  app or clipboard history sees ciphertext (not the family, the writers, the cards or their words).
+- **Damage and hostility.** Every event is checked on its own (seal, family, closed kind table, signature, canonical form, clock not more than a
+  day ahead, clock after what it follows); a bad one is refused and the rest of the batch still lands. An event that arrives before what it
+  follows waits (bounded) and the screen says an update is missing. Two different events from one phone with one counter are refused: the
+  first stays, and the pair (stream, writer, counter; no card words) is kept in the sealed `familysync` area, even when that update added nothing
+  else, so it survives a restart. The grown-ups' screen says so in one plain sentence, with no count: "The other phone sent two different updates
+  that cannot both be right. Only the first one was kept. Nothing on this phone was changed." Nothing else reads the list, and it is not a log of
+  who did what. A failed save leaves the phone exactly as it was.
+- **Who sent an update.** The seal proves only that someone holding the guardian key made it, and a grown-up who has left may still hold an old
+  one. So the sender's header (who is sending, and the summary of what that phone holds) is signed by the sending device (Ed25519, over the
+  family, the key number, the sender and the summary) and an update whose header does not verify is refused whole and changes nothing. Without
+  that, a former grown-up could have made this phone believe the other phone already holds events it lacks, and sharing would quietly stall.
+  What this does not stop: a genuine update captured earlier can be pasted again under an old key; it shows an older summary (a phone only
+  ever holds more), so the worst case is repeated events that are already held, or "Both phones have this card." reading "This phone has the
+  shared card." until the next update. Only a listed grown-up's phone is remembered as a peer. The signed header changes the unreleased update
+  format, so an update made before this change is refused as damaged; nothing had shipped.
+- **Tests.** `family_sync_event_test.dart`, `family_sync_engine_test.dart` (including 25 seeded runs of shuffled, duplicated and partitioned
+  delivery that must converge exactly), `family_sync_bundle_test.dart`, `family_sync_emergency_test.dart`, `family_sync_screen_test.dart`.
+- **Not reachable.** The screen is in no menu: a phone cannot yet found a family or take a second grown-up's phone into it (identity steps 3 to 5
+  are not wired into pairing), so today no two phones share the guardian key outside tests. **Not built:** the same-Wi-Fi road, a file or share-sheet
+  (needs a plugin; the clipboard is used), the mailbox and wake push, the courier, signed delivery receipts ("Alex has it"), key rotation of
+  stored events, locked sections, a carry for a late joiner, About Mia, medicines and doses, expenses, the handover log (its hash chain needs
+  version 2 first, design 6.3), notifications, hospital mode showing both cards while forked (design question 9: owner and clinician), a
+  Node reference and shared test vectors for the event layout, and the outside cryptographic review (see the addendum in
+  `docs/planning/EXTERNAL-CRYPTO-REVIEW-BRIEF.md`). Not run on a real phone.
+
 ## §8.27 Family simulation: ten families, watched (operations and testing)
 
 A synthetic multi-family harness, `scaffold/tools/family-sim/` (operator guide `docs/operators/family-sim.md`). It exists to answer three questions with evidence rather than argument: can one server serve 5 to 10 families at once, is every family strictly isolated from every other, and where does the sign-in to family to deliver to read chain still have holes.
@@ -9540,9 +9666,29 @@ A synthetic multi-family harness, `scaffold/tools/family-sim/` (operator guide `
 - **CI.** `tools/family-sim/test/isolation_ci.test.mjs` (three families, a short flow, isolation probes only, real Postgres and RLS through the in-process Api) runs in `tools/verify.sh`. The large run stays manual.
 - **What it cannot prove.** One process, one machine, loopback only; no real network, TLS, proxy or horizontal scale; compressed single-day schedules only (no DST, no midnight wrap); call and relay checks cover authorisation, not media; sign-in is the dev shortcut, not the passkey ceremony.
 
-## §8.28 Village welcome: adults approving new adults (PLANNED, NOT BUILT)
+## §8.28 Village welcome: adults approving new adults (PARTLY BUILT, headless; NOT REACHABLE FROM THE APP)
 
-**Nothing in this section is built.** It records an owner direction (2026-11-14, "go with your recommendations") so the
+**What is built (headless, tested, not reachable from the running app) and what is not.** Built: the ledger rules for a
+welcome request (§8.5.12: the `member.add` proposal, the electorate, the all-parents floor, silence never a yes, the
+profile table), and now the adult side of asking and answering: `client/lib/welcome_logic.dart` (the service: sign a
+request, sign a yes or a no, list the requests waiting for this parent and the ones this parent sent, "ask me later",
+"yes to something smaller", the limits on asking, and every sentence in adult words) and `client/lib/welcome_screens.dart`
+(**Welcome someone** with its three choices, **How much can they do?**, **Your village** with who has answered in plain
+words, and the **Welcome request** with Yes, Not this time, Ask me later and Yes to something smaller). Every yes, every
+request and every cancel asks for the PIN first. The Adults and helpers screen shows a **Welcome someone** row only when a
+host passes `onWelcome`; **nothing does**, because the family ledger is not wired into pairing (§8.5.12), so the running
+app still shows only the "Invite a co-parent (preview)" row. "Ask me later" is kept on the device under the key
+`welcomeasks` inside the sealed `familyledger` area (§8.16.4): at most three put-offs of 24 hours and two quiet reminders,
+and it signs and sends nothing, so the person who asked cannot tell. The limits on asking (one open request, three in 30
+days, a 7 day wait after a no for the same phone at the same or a wider level, where "smaller" means it gives less on at least one count: a lower level, fewer switches, fewer children, a shorter time or an earlier end, so asking for the same visit again, or the same window moved later, still waits) are checked on the asking phone only; the
+reduce rule does not count them, so a modified phone could ask more. A request, an answer, a cancel or a "yes to something smaller" either happens in full or not at all: if the phone cannot save, the lists in memory are put back, the parent is told in plain words that nothing was changed, and no half-made request or stray "no" is left to be written by a later save. "Ask me later" can be asked only for a request that is waiting for that parent's answer, a put-off is dropped once its request is no longer open, and resetting the family record on a device also removes `welcomeasks`. **Parent with limits (an unresolved tension, not a fix):** the welcome screen and service keep the two switches that bundle seeing with doing (see and add expenses, write care notes and log a dose) on for every parent-level welcome, offering to limit only what a parent does (pair a device, start a welcome); the ledger's own profile table (§8.5.12) still lets those two be off, so §2.6 and the village design are not yet reconciled at the ledger level (`GAP-REGISTER.md` G-35). The "Who has to agree" box says only what is built: pausing a carer and an instant notice to the other parents are **not built**, so the screen does not promise them. **Not built:** the in-person meet that gives the new
+person's phone (the new phone's own name, and the new person's yes on their phone), the settle-in and "Welcome with
+limits" cards, pause, resume and end, the limits agreement and its 24 hour think-it-over, Standing OK, the 72 hour hold
+for a family of one parent (the screen says "your yes is the whole vote" and does not claim a hold), the "Who must agree"
+settings screen, the family history screen as a separate page, the child-side release, and server mode. The three
+dependants below are unchanged.
+
+It records an owner direction (2026-11-14, "go with your recommendations") so the
 spec and the code do not drift; the detail lives in `docs/planning/VILLAGE-WELCOME-DESIGN.md` (design, edge cases, test
 plan, build order W1 to W11), `docs/planning/FAMILY-IDENTITY-DESIGN.md` (the family object it needs) and
 `docs/planning/GAP-REGISTER.md` (every gap and gate). The name "Village" is already suite D (§8.22); the verb is
@@ -9581,8 +9727,8 @@ uses for them, through the existing label rules (§8.5.7); background roles neve
 hold that no child file mentions any of this. P3, P6, P7 and P11 stand unchanged: no location, no expense surface for a
 child, no access to the journal, no remote control.
 
-**What it depends on.** A real family object (§22.2 "Simple pairing: what is left" says a second grown-up's phone is
-still a separate pairing). Until then: no member kinds, no proposals, no profiles, no limits, no time boxes, no pause.
+**What it depends on.** A real family object wired into pairing (§22.2 "Simple pairing: what is left" says a second grown-up's phone is
+still a separate pairing). Until then the ledger rules and the welcome screens above exist and are tested but nothing in the app creates a request; limits, time boxes and pause have no effect.
 **Gates before real families:** external cryptographic review of the key exchange and the family ledger, a real
 two-device run, and a usability read of the wording with real parents. No lawyer has read the limits agreement; the
 app cannot verify guardianship and an agreement signed in it is not a legal instrument.

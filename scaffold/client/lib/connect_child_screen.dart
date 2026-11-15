@@ -29,6 +29,7 @@ import 'pairing_picture_widgets.dart';
 import 'pairing_protocol.dart';
 import 'pairing_records.dart';
 import 'pairing_trust.dart';
+import 'screen_privacy.dart';
 
 /// What serves an open window to the network. Injectable so tests need no sockets.
 abstract class WindowHost {
@@ -68,6 +69,7 @@ class ConnectChildScreen extends StatefulWidget {
     required this.kids,
     required this.adultName,
     required this.childName,
+    this.childAge,
     this.familyId,
     this.childId = 'local-child',
     this.startHost = startLanWindowHost,
@@ -102,6 +104,9 @@ class ConnectChildScreen extends StatefulWidget {
   final PairedKidsRepository kids;
   final String adultName, childName;
 
+  /// Her age, sealed into the credential for the tablet's own home (null = not given).
+  final int? childAge;
+
   /// Null = derived from this device's key (a local family has one adult device today).
   final String? familyId;
   final String childId;
@@ -119,7 +124,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   final TextEditingController _pin = TextEditingController();
   _Stage _stage = _Stage.intro;
   bool _offerQr = false;
-  bool _phoneOnly = false;
+  // On by default: a newly connected tablet holds no typed-code check at all (nothing to guess from a copy of its files).
+  bool _phoneOnly = true;
   bool _working = false;
   String? _message;
   AdultWindow? _window;
@@ -203,6 +209,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       familyId: widget.familyId ?? 'local-${b64(key.fingerprint)}',
       childId: widget.childId,
       childName: widget.childName,
+      childAge: widget.childAge,
       pin: pin,
       offerQr: _offerQr,
       phoneOnly: _phoneOnly,
@@ -285,7 +292,9 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text("Connect a child's device")),
         body: SafeArea(
           child: Padding(
@@ -332,7 +341,10 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
           key: const Key('connectPhoneOnly'),
           contentPadding: EdgeInsets.zero,
           title: const Text('Only my phone unlocks it'),
-          subtitle: const Text('Her device is never given a check for your PIN. You unlock it by showing it a picture from this phone.'),
+          subtitle: Text(_phoneOnly
+              ? 'Her device is never given a check for your PIN. You unlock it by showing it a picture from this phone.'
+              : 'Her device keeps a check for your PIN so a typed code works on it. Someone who copies that device\'s files could '
+                  'try to guess the code. Leave this on unless you need the keypad.'),
           value: _phoneOnly,
           onChanged: (bool v) => setState(() => _phoneOnly = v),
         ),

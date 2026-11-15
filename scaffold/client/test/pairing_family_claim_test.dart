@@ -25,15 +25,14 @@ Future<AdultWindow> _window(DeviceKey k,
 ChildPairingClient _client(DeviceKey ck, PairingTransport t) => ChildPairingClient(
     childKey: ck, transport: t, delay: (Duration d) async {}, pollEvery: const Duration(seconds: 1), giveUpAfter: const Duration(seconds: 3));
 
-Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'};
+Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'};
 
 Future<Map<String, dynamic>?> _pake1(AdultWindow w, DeviceKey ck, String pin) async {
   final PakeParty p = await PakeParty.start(isChild: true, password: pin.codeUnits, sid: w.sid, ci: await _ci(w, ck));
-  return w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'pv': kPairingProtocolVersion, 'm': 'pin', 'Yc': b64(p.share)});
+  return w.handle(<String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'm': 'pin', 'Yc': b64(p.share)});
 }
 
-Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => pairingChannelId(
-    childPublicKey: ck.publicKey, adultFingerprint: w.adultKey.fingerprint, familyId: 'fam-1', adultName: 'Mom');
+Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => pairingChannelIdBare(childPublicKey: ck.publicKey);
 
 void main() {
   group('family tag', () {
@@ -102,13 +101,31 @@ void main() {
   group('claimed child checks the family before any key exchange', () {
     test('a window of another family is dropped silently: only the hello is sent, the window loses no try', () async {
       final DeviceKey ak = await _key(), ck = await _key();
-      final AdultWindow w = await _window(ak, fid: 'fam-OTHER');
+      final AdultWindow w = await _window(ak, fid: 'fam-OTHER', fk: _b(16, 9));
       final List<Map<String, dynamic>> log = <Map<String, dynamic>>[];
       final PairingResult r = await ChildPairingClient(childKey: ck, transport: LoopbackPairingTransport(w, log: log), delay: (Duration d) async {})
-          .pair(sid: w.sid, password: '4829', expectedFamilyId: 'fam-1');
+          .pair(sid: w.sid, password: '4829', expectedFamilyId: 'fam-1', expectedFamilyKey: _b(16, 7));
       expect(r.ok, isFalse);
-      expect(log.map((Map<String, dynamic> m) => m['t']), <String>['hello']);
+      expect(log.map((Map<String, dynamic> m) => m['t']), <String>['hello'], reason: 'stopped on the blinded hint, before any key exchange');
       expect(w.attemptsLeft, 5);
+    });
+
+    test('a claimed device does not accept a window with the family hint removed', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak); // no family key: no hint
+      final PairingResult r = await _client(ck, LoopbackPairingTransport(w)).pair(sid: w.sid, password: '4829', expectedFamilyKey: _b(16, 7));
+      expect(r.ok, isFalse);
+      expect(w.attemptsLeft, 5);
+    });
+
+    test('with only the family id (no family key) the check still holds, after key confirmation, before the match step', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak, fid: 'fam-OTHER');
+      bool shown = false;
+      final PairingResult r = await _client(ck, LoopbackPairingTransport(w))
+          .pair(sid: w.sid, password: '4829', expectedFamilyId: 'fam-1', onMatched: (PairingMatch m) => shown = true);
+      expect(r.ok, isFalse);
+      expect(shown, isFalse, reason: 'the wrong family is refused before anything is shown');
     });
 
     test('its own family proceeds and the family key arrives in the sealed credential', () async {
@@ -336,8 +353,8 @@ void main() {
       for (final Map<String, dynamic> m in <Map<String, dynamic>>[
         <String, dynamic>{},
         <String, dynamic>{'t': 'hello'},
-        <String, dynamic>{'t': 'hello', 'sid': 5},
-        <String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': 3, 'Yc': 4},
+        <String, dynamic>{'t': 'hello', 'pv': kPairingProtocolVersion, 'sid': 5},
+        <String, dynamic>{'t': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(w.sid), 'cpk': 3, 'Yc': 4},
         <String, dynamic>{'t': 'confirm', 'sid': b64(w.sid)},
       ]) {
         expect(await w.handle(m), anyOf(isNull, isA<Map<String, dynamic>>()));

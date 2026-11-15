@@ -15,6 +15,7 @@ import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInp
 
 import 'guardian_local_scope.dart';
 import 'local_pin.dart';
+import 'screen_privacy.dart';
 import 'guardian_pin_recovery_screens.dart';
 
 /// The two-field form. [onSaved] fires after the PIN is really stored; a store that cannot
@@ -78,7 +79,9 @@ class _LocalPinSetupFormState extends State<LocalPinSetupForm> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
       TextField(
@@ -250,7 +253,9 @@ class _LocalPinChangeScreenState extends State<LocalPinChangeScreen> {
       );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Change PIN')),
@@ -371,7 +376,9 @@ class _AskDialogState extends State<_AskDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) => AlertDialog(
         title: Text(widget.title),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           if (widget.why != null) ...<Widget>[Text(widget.why!), const SizedBox(height: 12)],

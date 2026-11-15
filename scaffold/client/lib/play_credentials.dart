@@ -90,6 +90,8 @@ class LocalStorePlayCredentials implements PlayCredentialsSource {
                 services.area('childpairing'), LocalStoreLocalPinRepository(services.area('adultunlock')))
             .load();
         if (p == null) return null;
+        // A pairing past its signed end date is not honoured for play until the tablet meets the grown-up's phone.
+        if (p.isLapsed(DateTime.now().millisecondsSinceEpoch)) return null;
         return PlayCredentials(own: own, peerKeys: <Uint8List>[p.adultKey], adult: false);
       }
       final LocalNamespace ns = services.area('pairedkids', ownerId: kLocalGuardianScope);

@@ -100,7 +100,19 @@ class DeviceKey {
   }
 }
 
-/// What an adult device signs for ONE child device in ONE family.
+/// How long a certificate lasts once issued, and how close to its end a meeting with the grown-up's phone renews it.
+/// Every clock that matters is the ADULT phone's (it signs the new end date); the tablet only compares its own clock
+/// with that signed date, so a tablet whose clock was set back stays "good" for longer (documented limit).
+const Duration kCertLifetime = Duration(days: 180);
+const Duration kCertRenewWithin = Duration(days: 90);
+
+/// Certificates issued before expiry existed carry no end date. A tablet that holds one is given this long, counted
+/// from the first time the new build looked at it, to meet the grown-up's phone once (which renews it).
+const Duration kLegacyCertGrace = Duration(days: 90);
+
+/// What an adult device signs for ONE child device in ONE family. A v2 certificate also carries an end date
+/// ([expiresAtMs]) under the signature; a v1 certificate (no end date) signs under a different domain string, so an
+/// end date can neither be stripped from a v2 certificate nor added to a v1 one.
 class PairingCert {
   const PairingCert({
     required this.childDeviceKey,
@@ -110,16 +122,24 @@ class PairingCert {
     required this.issuedAtMs,
     required this.certId,
     required this.signature,
+    this.expiresAtMs,
   });
   final Uint8List childDeviceKey, adultFingerprint, signature;
   final String familyId, childId, certId;
   final int issuedAtMs;
 
-  static Uint8List signedBytes(List<int> cpk, String fid, String cid, List<int> afp, int iat, String certId) =>
+  /// The adult-signed end date (ms since epoch, the ADULT phone's clock), or null for a v1 certificate.
+  final int? expiresAtMs;
+
+  static Uint8List signedBytes(List<int> cpk, String fid, String cid, List<int> afp, int iat, String certId, [int? exp]) =>
       cat(<List<int>>[
-        lv(utf8.encode('olive-cert-v1')), lv(cpk), lv(utf8.encode(fid)), lv(utf8.encode(cid)),
+        lv(utf8.encode(exp == null ? 'olive-cert-v1' : 'olive-cert-v2')), lv(cpk), lv(utf8.encode(fid)), lv(utf8.encode(cid)),
         lv(afp), lv(utf8.encode('$iat')), lv(utf8.encode(certId)),
+        if (exp != null) lv(utf8.encode('$exp')),
       ]);
+
+  /// True once the signed end date has passed on the clock given. A v1 certificate has none (see [kLegacyCertGrace]).
+  bool isExpired(int nowMs) => expiresAtMs != null && nowMs >= expiresAtMs!;
 
   static Future<PairingCert> issue(DeviceKey adult, {
     required List<int> childDeviceKey,
@@ -127,23 +147,38 @@ class PairingCert {
     required String childId,
     required String certId,
     required int issuedAtMs,
+    int? expiresAtMs,
   }) async {
-    final Uint8List sig = await adult.sign(signedBytes(childDeviceKey, familyId, childId, adult.fingerprint, issuedAtMs, certId));
+    final Uint8List sig =
+        await adult.sign(signedBytes(childDeviceKey, familyId, childId, adult.fingerprint, issuedAtMs, certId, expiresAtMs));
     return PairingCert(
         childDeviceKey: Uint8List.fromList(childDeviceKey), familyId: familyId, childId: childId,
-        adultFingerprint: adult.fingerprint, issuedAtMs: issuedAtMs, certId: certId, signature: sig);
+        adultFingerprint: adult.fingerprint, issuedAtMs: issuedAtMs, certId: certId, signature: sig, expiresAtMs: expiresAtMs);
   }
+
+  /// The same certificate with a new signed end date, signed by the adult device (the renewal the phone hands over at
+  /// a meeting). Everything else, including the issue time, is unchanged.
+  Future<PairingCert> renewed(DeviceKey adult, int newExpiresAtMs) => issue(adult,
+      childDeviceKey: childDeviceKey, familyId: familyId, childId: childId, certId: certId, issuedAtMs: issuedAtMs,
+      expiresAtMs: newExpiresAtMs);
+
+  /// This certificate with [newExpiresAtMs] and [newSignature] swapped in. NOT trusted until [verifiedBy] passes.
+  PairingCert withRenewal(int newExpiresAtMs, List<int> newSignature) => PairingCert(
+      childDeviceKey: childDeviceKey, familyId: familyId, childId: childId, adultFingerprint: adultFingerprint,
+      issuedAtMs: issuedAtMs, certId: certId, signature: Uint8List.fromList(newSignature), expiresAtMs: newExpiresAtMs);
 
   /// True only when [adultKey] really signed exactly these fields AND its fingerprint is the one named.
   Future<bool> verifiedBy(List<int> adultKey) async {
     final Uint8List fp = await fingerprintOf(adultKey);
     if (!_eq(fp, adultFingerprint)) return false;
-    return DeviceKey.verify(adultKey, signedBytes(childDeviceKey, familyId, childId, adultFingerprint, issuedAtMs, certId), signature);
+    return DeviceKey.verify(
+        adultKey, signedBytes(childDeviceKey, familyId, childId, adultFingerprint, issuedAtMs, certId, expiresAtMs), signature);
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
         'cpk': b64(childDeviceKey), 'fid': familyId, 'cid': childId, 'afp': b64(adultFingerprint),
         'iat': issuedAtMs, 'certId': certId, 'sig': b64(signature),
+        if (expiresAtMs != null) 'exp': expiresAtMs,
       };
 
   static PairingCert? fromJson(Object? raw) {
@@ -151,9 +186,11 @@ class PairingCert {
     try {
       final Object? cpk = raw['cpk'], fid = raw['fid'], cid = raw['cid'], afp = raw['afp'], iat = raw['iat'], id = raw['certId'], sig = raw['sig'];
       if (cpk is! String || fid is! String || cid is! String || afp is! String || iat is! int || id is! String || sig is! String) return null;
+      final Object? exp = raw['exp'];
+      if (exp != null && exp is! int) return null; // an end date that is not a number is a damaged certificate
       return PairingCert(
           childDeviceKey: unb64(cpk), familyId: fid, childId: cid, adultFingerprint: unb64(afp),
-          issuedAtMs: iat, certId: id, signature: unb64(sig));
+          issuedAtMs: iat, certId: id, signature: unb64(sig), expiresAtMs: exp as int?);
     } catch (_) {
       return null;
     }

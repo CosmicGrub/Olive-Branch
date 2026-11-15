@@ -6,10 +6,21 @@
 //
 // WHY A PIN NEVER SELECTS WHO YOU CONNECT TO. The peer is chosen FIRST: by the adult naming their own open
 // window (session id) or by scanning that window's QR. The PIN then only proves "I am the adult who opened THAT
-// window". The session id and the channel identifier ([pairingChannelId]: the child device's key, the adult
-// device's key fingerprint, the family id and the adult's name) are mixed into the PAKE, so a device of another
-// family, another session, or a rogue advertiser derives a different key even if it knows (or guesses) the PIN,
-// and cannot pass key confirmation. Nothing is paired unless the adult then taps "Yes, that is Ivy's tablet".
+// window". The channel identifier mixed into the PAKE holds the session id and the child device's key (and the
+// adult device's key fingerprint when the child already knows it, from a QR or a scanned picture), so another
+// session, or a rogue advertiser, derives a different key even if it knows (or guesses) the PIN, and cannot pass
+// key confirmation. Nothing is paired unless the adult then taps "Yes, that is Ivy's tablet".
+//
+// PROTOCOL VERSION 3: WHO THE ADULT IS TRAVELS ONLY INSIDE THE KEY (the key exchange itself is CPace as in
+// draft-irtf-cfrg-cpace-21, CPACE-X25519-SHA512, see cpace.dart). The answer to the first message ("hello-ok")
+// is bare: the session id, the protocol version and (for a claimed child) a blinded family hint. The adult's name,
+// family id and public key arrive in the answer to the key CONFIRMATION, sealed under the exchange's own key
+// (AES-GCM, its own associated data), so a device on the same network that merely holds the public window handle
+// learns nothing about the grown-up. The child checks them (key fingerprint, expected fingerprint, expected family)
+// BEFORE it shows the match step and before it ever polls. A build that speaks another version (the adult's name in the
+// clear in the channel identifier, or no version at all) cannot derive the same key: the window drops its key
+// exchange message quietly, uncounted, and the child ends on its usual calm "could not connect" screen (never a
+// version message).
 //
 // WHERE THE COUNTERS LIVE. On the ADULT device ([AdultWindow]): five failed confirmations kill the window; a
 // window lasts minutes; a session id works once. The child device keeps no counter that matters here.
@@ -26,13 +37,16 @@ import 'local_pin.dart' show LocalPinRecord, constantTimeEquals, kLocalPinIterat
 import 'pairing_match.dart';
 import 'pairing_picture.dart';
 
-/// The version of the pairing key exchange on the wire. 2 = CPace as in draft-irtf-cfrg-cpace-21 (CPACE-X25519-SHA512),
-/// with the channel identifier of [pairingChannelId]. Builds before it (no version field) used a different generator
-/// string and cannot derive the same key. The adult's `hello-ok` states its version and the child's `pake1` states its
-/// own; a mismatch ends quietly BEFORE any password-dependent step and before an attempt is counted, so an old and a
-/// new build never burn a window's tries on a mismatch they could not have won: the child simply cannot connect and
-/// shows its usual calm "could not connect" screen (never a version message).
-const int kPairingProtocolVersion = 2;
+/// The version of the pairing wire protocol. 3 = CPace as in draft-irtf-cfrg-cpace-21 (CPACE-X25519-SHA512) with the
+/// BARE channel identifier of [pairingChannelIdBare] (the child device's key, and the adult's key fingerprint only when
+/// the child already knows it from a QR or a picture), the adult's identity sealed under the exchange's own key after
+/// key confirmation, and no PIN verifier. 2 (draft-21 with the adult's name and family id in the clear and in the
+/// channel identifier) and builds before it (no version field) cannot derive the same key. The adult's `hello-ok`
+/// states its version and the child's `pake1` states its own; a mismatch ends quietly BEFORE any password-dependent
+/// step and before an attempt is counted, so an old and a new build never burn a window's tries on a mismatch they
+/// could not have won: the child simply cannot connect and shows its usual calm "could not connect" screen (never a
+/// version message).
+const int kPairingProtocolVersion = 3;
 
 const Duration kWindowTtl = Duration(minutes: 10);
 const int kWindowMaxAttempts = 5;
@@ -78,6 +92,39 @@ class Sas {
   factory Sas.fromBytes(List<int> b) => Sas(kSasPictures[b[0] & 15], kSasWords[b[1] & 15]);
   @override
   String toString() => '$word $picture';
+}
+
+/// The channel identifier mixed into the key exchange (version 3), in the layout of draft-21 section 10.1.1 and of
+/// [pairingChannelId] (initiator first, responder second) but BARE on the responder side: the adult's name and family
+/// id travel only inside the key, so they cannot be in it. [adultFingerprint] is included only when the child device
+/// already knows it from outside the network (a QR or a scanned picture) and says so with `fb`. The session id is
+/// its own CPace input, not part of this.
+Uint8List pairingChannelIdBare({required List<int> childPublicKey, List<int>? adultFingerprint}) => lvCat(<List<int>>[
+      childPublicKey,
+      lvCat(<List<int>>[adultFingerprint ?? const <int>[], const <int>[], const <int>[]]),
+    ]);
+
+final List<int> _aadIdentity = utf8.encode('olive-pair-id/2');
+final List<int> _aadCredential = utf8.encode('olive-pair-cred/2');
+
+/// The blinded family hint a window with a family key puts in hello-ok: HMAC(family key, session, child key),
+/// first 8 bytes. Without the family key it looks random and says nothing about which family the window is.
+Future<Uint8List> familyHelloTag(List<int> familyKey, List<int> sid, List<int> childKey) async {
+  final Mac m = await Hmac.sha256().calculateMac(
+      cat(<List<int>>[lv(utf8.encode('olive-fam-hello/2')), lv(sid), lv(childKey)]),
+      secretKey: SecretKey(familyKey));
+  return Uint8List.fromList(m.bytes.sublist(0, 8));
+}
+
+/// A blinded "I am the adult whose fingerprint you hold" hint: HMAC keyed with the adult device's fingerprint over the
+/// session and the child's key, first 8 bytes. A device that does not already hold that fingerprint (from a QR or a
+/// scanned picture) cannot check it and learns nothing from it; a child that does hold it can stop BEFORE any key
+/// exchange when the window is not that adult, costing the real adult nothing.
+Future<Uint8List> adultHelloTag(List<int> adultFingerprint, List<int> sid, List<int> childKey) async {
+  final Mac m = await Hmac.sha256().calculateMac(
+      cat(<List<int>>[lv(utf8.encode('olive-adult-hello/2')), lv(sid), lv(childKey)]),
+      secretKey: SecretKey(adultFingerprint));
+  return Uint8List.fromList(m.bytes.sublist(0, 8));
 }
 
 /// A way to deliver one message to the adult device's window and get its answer. Null = no answer (a closed,
@@ -135,6 +182,7 @@ class AdultWindow extends ChangeNotifier {
     required this.familyId,
     required this.childId,
     required this.childName,
+    required this.childAge,
     required String? pin,
     required this.sid,
     required this.discoveryHandle,
@@ -156,6 +204,13 @@ class AdultWindow extends ChangeNotifier {
 
   final DeviceKey adultKey;
   final String adultName, familyId, childId, childName;
+
+  /// Her age in whole years as the grown-up's device holds it (3 to 17), sealed into the credential so a tablet
+  /// paired on the same network can open her home from what it was given, with no server. Null = not known.
+  final int? childAge;
+
+  /// Only a plausible age travels (3 to 17, the range the family screens allow); anything else is dropped.
+  static int? _okAge(int? a) => (a != null && a >= 3 && a <= 17) ? a : null;
   final Uint8List sid;
 
   /// What a nearby device finds the window by in the (neutral) advertisement: random per window, 16 bytes, and NOT
@@ -297,9 +352,13 @@ class AdultWindow extends ChangeNotifier {
     required String familyId,
     required String childId,
     required String childName,
+    int? childAge,
     required String pin,
     bool offerQr = false,
-    bool phoneOnly = false,
+    // DEFAULT (since the pairing hardening): the tablet is given NO typed-code verifier, so a tablet that is lost or
+    // copied holds nothing an attacker can try millions of PINs against offline. Passing false is the grown-up's
+    // explicit opt-in to a keypad on that tablet (MASTERFILE 8.5.9; the honest limit is in local_pin.dart).
+    bool phoneOnly = true,
     Uint8List? familyKey,
     bool requireMatch = true,
     Future<bool> Function(List<int> deviceKey)? refuseKey,
@@ -314,7 +373,7 @@ class AdultWindow extends ChangeNotifier {
     Uint8List bytes(int n) => Uint8List.fromList(List<int>.generate(n, (_) => r.nextInt(256)));
     final DateTime Function() clock = now ?? DateTime.now;
     return AdultWindow._(
-      adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
+      adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName, childAge: _okAge(childAge),
       pin: pin, sid: bytes(16), discoveryHandle: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
       familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey,
@@ -344,8 +403,17 @@ class AdultWindow extends ChangeNotifier {
 
   bool get isOpen => state == WindowState.open || state == WindowState.awaitingApproval;
 
-  Uint8List _channelId(List<int> cpk) => pairingChannelId(
-      childPublicKey: cpk, adultFingerprint: adultKey.fingerprint, familyId: familyId, adultName: adultName);
+  Uint8List _channelId(List<int> cpk, {required bool bindAdult}) =>
+      pairingChannelIdBare(childPublicKey: cpk, adultFingerprint: bindAdult ? adultKey.fingerprint : null);
+
+  /// Who this adult is, sealed for the child under the exchange's own key (only a device that passed key
+  /// confirmation can open it).
+  Future<Uint8List> _sealedIdentity(PakeKey key) async {
+    final Map<String, Object?> body = <String, Object?>{'apk': b64(adultKey.publicKey), 'an': adultName, 'fid': familyId};
+    final SecretBox box = await AesGcm.with256bits()
+        .encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await key.channelKey()), aad: _aadIdentity);
+    return Uint8List.fromList(box.concatenation());
+  }
 
   void close() {
     if (state == WindowState.closed) return;
@@ -458,9 +526,20 @@ class AdultWindow extends ChangeNotifier {
           _helloNonces.add(hn);
           if (_helloNonces.length > 8) _helloNonces.removeAt(0);
         }
+        // Bare on purpose: nothing about the grown-up (no name, family id, key or fingerprint) before the key exchange.
+        final Object? helloCpk = m['cpk'];
+        Uint8List? ft, fa;
+        if (helloCpk is String) {
+          final Uint8List c = unb64(helloCpk);
+          if (c.length == 32) {
+            if (familyKey != null) ft = await familyHelloTag(familyKey!, sid, c);
+            fa = await adultHelloTag(adultKey.fingerprint, sid, c);
+          }
+        }
         return <String, dynamic>{
-          't': 'hello-ok', 'sid': b64(sid), 'afp': b64(adultKey.fingerprint), 'apk': b64(adultKey.publicKey),
-          'an': adultName, 'fid': familyId, 'pv': kPairingProtocolVersion,
+          't': 'hello-ok', 'pv': kPairingProtocolVersion, 'sid': b64(sid),
+          if (ft != null) 'ft': b64(ft),
+          if (fa != null) 'fa': b64(fa),
           if (hn != null) 'hn': b64(hn),
         };
       case 'pake1':
@@ -504,7 +583,8 @@ class AdultWindow extends ChangeNotifier {
             ? (qrSecret == null ? null : utf8.encode(b64(qrSecret!)))
             : (_pin == null ? null : utf8.encode(_pin!));
         if (password == null) return null;
-        final PakeParty party = await PakeParty.start(isChild: false, password: password, sid: sid, ci: _channelId(cpk));
+        final PakeParty party =
+            await PakeParty.start(isChild: false, password: password, sid: sid, ci: _channelId(cpk, bindAdult: m['fb'] == 1));
         _pending = _Pending(party, cpk, _clip(m['dn']), qr, yc);
         _pendingAt = _now();
         return <String, dynamic>{'t': 'pake2', 'Ya': b64(party.share)};
@@ -536,7 +616,9 @@ class AdultWindow extends ChangeNotifier {
         state = WindowState.awaitingApproval;
         notifyListeners();
         _pollNonce = _freshNonce();
-        return <String, dynamic>{'t': 'confirm-ok', 'tagA': b64(await key.tag('A')), 'n': b64(_pollNonce!)};
+        return <String, dynamic>{
+          't': 'confirm-ok', 'tagA': b64(await key.tag('A')), 'n': b64(_pollNonce!), 'id': b64(await _sealedIdentity(key)),
+        };
       case 'poll':
         final Object? tc = m['tagC'], tp = m['tagP'];
         if (_tagC == null || _key == null || _pollNonce == null || tc is! String || tp is! String) return null;
@@ -569,16 +651,19 @@ class AdultWindow extends ChangeNotifier {
     final String certId = b64(List<int>.generate(12, (_) => r.nextInt(256)));
     final int iat = _now().millisecondsSinceEpoch;
     final PairingCert cert = await PairingCert.issue(adultKey,
-        childDeviceKey: _cpk!, familyId: familyId, childId: childId, certId: certId, issuedAtMs: iat);
+        childDeviceKey: _cpk!, familyId: familyId, childId: childId, certId: certId, issuedAtMs: iat,
+        expiresAtMs: iat + kCertLifetime.inMilliseconds);
     final LocalPinRecord? verifier = phoneOnly ? null : await makeUnlockVerifier(_pin ?? '');
     final Map<String, Object?> body = <String, Object?>{
       'cert': cert.toJson(), 'apk': b64(adultKey.publicKey), 'an': adultName, 'childName': childName,
+      if (childAge != null) 'ca': childAge,
       if (verifier != null) 'verifier': <String, Object?>{'iter': verifier.iterations, 'salt': b64(verifier.salt), 'hash': b64(verifier.hash)},
       if (phoneOnly) 'po': true,
       if (familyKey != null) 'fk': b64(familyKey!),
     };
     final AesGcm aes = AesGcm.with256bits();
-    final SecretBox box = await aes.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await _key!.channelKey()));
+    final SecretBox box =
+        await aes.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await _key!.channelKey()), aad: _aadCredential);
     _sealed = Uint8List.fromList(box.concatenation());
     state = WindowState.approved;
     onPaired?.call(PairedKid(certId: certId, childDeviceKey: _cpk!, childId: childId, deviceName: _deviceName, issuedAtMs: iat, phoneOnly: phoneOnly));
@@ -598,7 +683,7 @@ class AdultWindow extends ChangeNotifier {
 class ChildPairing {
   const ChildPairing({
     required this.cert, required this.adultKey, required this.adultName, required this.childName, required this.unlockVerifier,
-    this.familyKey,
+    this.familyKey, this.graceUntilMs, this.childAge,
   });
   final PairingCert cert;
   final Uint8List adultKey;
@@ -610,8 +695,31 @@ class ChildPairing {
   /// The family key from the sealed credential (null for a credential issued before pairing pictures existed).
   final Uint8List? familyKey;
 
+  /// Her age in whole years (3 to 17) from the grown-up's device, or null for a credential issued before this existed.
+  /// It opens her home with no server; it is never shown as a number to her.
+  final int? childAge;
+
   /// Only the grown-up's phone unlocks this tablet.
   bool get phoneOnly => unlockVerifier == null;
+
+  /// For a certificate with no signed end date (issued before expiry existed): the time, on this tablet's clock, by
+  /// which it must meet the grown-up's phone once. Set by the store the first time the new build loads the record.
+  final int? graceUntilMs;
+
+  /// When this pairing stops being honoured: the signed end date, or the legacy grace for an old certificate.
+  int? get effectiveExpiryMs => cert.expiresAtMs ?? graceUntilMs;
+
+  /// True once the end date has passed on [nowMs] (this tablet's clock; a tablet whose clock is set back is "good" for
+  /// longer, which is the honest limit). A lapsed pairing stops admitting play and stops accepting a typed code; the
+  /// grown-up's phone still unlocks it, and meeting the phone renews it. Nothing is erased and a child sees nothing.
+  bool isLapsed(int nowMs) {
+    final int? e = effectiveExpiryMs;
+    return e != null && nowMs >= e;
+  }
+
+  ChildPairing withCert(PairingCert c) => ChildPairing(
+      cert: c, adultKey: adultKey, adultName: adultName, childName: childName, unlockVerifier: unlockVerifier,
+      familyKey: familyKey, graceUntilMs: graceUntilMs, childAge: childAge);
 }
 
 enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed }
@@ -657,6 +765,8 @@ class ChildPairingClient {
   /// neutral advertisement: the session id then comes back in the hello answer);
   /// [password] is the typed PIN or the QR secret ([viaQr]); [expectedAdultFingerprint] comes from the QR.
   /// [onMatched] fires when the adult device proved it knows the secret: show the name and the pair.
+  /// A foreign family is stopped BEFORE any key exchange only when [expectedFamilyKey] is given (the blinded hint needs
+  /// it); [expectedFamilyId] alone is checked after key confirmation, so a caller that holds an id must pass the key too.
   Future<PairingResult> pair({
     Uint8List? sid,
     Uint8List? handle,
@@ -664,6 +774,7 @@ class ChildPairingClient {
     bool viaQr = false,
     Uint8List? expectedAdultFingerprint,
     String? expectedFamilyId,
+    Uint8List? expectedFamilyKey,
     void Function(PairingMatch match)? onMatched,
   }) async {
     if ((sid == null) == (handle == null)) {
@@ -671,13 +782,14 @@ class ChildPairingClient {
     }
     try {
       final Map<String, dynamic>? hello = await transport.send(<String, dynamic>{
-        't': 'hello', if (sid != null) 'sid': b64(sid) else 'h': b64(handle!), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
+        't': 'hello', 'pv': kPairingProtocolVersion,
+        if (sid != null) 'sid': b64(sid) else 'h': b64(handle!), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
         // Proof this device holds the key it presents, for this window only (checked by a window that scanned
         // this device's picture; ignored by every other). Signed over whichever window id the hello carries.
         'hs': b64(await signHello(childKey, sid ?? handle!)),
       });
       if (hello == null || hello['t'] != 'hello-ok') return const PairingResult.failed(PairingFailure.unreachable);
-      // A window of another key-exchange version (an older build never states one): stop before any PAKE message.
+      // A window of another version (an older build never states one): stop before any PAKE message, calmly.
       if (hello['pv'] != kPairingProtocolVersion) return const PairingResult.failed(PairingFailure.notMatched);
       if (sid == null) {
         // Found by handle: the session id is whatever the window that answered says it is. It is a nonce, not a
@@ -686,22 +798,29 @@ class ChildPairingClient {
         if (got.length != 16) return const PairingResult.failed(PairingFailure.malformed);
         sid = got;
       }
-      final Uint8List apk = unb64(hello['apk'] as String), afp = unb64(hello['afp'] as String);
-      final String an = hello['an'] as String, fid = hello['fid'] as String;
-      if (!constantTimeEquals(await fingerprintOf(apk), afp)) return const PairingResult.failed(PairingFailure.notMatched);
-      if (expectedAdultFingerprint != null && !constantTimeEquals(expectedAdultFingerprint, afp)) {
-        return const PairingResult.failed(PairingFailure.notMatched);
+      // A device that already belongs to a family (it holds the family key) never starts an exchange with a window that
+      // cannot show it is the same family, and it does not accept a window with the hint removed: it stops here,
+      // before any key-exchange message is sent, and says nothing.
+      if (expectedFamilyKey != null) {
+        final Object? ft = hello['ft'];
+        final Uint8List want = await familyHelloTag(expectedFamilyKey, sid, childKey.publicKey);
+        if (ft is! String || !constantTimeEquals(unb64(ft), want)) return const PairingResult.failed(PairingFailure.notMatched);
       }
-      // A device that already belongs to a family never starts an exchange with a window of another family: it stops
-      // here, before any PAKE message is sent, and says nothing.
-      if (expectedFamilyId != null && fid != expectedFamilyId) return const PairingResult.failed(PairingFailure.notMatched);
+      // A child that already knows which grown-up it is looking for (a QR or a scanned picture) stops here if this
+      // window is not that grown-up, before any key exchange, and the real grown-up is never involved.
+      if (expectedAdultFingerprint != null) {
+        final Object? fa = hello['fa'];
+        final Uint8List want = await adultHelloTag(expectedAdultFingerprint, sid, childKey.publicKey);
+        if (fa is! String || !constantTimeEquals(unb64(fa), want)) return const PairingResult.failed(PairingFailure.notMatched);
+      }
       final Object? hnRaw = hello['hn'];
-      final Uint8List ci = pairingChannelId(
-          childPublicKey: childKey.publicKey, adultFingerprint: afp, familyId: fid, adultName: an);
+      // The adult's fingerprint is bound into the exchange only when this device already knows it from outside the
+      // network (a QR or a scanned picture); otherwise the adult is identified after key confirmation, below.
+      final Uint8List ci = pairingChannelIdBare(childPublicKey: childKey.publicKey, adultFingerprint: expectedAdultFingerprint);
       final PakeParty party = await PakeParty.start(isChild: true, password: utf8.encode(password), sid: sid, ci: ci);
       final Map<String, dynamic>? p2 = await transport.send(<String, dynamic>{
-        't': 'pake1', 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName, 'pv': kPairingProtocolVersion,
-        'm': viaQr ? 'qr' : 'pin', 'Yc': b64(party.share),
+        't': 'pake1', 'pv': kPairingProtocolVersion, 'sid': b64(sid), 'cpk': b64(childKey.publicKey), 'dn': deviceName,
+        'm': viaQr ? 'qr' : 'pin', 'Yc': b64(party.share), 'fb': expectedAdultFingerprint != null ? 1 : 0,
         // Only a window that scanned this device's picture issues a nonce; the signature proves the key is held now.
         if (hnRaw is String) ...<String, dynamic>{
           'hn': hnRaw, 'ps': b64(await signPake1(childKey, sid, unb64(hnRaw), party.share)),
@@ -713,6 +832,14 @@ class ChildPairingClient {
       final Map<String, dynamic>? c = await transport.send(<String, dynamic>{'t': 'confirm', 'sid': b64(sid), 'tagC': b64(tagC)});
       if (c == null || c['t'] != 'confirm-ok') return const PairingResult.failed(PairingFailure.notMatched);
       if (!await key.checkTag('A', unb64(c['tagA'] as String))) return const PairingResult.failed(PairingFailure.notMatched);
+      // Who the adult is: opened only with the key just confirmed, and checked before anything is shown or polled.
+      final Map<String, dynamic> who = await _openIdentity(key, c['id'] as String);
+      final Uint8List apk = unb64(who['apk'] as String), afp = await fingerprintOf(apk);
+      final String an = who['an'] as String, fid = who['fid'] as String;
+      if (expectedAdultFingerprint != null && !constantTimeEquals(expectedAdultFingerprint, afp)) {
+        return const PairingResult.failed(PairingFailure.notMatched);
+      }
+      if (expectedFamilyId != null && fid != expectedFamilyId) return const PairingResult.failed(PairingFailure.notMatched);
       onMatched?.call(PairingMatch(an, Sas.fromBytes(await key.sas()), MatchSet.fromBytes(await key.match())));
       Duration waited = Duration.zero;
       Uint8List nonce = unb64(c['n'] as String);
@@ -732,9 +859,13 @@ class ChildPairingClient {
     }
   }
 
-  Future<Map<String, dynamic>> _decrypt(PakeKey key, String sealed) async {
+  Future<Map<String, dynamic>> _decrypt(PakeKey key, String sealed) => _open2(key, sealed, _aadCredential);
+
+  Future<Map<String, dynamic>> _openIdentity(PakeKey key, String sealed) => _open2(key, sealed, _aadIdentity);
+
+  Future<Map<String, dynamic>> _open2(PakeKey key, String sealed, List<int> aad) async {
     final SecretBox box = SecretBox.fromConcatenation(unb64(sealed), nonceLength: 12, macLength: 16);
-    final List<int> plain = await AesGcm.with256bits().decrypt(box, secretKey: SecretKey(await key.channelKey()));
+    final List<int> plain = await AesGcm.with256bits().decrypt(box, secretKey: SecretKey(await key.channelKey()), aad: aad);
     return jsonDecode(utf8.decode(plain)) as Map<String, dynamic>;
   }
 
@@ -759,6 +890,7 @@ class ChildPairingClient {
     }
     return PairingResult.ok(ChildPairing(
         cert: cert, adultKey: apk, adultName: body['an'] as String, childName: body['childName'] as String,
-        unlockVerifier: verifier, familyKey: familyKey));
+        unlockVerifier: verifier, familyKey: familyKey,
+        childAge: (body['ca'] is int && (body['ca'] as int) >= 3 && (body['ca'] as int) <= 17) ? body['ca'] as int : null));
   }
 }

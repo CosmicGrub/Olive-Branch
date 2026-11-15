@@ -13,6 +13,8 @@
 //
 // The QR way (a fresh signed challenge the grown-up's phone answers) is the optional second option; its screens
 // are not built in this PR (spec section 12), so this gate offers only what is real: the keypad.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
@@ -26,9 +28,13 @@ enum AdultGateStage { card, choose, keypad, phone }
 /// The grown-up's phone as a way to unlock this tablet (unlock_challenge.dart): a one-time challenge shown here,
 /// answered by a picture the phone shows. [phoneOnly] hides the keypad altogether.
 class PhoneUnlock {
-  const PhoneUnlock({required this.host, this.phoneOnly = false, this.scannerBuilder});
+  const PhoneUnlock({required this.host, this._phoneOnly = false, this.phoneOnlyWhen, this.scannerBuilder});
   final ChildUnlockHost host;
-  final bool phoneOnly;
+  final bool _phoneOnly;
+
+  /// Read each time the gate looks (a lapsed tablet is phone-only until a meeting renews it, with no restart).
+  final bool Function()? phoneOnlyWhen;
+  bool get phoneOnly => _phoneOnly || (phoneOnlyWhen?.call() ?? false);
 
   /// Tests supply a stand-in for the camera; null uses the real scanner.
   final Widget Function(void Function(String value) onValue)? scannerBuilder;
@@ -289,6 +295,23 @@ class _PhonePaneState extends State<_PhonePane> {
   bool _scanning = false;
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_prove());
+  }
+
+  /// Signs the challenge with this tablet's own key so the phone can tell the same tablet from a copy of its
+  /// certificate. The plain picture shows first; the signed one replaces it a moment later (same one-time nonce).
+  Future<void> _prove() async {
+    try {
+      final UnlockChallenge? p = await widget.unlock.host.proveOutstanding();
+      if (p != null && mounted) setState(() => _challenge = p);
+    } catch (_) {
+      // Unsigned is still a valid challenge: the phone treats it as a tablet from before the proof existed.
+    }
+  }
+
   Future<void> _onValue(String raw) async {
     if (_busy) return;
     _busy = true;
@@ -298,6 +321,7 @@ class _PhonePaneState extends State<_PhonePane> {
       widget.onProved();
     } else {
       setState(() { _challenge = widget.unlock.host.issue(widget.purpose); _busy = false; });
+      unawaited(_prove());
     }
   }
 
@@ -317,8 +341,8 @@ class _PhonePaneState extends State<_PhonePane> {
                   Container(
                     color: Colors.white,
                     padding: const EdgeInsets.all(10),
-                    width: 240,
-                    height: 240,
+                    width: 280,
+                    height: 280,
                     child: PrettyQrView.data(key: const Key('adultGateChallengeQr'), data: _challenge.toQr()),
                   ),
                   const SizedBox(height: 14),

@@ -84,6 +84,7 @@ import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
 import 'read_aloud.dart';
 import 'role_picker_screen.dart';
+import 'screen_privacy.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 
@@ -474,10 +475,25 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
       LocalStoreDeviceKeyRepository(LocalServices.current.area('devicekey')));
   // "Use my phone": a fresh signed answer to a one-time challenge (unlock_challenge.dart). A phone-only tablet
   // has no PIN check at all; a verified phone-only flag deletes it; a verified "disconnect" clears the pairing.
+  // A pairing past its signed end date is "lapsed": no typed code, no play admission (play_credentials.dart), but the
+  // grown-up's phone still unlocks it and a meeting with the phone renews it. The child sees nothing different.
+  // Read at use time, not boot: a meeting with the phone renews the certificate and the keypad choice comes back at once.
+  ChildPairing live = p;
+  bool lapsed() => live.isLapsed(DateTime.now().millisecondsSinceEpoch);
   final ChildUnlockHost host = ChildUnlockHost(
     childKey: childKey,
     adultKey: p.adultKey,
+    cert: p.cert,
     onPhoneOnly: repo.makePhoneOnly,
+    onRenewed: (PairingCert renewed) async {
+      await repo.replaceCert(renewed);
+      live = live.withCert(renewed);
+    },
+    // The phone proved (with a signature) that it stopped or forgot this tablet: drop the pairing, honour nothing.
+    onRevoked: () async {
+      await repo.clear();
+      unawaited(_startKidFirstRun());
+    },
     onForget: () async {
       await repo.clear();
       unawaited(_startKidFirstRun());
@@ -487,8 +503,12 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
     initialTheme: defaultAppTheme,
     childId: p.cert.childId,
     session: null,
-    verifyPin: unlock.verifyBool,
-    phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly),
+    verifyPin: (String pin) async => lapsed() ? false : unlock.verifyBool(pin),
+    phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly, phoneOnlyWhen: lapsed),
+    // No server account, no session: her home is drawn from what the pairing delivered, never from a server.
+    localHome: true,
+    localName: p.childName,
+    localAge: p.childAge,
   ));
 }
 
@@ -577,6 +597,8 @@ class _FirstRunApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (welcome)',
     theme: buildThemeData(defaultAppTheme),
+    // A child's device (or one not yet told who uses it) always blocks screenshots (screen_privacy.dart).
+    builder: childShieldBuilder,
     home: FirstRunFlow(
       baseUrl: baseUrl,
       draftRepository: draftRepository,
@@ -601,8 +623,8 @@ class _RolePickerApp extends StatelessWidget {
     title: 'Olive (welcome)',
     theme: buildThemeData(defaultAppTheme),
     navigatorObservers: [sharedReadAloudObserver],
-    builder: (context, child) =>
-        ReadAloudScope(controller: sharedReadAloud, child: child ?? const SizedBox.shrink()),
+    builder: (context, child) => ChildScreenShield(
+        child: ReadAloudScope(controller: sharedReadAloud, child: child ?? const SizedBox.shrink())),
     home: RolePickerScreen(onPicked: (DeviceRole r) => unawaited(onPicked(r))),
   );
 }
@@ -633,6 +655,7 @@ class _PairingBootApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (pairing)',
     theme: buildThemeData(defaultAppTheme),
+    builder: childShieldBuilder,
     home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', onRedeemed: _onRedeemed),
   );
 }
@@ -686,6 +709,7 @@ class _OnboardingBootApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (onboarding)',
     theme: buildThemeData(defaultAppTheme),
+    builder: childShieldBuilder,
     home: OnboardingFlowScreen(
       childId: childId,
       baseUrl: baseUrl,
@@ -697,7 +721,8 @@ class _OnboardingBootApp extends StatelessWidget {
 
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
-    required this.childId, required this.session, this.verifyPin, this.phoneUnlock});
+    required this.childId, required this.session, this.verifyPin, this.phoneUnlock,
+    this.localHome = false, this.localName, this.localAge});
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -721,6 +746,12 @@ class OliveLive extends StatefulWidget {
 
   /// The grown-up's phone as another way to unlock (a locally paired tablet only).
   final PhoneUnlock? phoneUnlock;
+
+  /// A locally paired tablet (no server account, no session): her home never asks a server and shows no
+  /// error or cloud picture. False = the connected path, unchanged.
+  final bool localHome;
+  final String? localName;
+  final int? localAge;
 
   @override
   State<OliveLive> createState() => _OliveLiveState();
@@ -787,7 +818,7 @@ class _OliveLiveState extends State<OliveLive> {
           curve: Curves.easeInOut,
           // Accessibility settings and read-aloud (access_shell.dart).
           // The label scope: every child-facing screen says what SHE calls her grown-ups.
-          child: KidLabelsHost(childId: widget.childId, child: withAccess(child!)),
+          child: ChildScreenShield(child: KidLabelsHost(childId: widget.childId, child: withAccess(child!))),
         ),
         home: KioskShell(
           phoneUnlock: widget.phoneUnlock,
@@ -797,6 +828,9 @@ class _OliveLiveState extends State<OliveLive> {
             baseUrl: _dartDefineBaseUrl,
             childId: widget.childId,
             navigatorKey: _navigatorKey,
+            localOnly: widget.localHome,
+            localName: widget.localName,
+            localAge: widget.localAge,
           ),
         ),
       );

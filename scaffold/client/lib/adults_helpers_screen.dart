@@ -23,6 +23,7 @@ class AdultsHelpersScreen extends StatelessWidget {
     required this.onChangePeople,
     required this.onHelpers,
     required this.onInvitePreview,
+    this.onWelcome,
   });
 
   final String childName;
@@ -39,6 +40,10 @@ class AdultsHelpersScreen extends StatelessWidget {
 
   /// Opens the invitation PREVIEW.
   final VoidCallback onInvitePreview;
+
+  /// Opens "Your village" (welcome_screens.dart). Null hides the row. Nothing passes it yet: the family ledger is
+  /// not wired into the shell, so the preview row above is still the only invite entry in the running app.
+  final VoidCallback? onWelcome;
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +95,18 @@ class AdultsHelpersScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Another adult', style: t.titleSmall),
             const SizedBox(height: 6),
+            if (onWelcome != null) ...<Widget>[
+              OliveCard(
+                child: OliveRow(
+                  key: const Key('adultsWelcome'),
+                  icon: OliveIcons.users,
+                  title: 'Welcome someone',
+                  sub: 'Ask the other parents before a new grown-up is in',
+                  onTap: onWelcome,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             OliveCard(
               child: OliveRow(
                 key: const Key('adultsInvite'),

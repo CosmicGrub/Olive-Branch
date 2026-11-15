@@ -462,6 +462,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
             "db health views under FORCE RLS, app_owner-migrated: true counts for every caller, monitor reads no rows (0047, real DB)|packages/db/test/health_views_force_rls.test.mjs" \
             "family simulation CI subset: 3 families, strict cross-family isolation probes (real DB, real RLS)|tools/family-sim/test/isolation_ci.test.mjs" \
+            "family simulation day plan: seeded day-parts independent of the hour the run lands in (no DB, fixed clock)|tools/family-sim/test/dayplan_clock.test.mjs" \
             "db domain constraints: day-parts, time zones, enums (0042, real DB)|packages/db/test/domain_constraints.test.mjs" \
             "db evidence integrity: recomputed log hashes, loud migration (0043, real DB)|packages/db/test/evidence_integrity.test.mjs" \
             "security follow-ups routes: first-PIN passkey check, PIN step-up (real DB)|server/test/security_follow_ups_route.test.mjs" \

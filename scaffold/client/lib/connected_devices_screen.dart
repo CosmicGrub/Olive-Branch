@@ -183,8 +183,9 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
       context: context,
       builder: (BuildContext c) => AlertDialog(
         title: Text('Forget ${k.deviceName}?'),
-        content: const Text('This phone will no longer unlock it. The tablet keeps its connection until you '
-            'disconnect it from the tablet itself or clear its data.'),
+        content: const Text('This phone will no longer unlock it or play with it. The tablet is told the next time you '
+            'bring it near this phone; until then it keeps its connection, or you can disconnect it from the tablet itself '
+            'or clear its data.'),
         actions: <Widget>[
           TextButton(key: const Key('forgetCancel'), onPressed: () => Navigator.of(c).pop(false), child: const Text('Cancel')),
           FilledButton(key: const Key('forgetConfirm'), onPressed: () => Navigator.of(c).pop(true), child: const Text('Forget it')),
@@ -193,6 +194,8 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
     );
     if (yes != true) return;
     try {
+      // Mark the key first, so a failure after this still leaves the tablet turned away rather than half-forgotten.
+      await widget.trust?.forget(k.childDeviceKey, who: k.deviceName);
       await widget.kids.forget(k.certId);
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save that. Nothing changed.')));
@@ -233,7 +236,8 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
                               title: const Text('Only my phone unlocks it'),
                               subtitle: Text(k.phoneOnly
                                   ? 'On. It reaches the tablet the next time you unlock it with your phone.'
-                                  : 'Off. A typed code works on the tablet. Turning this on cannot be undone without connecting it again.'),
+                                  : 'Off. A typed code works on this tablet, and a copy of its files could be used to guess that code. '
+                                      'Turning this on removes the check from the tablet and cannot be undone without connecting it again.'),
                               value: k.phoneOnly,
                               onChanged: k.phoneOnly ? null : (bool v) => _phoneOnly(k),
                             ),
