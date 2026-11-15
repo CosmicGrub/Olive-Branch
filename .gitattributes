@@ -19,3 +19,8 @@ scaffold/client/**/gradle-wrapper.jar binary
 # Windows checkout that rewrites a migration to CRLF should not be possible in
 # the first place; psql and the checksum both see the repository form.
 *.sql text eol=lf
+
+# iOS scaffold (inert, see scaffold/client/ios/README.md): Xcode, CocoaPods and Flutter's shell
+# helpers all want LF; a CRLF Podfile/pbxproj/xcconfig breaks the macOS build. Images stay binary.
+scaffold/client/ios/** text eol=lf
+scaffold/client/ios/**/*.png binary

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Intentionally empty. STUB ONLY. Later, per docs/roadmaps/IOS-ROADMAP.md:
+	     com.apple.developer.associated-domains (passkeys), aps-environment (push),
+	     keychain-access-groups. Do not add capabilities until the owner starts the iOS waves. -->
+</dict>
+</plist>
