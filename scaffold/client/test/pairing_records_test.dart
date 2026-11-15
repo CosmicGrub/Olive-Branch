@@ -63,4 +63,23 @@ void main() {
     await r.forget('a');
     expect((await r.load()).single.certId, 'b');
   });
+
+  test('her age from the pairing is kept across a restart; a stored implausible age reads as none', () async {
+    final LocalServices s = LocalServices.memory(isLive: true, demoSeeds: false, childId: 'c1');
+    ChildPairingRepository repo() => LocalStoreChildPairingRepository(
+        s.area('childpairing'), LocalStoreLocalPinRepository(s.area('adultunlock')));
+    final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
+    final DeviceKey ck = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
+    final PairingCert cert = await PairingCert.issue(ak,
+        childDeviceKey: ck.publicKey, familyId: 'fam', childId: 'kid', certId: 'x', issuedAtMs: 1);
+    await repo().save(ChildPairing(
+        cert: cert, adultKey: ak.publicKey, adultName: 'Mom', childName: 'Ivy', unlockVerifier: null, childAge: 7));
+    expect((await repo().load())!.childAge, 7);
+    await s.area('childpairing').put('pairing', <String, Object?>{
+      'cert': cert.toJson(), 'apk': b64(ak.publicKey), 'an': 'Mom', 'cn': 'Ivy', 'po': true, 'ca': 400,
+    });
+    final ChildPairing? back = await repo().load();
+    expect(back, isNotNull);
+    expect(back!.childAge, isNull);
+  });
 }

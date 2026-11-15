@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/age_lock_screens.dart';
+import 'package:olive_client/connect_child_screen.dart';
 import 'package:olive_client/contact_labels.dart';
 import 'package:olive_client/family_structure_screens.dart' show AgeBandsScreen;
 import 'package:olive_client/guardian_boot.dart';
@@ -321,6 +322,25 @@ void main() {
       final GuardianMoreScreen more = t.widget<GuardianMoreScreen>(find.byType(GuardianMoreScreen));
       expect(more.childAge, 13);
       expect(more.childName, 'Ivy');
+    });
+
+    Future<ConnectChildScreen> openConnect(WidgetTester t, GuardianLocalController ctl) async {
+      LocalServices.install(LocalServices.memory(childId: 'kid-1', isLive: true, demoSeeds: false));
+      await pumpMore(t, ctl: ctl);
+      await t.scrollUntilVisible(find.text("Connect a child's device"), 300, scrollable: find.byType(Scrollable).first);
+      await t.tap(find.text("Connect a child's device"));
+      await t.pumpAndSettle();
+      return t.widget<ConnectChildScreen>(find.byType(ConnectChildScreen));
+    }
+
+    testWidgets("connecting a child's device seals her real age, not the hub's stand-in 9", (t) async {
+      final ConnectChildScreen s = await openConnect(t, GuardianLocalController(services, family: family(age: 4)));
+      expect(s.childAge, 4);
+    });
+
+    testWidgets('with no local family there is no age to seal: null, never a made-up 9', (t) async {
+      final ConnectChildScreen s = await openConnect(t, GuardianLocalController(services));
+      expect(s.childAge, isNull, reason: 'a missing age must make the tablet use the youngest band');
     });
   });
 

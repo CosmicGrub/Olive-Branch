@@ -182,6 +182,7 @@ class AdultWindow extends ChangeNotifier {
     required this.familyId,
     required this.childId,
     required this.childName,
+    required this.childAge,
     required String? pin,
     required this.sid,
     required this.discoveryHandle,
@@ -203,6 +204,13 @@ class AdultWindow extends ChangeNotifier {
 
   final DeviceKey adultKey;
   final String adultName, familyId, childId, childName;
+
+  /// Her age in whole years as the grown-up's device holds it (3 to 17), sealed into the credential so a tablet
+  /// paired on the same network can open her home from what it was given, with no server. Null = not known.
+  final int? childAge;
+
+  /// Only a plausible age travels (3 to 17, the range the family screens allow); anything else is dropped.
+  static int? _okAge(int? a) => (a != null && a >= 3 && a <= 17) ? a : null;
   final Uint8List sid;
 
   /// What a nearby device finds the window by in the (neutral) advertisement: random per window, 16 bytes, and NOT
@@ -344,6 +352,7 @@ class AdultWindow extends ChangeNotifier {
     required String familyId,
     required String childId,
     required String childName,
+    int? childAge,
     required String pin,
     bool offerQr = false,
     // DEFAULT (since the pairing hardening): the tablet is given NO typed-code verifier, so a tablet that is lost or
@@ -364,7 +373,7 @@ class AdultWindow extends ChangeNotifier {
     Uint8List bytes(int n) => Uint8List.fromList(List<int>.generate(n, (_) => r.nextInt(256)));
     final DateTime Function() clock = now ?? DateTime.now;
     return AdultWindow._(
-      adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName,
+      adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName, childAge: _okAge(childAge),
       pin: pin, sid: bytes(16), discoveryHandle: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
       familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey,
@@ -647,6 +656,7 @@ class AdultWindow extends ChangeNotifier {
     final LocalPinRecord? verifier = phoneOnly ? null : await makeUnlockVerifier(_pin ?? '');
     final Map<String, Object?> body = <String, Object?>{
       'cert': cert.toJson(), 'apk': b64(adultKey.publicKey), 'an': adultName, 'childName': childName,
+      if (childAge != null) 'ca': childAge,
       if (verifier != null) 'verifier': <String, Object?>{'iter': verifier.iterations, 'salt': b64(verifier.salt), 'hash': b64(verifier.hash)},
       if (phoneOnly) 'po': true,
       if (familyKey != null) 'fk': b64(familyKey!),
@@ -673,7 +683,7 @@ class AdultWindow extends ChangeNotifier {
 class ChildPairing {
   const ChildPairing({
     required this.cert, required this.adultKey, required this.adultName, required this.childName, required this.unlockVerifier,
-    this.familyKey, this.graceUntilMs,
+    this.familyKey, this.graceUntilMs, this.childAge,
   });
   final PairingCert cert;
   final Uint8List adultKey;
@@ -684,6 +694,10 @@ class ChildPairing {
 
   /// The family key from the sealed credential (null for a credential issued before pairing pictures existed).
   final Uint8List? familyKey;
+
+  /// Her age in whole years (3 to 17) from the grown-up's device, or null for a credential issued before this existed.
+  /// It opens her home with no server; it is never shown as a number to her.
+  final int? childAge;
 
   /// Only the grown-up's phone unlocks this tablet.
   bool get phoneOnly => unlockVerifier == null;
@@ -705,7 +719,7 @@ class ChildPairing {
 
   ChildPairing withCert(PairingCert c) => ChildPairing(
       cert: c, adultKey: adultKey, adultName: adultName, childName: childName, unlockVerifier: unlockVerifier,
-      familyKey: familyKey, graceUntilMs: graceUntilMs);
+      familyKey: familyKey, graceUntilMs: graceUntilMs, childAge: childAge);
 }
 
 enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed }
@@ -876,6 +890,7 @@ class ChildPairingClient {
     }
     return PairingResult.ok(ChildPairing(
         cert: cert, adultKey: apk, adultName: body['an'] as String, childName: body['childName'] as String,
-        unlockVerifier: verifier, familyKey: familyKey));
+        unlockVerifier: verifier, familyKey: familyKey,
+        childAge: (body['ca'] is int && (body['ca'] as int) >= 3 && (body['ca'] as int) <= 17) ? body['ca'] as int : null));
   }
 }
