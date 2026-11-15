@@ -88,12 +88,12 @@ void main() {
       expect(button.height, greaterThanOrEqualTo(48.0));
     });
 
-    testWidgets('unread messages reach the Messages tile as a DOT (C-24: a '
-        'shape, never a red number), not silently dropped', (t) async {
+    testWidgets('unread messages draw NO dot and no number on the Messages tile (MASTERFILE 7.19: the home is '
+        'identical whether or not anything has arrived)', (t) async {
       await t.pumpWidget(wrap(const ChildHome(
         childName: 'Maya', presence: null,
         sleepsUntilHandover: 3, unreadCount: 2)));
-      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      expect(find.byKey(const Key('newDot')), findsNothing);
       expect(find.text('2'), findsNothing);
     });
 

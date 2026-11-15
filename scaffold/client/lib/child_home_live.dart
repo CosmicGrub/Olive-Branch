@@ -23,21 +23,18 @@
 // onto ChildHome's existing constructor field unchanged (ChildHome itself is
 // untouched -- its `_PresenceCard` already renders nothing when `presence`
 // is null, an honest absence, not a guess, exactly as before).
-// sleepsUntilHandover, unreadCount, and childName are ALL real too.
+// sleepsUntilHandover and childName are real too.
 // sleepsUntilHandover (v0.49.15): a prior pass found the real custody
 // endpoint (db/migrations/0007_custody_order.sql, packages/db/src/pool.mjs's
 // activeCustodyOrderFor, routes.mjs's /now calling schedule.mjs's real
 // sleepsUntilSideChange) had landed and stayed landed, but this screen never
 // called it -- OliveApi.fetchNow() existed, contract-checked, with zero
 // callers anywhere in this client. `_load()` now calls it alongside
-// fetchMe()/fetchInbox() and reads its real `sleepsUntilHandover` key
+// fetchMe() and reads its real `sleepsUntilHandover` key
 // (honestly `null` when the child has no active custody_order row -- /now's
 // own documented absence, not this screen inventing a second one).
-// unreadCount (v0.49.15): was counting EVERY row /inbox returns, but that
-// route deliberately includes both `'delivered'` (unwatched) and `'opened'`
-// (already watched) messages (server/routes.mjs's own query) -- a child who
-// had watched every message still saw a badge claiming all of them were new.
-// Now filtered to `state == 'delivered'` before counting.
+// The unread count this screen once derived from /inbox is gone (MASTERFILE 7.19): a child's home carries no
+// unread dot, badge or count, and it no longer reads her inbox at all (inbox_screen.dart does, itself).
 //
 // Phone -> watch sync (§21.5): this screen is the one real place a live
 // `sleepsUntilHandover` reaches wear_sync_channel.dart's WearSyncChannel,
@@ -84,6 +81,7 @@ import 'call_knock_screen.dart' show buildCallIncomingHandler;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
+import 'child_receive.dart' show drainOpenedReceipts;
 import 'child_home_bands_ui.dart' show LocalMidnightWatch;
 import 'child_home_growth.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
@@ -171,7 +169,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // What this device remembers of her, for the no-signal home (see _load()).
   ProfileCache? _cache;
   String _childName = '';
-  int _unreadCount = 0;
   // C-05: her real age in whole years, from GET /v1/me's `yearsOld` (the
   // server computes it from birth_date; a birthdate never reaches her
   // device). Fail-closed: if the server somehow omits it, assume the youngest
@@ -326,7 +323,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       final api = await apiFor(widget.baseUrl,
           childId: widget.childId, client: widget.httpClient);
       final me = await api.fetchMe();
-      final inbox = await api.fetchInbox(widget.childId);
       final now = await api.fetchNow(widget.childId);
       // Fetched in its own try/catch, deliberately NOT alongside the three
       // awaits directly above: presence is a supplementary signal, not core
@@ -366,22 +362,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
-      // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
-      // handler renamed its response key: `messages` collided with
-      // packages/globalaudit/src/globalaudit.ts's GLOBAL_CHILD_FORBIDDEN
-      // list (banned there for an unrelated reason), which meant every real
-      // child session hitting this exact call 500'd in production, silently
-      // -- see that handler's own comment for the full account. This
-      // screen's own header already disclosed why nothing caught it: it has
-      // never been run against a real deployed backend.
-      final List<dynamic> messages = inbox['entries'] as List;
+      // Her inbox is NOT read here any more: the Messages screen (inbox_screen.dart) reads it itself, so a broken or
+      // hostile inbox answer can never trap her home, and this home carries no unread dot or count (MASTERFILE 7.19).
       setState(() {
         _childName = (me['displayName'] as String?) ?? 'there';
-        // Only 'delivered' (unwatched) messages count toward the badge --
-        // /inbox itself returns BOTH 'delivered' and 'opened' rows (see
-        // server/routes.mjs's own query, `state IN ('delivered','opened')`),
-        // so counting the raw list length double-counted every message
-        // she had already watched as still unread. See file header.
         final int served = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
         final DateTime today = _now();
         // A birthday this device already applied today is not undone by an answer that was computed before it.
@@ -392,14 +376,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _ageDay = today;
         sharedAccess.setAge(_childAge);
         _dayParts = _decodeDayParts(now['dayParts']);
-        _unreadCount = messages.where(
-            (dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
         // Real, fetched from /now -- see file header. Honestly null when
         // the child has no active custody_order row (/now's own absence).
         _sleepsUntilHandover = (now['sleepsUntilHandover'] as num?)?.toInt();
         // §1's own disclosure lives at the server computation site
         // (server/routes.mjs), not here -- this is a pure wire-shape decode,
-        // matching how `now`/`inbox` are decoded immediately above.
+        // matching how `now` is decoded immediately above.
         final free = presenceJson?['free'] as Map<String, dynamic>?;
         _presence = free == null ? null : ParentPresence(
           free['name'] as String,
@@ -418,6 +400,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           displayName: me['displayName'] as String?,
           yearsOld: (me['yearsOld'] as num?)?.toInt(),
           overrides: overridesJson));
+      // Receipts she made while the server could not be reached go now, silently (the offline outbox).
+      unawaited(drainOpenedReceipts(
+          baseUrl: widget.baseUrl, childId: widget.childId, sessionToken: api.sessionToken,
+          httpClient: widget.httpClient));
       await _syncWear();
       await _initPush(api.sessionToken);
     } catch (e) {
@@ -584,7 +570,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         childName: name,
         presence: null,
         sleepsUntilHandover: null,
-        unreadCount: 0,
         baseUrl: widget.baseUrl,
         childId: widget.childId,
         sessionToken: null,
@@ -614,7 +599,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             childName: _childName,
             presence: _presence, // real, from GET .../presence
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
-            unreadCount: _unreadCount,
             // Real homework-capture wiring (§9.1, §20.2b) — the same
             // session _load() already minted, reused rather than each
             // child-facing screen calling devLoginFor() again on its own.

@@ -133,7 +133,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'outbox', scope: LocalScope.child, maxBytes: 2 * _mib,
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
-          'them. Never shown to her as a queue.'),
+          'them, and the notes that she opened a message, waiting to tell the sender (just the message id). '
+          'Never shown to her as a queue.'),
   LocalDataEntry(
       area: 'growing', scope: LocalScope.child, encrypted: true, maxBytes: 8 * _mib,
       what: 'Growing (grown-up side): time capsules a guardian sealed (a note, the opening date, '

@@ -27,6 +27,7 @@ void main() {
         OutboxKind.listItem: 'list_item',
         OutboxKind.storyStar: 'story_star',
         OutboxKind.ping: 'ping',
+        OutboxKind.receipt: 'receipt',
       };
       for (final entry in expected.entries) {
         expect(entry.key.wireValue, entry.value);

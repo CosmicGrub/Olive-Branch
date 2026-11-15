@@ -656,7 +656,7 @@ class OliveApi {
   /// its failure block or delay the real screen transition the child is
   /// already mid-tap on.
   Future<Map<String, dynamic>> markInboxOpened(String childId, String messageId) => _post(
-      inboxOpened.replaceFirst(':childId', childId).replaceFirst(':messageId', messageId),
+      inboxOpened.replaceFirst(':childId', Uri.encodeComponent(childId)).replaceFirst(':messageId', Uri.encodeComponent(messageId)),
       const {});
 
   /// `{free: null}` or `{free: {guardianId, name, theirLocalTime,

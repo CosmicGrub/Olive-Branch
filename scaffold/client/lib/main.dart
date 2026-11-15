@@ -76,7 +76,6 @@ const childHomeDemo = ChildHome(
   childName: 'Ivy',
   presence: ParentPresence('Dad', '6:42 PM', '9:00 PM her time'),
   sleepsUntilHandover: 3,
-  unreadCount: 2,
 );
 
 const guardianHomeDemo = GuardianHome(
