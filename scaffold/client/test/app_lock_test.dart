@@ -86,6 +86,27 @@ void main() {
       c.dispose();
     });
 
+    testWidgets('a development build never sets the flag, so screenshots work; the saved preference is unchanged', (tester) async {
+      final List<Object?> calls = <Object?>[];
+      const MethodChannel ch = MethodChannel('olive/secure_screen');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(ch, (MethodCall m) async {
+        calls.add(m.arguments);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(ch, null));
+      final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1000);
+      final AppLockController c = AppLockController(
+          pin: pin, repo: MemoryAppLockPrefsRepository(const AppLockPrefs()), secure: SecureScreen(ch), allowScreenshots: true);
+      await tester.runAsync(c.start);
+      expect(calls, <Object?>[false], reason: 'hide-recents is on by default but a dev build must not set FLAG_SECURE');
+      expect(c.prefs.hideRecents, isTrue, reason: 'the saved preference is not changed');
+      c.dispose();
+    });
+
+    test('the default build keeps the flag (the constant is off unless a dev build defines it)', () {
+      expect(kAllowScreenshotsDev, isFalse);
+    });
+
     test('a missing native side is not an error', () async {
       await SecureScreen(const MethodChannel('olive/none')).set(true);
     });
