@@ -27,8 +27,11 @@
 //    court export, and there is no "export this data" button by design: a
 //    child's journal and pictures are not evidence this app can hand to anyone
 //    (P7). The only thing that leaves this screen is the deletion.
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 
+import 'family_account_store.dart' show SecurePendingJoinStore;
 import 'local_services.dart';
 import 'maturation_ladder.dart' show childSeenRungReveals;
 import 'shared_gallery.dart';
@@ -86,6 +89,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'role': 'Who uses this device',
   'localfamily': 'Your family, set up on this phone',
   'localpin': 'Your PIN for this phone',
+  'account': 'Your optional Olive account: how far you got',
 };
 
 class ClearLocalDataScreen extends StatefulWidget {
@@ -123,6 +127,12 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
   void dispose() {
     _pin.dispose();
     super.dispose();
+  }
+
+  Future<void> _forgetPendingJoin() async {
+    try {
+      await SecurePendingJoinStore().clear();
+    } catch (_) {}
   }
 
   Future<void> _clear() async {
@@ -166,6 +176,10 @@ class _ClearLocalDataScreenState extends State<ClearLocalDataScreen> {
     }
     try {
       await _services.wipeAll();
+      // An invite being joined is kept in the phone's secure storage, not in the store just wiped. Without a sign-in
+      // it would only make the account page offer to "finish joining", so it goes too. The sign-in key does not.
+      // Not awaited: the wipe itself is done, and it must never wait on the phone's secure storage.
+      unawaited(_forgetPendingJoin());
       // The two pieces of in-process state that mirror what was on disk.
       demoAppGallery.forget();
       childSeenRungReveals.clear();

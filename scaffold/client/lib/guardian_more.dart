@@ -9,6 +9,7 @@
 // guardian side, family setup) that don't have their own top-level tile, so
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
+import 'dart:async' show unawaited;
 import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -56,6 +57,8 @@ import 'emergency_card_local.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
+import 'family_account_entry.dart';
+import 'family_account_store.dart' show forgetAccountOnThisPhone;
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
 import 'ui/olive_ui_gallery.dart';
@@ -655,6 +658,9 @@ class GuardianMoreScreen extends StatelessWidget {
     // installed (the offline demo build, a dev-login run) there is nothing
     // stored to clear and this stays the pop it always was.
     await AuthSession.current?.signOut();
+    // The optional account's note about this phone (its child, a half-finished join) ends with the sign-in.
+    // Not awaited: leaving the screen never waits on the phone's secure storage.
+    unawaited(forgetAccountOnThisPhone());
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -838,6 +844,14 @@ class GuardianMoreScreen extends StatelessWidget {
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
       ]),
       SettingsGroup('Account', [
+        // Optional, like everything online: shown only where the build can reach a server (a connected shell, or a
+        // local one that was given the way to open it). A phone with no account is the normal phone.
+        if (live || local?.onAccount != null)
+          SettingsRow(id: 'familyaccount', icon: Icons.family_restroom_outlined, title: 'Family account',
+            subtitle: 'Optional. Make an account, add $childName, and invite another grown-up',
+            onTap: () => live
+              ? openFamilyAccount(context, baseUrl: baseUrl!)
+              : local!.onAccount!(context)),
         if (local?.onConnect != null)
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',
