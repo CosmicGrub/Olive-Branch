@@ -692,8 +692,15 @@ for (const r of rows) {
     (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`));
 }
 console.log(`\n${'-'.repeat(56)}\n${pass} passed, ${fail} failed\n`);
-// setImmediate, not a bare process.exit: this file is the only suite that opens
-// a real socket (api.listen), and exiting synchronously right after srv.close()
-// races libuv's own async handle teardown on Windows (UV_HANDLE_CLOSING abort).
-// Letting one event-loop turn pass first gives that teardown time to finish.
-setImmediate(() => process.exit(fail === 0 ? 0 : 1));
+// NOT process.exit(), not even deferred. This file is the only suite that opens real sockets
+// (api.listen + fetch). On Windows, calling process.exit() while those TCP handles are still
+// closing makes the exit-time handle teardown race a thread that is still posting work to the
+// event loop, and libuv aborts the whole process AFTER every assertion has passed:
+//   Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src/win/async.c, line 76
+// (uv_async_send() on a handle already being closed; npm then reports exit 127 on a 126/0 run).
+// Measured on Node 24: process.exit() straight after the last await crashed every run; delaying
+// it by 1-5 ms still crashed 5 of 5, 20 ms crashed 1 of 5, 50 ms and beyond 0 of 5 -- a timing
+// window, not a leak in this suite, so any setImmediate/setTimeout deferral is only a guess.
+// Setting process.exitCode and letting the loop drain on its own closes the handles in order
+// and never races: 0 crashes in 10 consecutive runs, exit code still carried through.
+process.exitCode = fail === 0 ? 0 : 1;
