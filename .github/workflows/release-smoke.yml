@@ -21,6 +21,10 @@ on:
       - 'scaffold/tools/release-smoke*'
       - '.github/workflows/release-smoke.yml'
 
+# Read-only token: nothing here writes to the repository (artifacts use the separate runtime token).
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

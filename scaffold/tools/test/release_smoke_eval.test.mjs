@@ -35,6 +35,12 @@ check('the crash detail names the crashing process', rCrash.checks.find((c) => /
 
 check('process dying at second 3 FAILS', !evaluate({ ...base, alive: `1 4242\n2 4242\n3 \n` }).ok);
 check('a process that restarted under a new pid FAILS', names(evaluate({ ...base, alive: alive(10, '4242') + '\n' + alive(10, '5555').replace(/^/, '') })).some((n) => /same process/.test(n)));
+const withGap = (n, gapAt, pid = '4242') => Array.from({ length: n }, (_, i) => `${i + 1} ${i + 1 === gapAt ? '' : pid}`).join('\n');
+check('one isolated empty sample (adb hiccup) is tolerated', evaluate({ ...base, alive: withGap(20, 7) }).ok);
+check('an empty sample at the very end FAILS (death)', !evaluate({ ...base, alive: withGap(20, 20) }).ok);
+check('two empty samples in a row FAIL', !evaluate({ ...base, alive: Array.from({ length: 20 }, (_, i) => `${i + 1} ${i === 5 || i === 6 ? '' : '4242'}`).join('\n') }).ok);
+check('pidof listing two pids in a changing order passes (a common pid exists)', evaluate({ ...base, alive: Array.from({ length: 20 }, (_, i) => `${i + 1} ${i % 2 ? '4242 4300' : '4300 4242'}`).join('\n') }).ok);
+check('a crash after a hiccup is still caught', !evaluate({ ...base, alive: withGap(20, 7), logcat: crash }).ok);
 check('too few samples FAILS (sampling must cover the window)', !evaluate({ ...base, alive: alive(5) }).ok);
 check('am start error FAILS', !evaluate({ ...base, amStart: 'Error: Activity class does not exist.' }).ok);
 check('no Displayed line FAILS', !evaluate({ ...base, logcat: L(3, 4242, 'I', 'flutter', 'x') }).ok);

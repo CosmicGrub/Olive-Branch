@@ -15,6 +15,12 @@
  *   (b) set it to true AND ship keep rules for the Jitsi strings: a res/raw/*.xml whose tools:keep names the
  *       Jitsi string resources (a broad `@string/*` also counts), AND proguard-rules.pro keeping org.jitsi.meet.sdk.
  *
+ * LIMITS (it is a text check, not a Gradle evaluation): it reads only the app module's `release { }` block and takes the
+ * LAST literal `true`/`false` assigned to isShrinkResources there. A value set through a variable or helper, or by a
+ * different build type, flavor or another module, is not seen, and a stray literal could hide it. A restructured file
+ * with no literal release block fails closed. The emulator smoke test is the check that does not depend on how the
+ * flag is written.
+ *
  * usage: node tools/check-release-shrink.mjs        (exit 1 on a problem)
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';

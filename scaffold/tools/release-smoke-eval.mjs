@@ -10,7 +10,8 @@
  * FAIL (exit 1) when any of:
  *   - the app process crashed: a "FATAL EXCEPTION" block naming the app's process, an ANR in the app, or a native
  *     "Fatal signal" in the app's pid (the original defect: "String resource ID #0x0" from the Jitsi SDK)
- *   - the process was not alive for the whole observation window, or its pid changed (a restart hides a crash)
+ *   - the process was not alive for the whole observation window (one isolated empty sample between two samples
+ *     with a common pid is tolerated as an adb hiccup), or no single pid was present throughout (a restart hides a crash)
  *   - `am start -W` did not report Status: ok
  *   - the system never logged "Displayed <pkg>/.MainActivity" (no window was ever drawn)
  * Reported but not failing: engine-start evidence (a release Flutter engine logs little), whether the activity was
@@ -39,7 +40,9 @@ export function evaluate(ev) {
     const [sec, ...pid] = l.split(/\s+/);
     return { sec: Number(sec), pid: pid.join(' ') };
   });
-  const pids = new Set(samples.filter((s) => s.pid).map((s) => s.pid.split(/\s+/)[0]));
+  // A sample holds every pid pidof listed (a package can briefly list two); empty = no process at that second.
+  for (const s of samples) s.set = new Set(s.pid ? s.pid.split(/\s+/) : []);
+  const pids = new Set(samples.flatMap((s) => [...s.set]));
   const appPids = new Set(pids);
   const checks = [], info = [];
   const add = (name, ok, detail = '') => checks.push({ name, ok, detail });
@@ -64,14 +67,21 @@ export function evaluate(ev) {
   if (foreign.length) info.push(`${foreign.length} FATAL EXCEPTION block(s) from OTHER processes (not failing): ${foreign[0]}`);
 
   // 2. alive for the whole window, same pid throughout.
-  const dead = samples.filter((s) => !s.pid);
+  // One isolated empty sample whose neighbours both hold a common pid is an adb hiccup, not a death. An empty first
+  // or last sample, or two empty samples in a row, is a death.
+  const hiccup = (i) => i > 0 && i < samples.length - 1 && [...samples[i - 1].set].some((p) => samples[i + 1].set.has(p));
+  const dead = samples.filter((s, i) => !s.set.size && !hiccup(i));
+  // Same process throughout: one pid is present in every non-empty sample (a restart changes the pid; a second
+  // listed pid or a different listing order does not matter).
+  const nonEmpty = samples.filter((s) => s.set.size);
+  const common = nonEmpty.length ? [...nonEmpty[0].set].filter((p) => nonEmpty.every((s) => s.set.has(p))) : [];
   const distinct = [...pids];
   add(`process alive for the whole window (>= ${minSamples} one-second samples)`,
     samples.length >= minSamples && dead.length === 0,
     samples.length < minSamples ? `only ${samples.length} samples (the process was gone early or sampling failed)`
       : dead.length ? `no process at second ${dead[0].sec}` : '');
-  add('same process throughout (a restart would hide a crash)', distinct.length <= 1 && (samples.length === 0 || distinct.length === 1),
-    distinct.length === 0 ? 'no pid was ever seen' : `pids: ${distinct.join(', ')}`);
+  add('same process throughout (a restart would hide a crash)', common.length > 0,
+    distinct.length === 0 ? 'no pid was ever seen' : `pids seen: ${distinct.join(', ')}`);
 
   // 3. am start status.
   add('am start -W reported Status: ok', /Status:\s*ok/i.test(ev.amStart) && !/Error:/i.test(ev.amStart), ev.amStart.trim().split('\n').slice(0, 3).join(' | ').slice(0, 200));

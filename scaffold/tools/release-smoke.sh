@@ -22,7 +22,10 @@ cat "$OUT/am-start.txt"
 
 for i in $(seq 1 "$WINDOW"); do
   sleep 1
-  pid="$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+  pid="$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')"
+  # One retry: a single transient adb failure must not read as "the process died". A real death stays empty.
+  [ -n "$pid" ] || { sleep 0.2; pid="$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')"; }
+  pid="$(echo $pid)"   # normalise whitespace; every listed pid is kept, the verdict looks for one common to all samples
   echo "$i $pid" >> "$OUT/alive.txt"
 done
 
