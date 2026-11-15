@@ -140,7 +140,7 @@ Why a ledger and not just "a roster in the certificate": a roster inside each ce
 
 ### 3.4 Binding FID and FK into the PAKE channel
 
-The PAKE stays CPace-style with the PIN (or the one-time QR secret) as the password; `cpace.dart` is not changed. What changes is the channel identifier `ci`, the messages around it, and two explicit modes.
+The PAKE stays CPace with the PIN (or the one-time QR secret) as the password; `cpace.dart` is not changed by this design. What changes is the channel identifier `ci`, the messages around it, and two explicit modes. (Note 2026-11-14: `cpace.dart` now conforms to CPace draft-21 and the channel identifier is built in one place, `pairingChannelId`; any new field this design puts into `ci` goes through that function and needs a bump of the key-exchange version `kPairingProtocolVersion`, otherwise old and new builds would derive different keys without saying so.)
 
 New channel identifier (all pieces length-prefixed, as now):
 

@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/cpace.dart';
 import 'package:olive_client/device_keys.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/pairing_protocol.dart';
@@ -299,10 +300,62 @@ void main() {
     test('a hello answer with a session id of the wrong size is refused', () async {
       final DeviceKey ck = await _key();
       final PairingResult r = await _client(ck, _FixedTransport(<String, dynamic>{
-        't': 'hello-ok', 'sid': b64(<int>[1, 2, 3]), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f',
+        't': 'hello-ok', 'sid': b64(<int>[1, 2, 3]), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f', 'pv': kPairingProtocolVersion,
       })).pair(handle: Uint8List(16), password: '4829');
       expect(r.ok, isFalse);
       expect(r.failure, PairingFailure.malformed);
+    });
+  });
+
+  group('key-exchange version (CPace draft-21 alignment): old and new builds fail calmly', () {
+    test('the adult states the version in hello-ok', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      final Map<String, dynamic>? ok = await w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T'});
+      expect(ok!['pv'], kPairingProtocolVersion);
+      expect(kPairingProtocolVersion, 2);
+    });
+
+    test('a new child meeting an old adult (hello-ok without a version) stops before any key-exchange message', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      final List<Map<String, dynamic>> sent = <Map<String, dynamic>>[];
+      final PairingResult r = await _client(ck, _OldAdultTransport(w, sent)).pair(sid: w.sid, password: '4829');
+      expect(r.ok, isFalse);
+      expect(r.failure, PairingFailure.notMatched, reason: 'the same calm outcome as any failed connection');
+      expect(sent.map((Map<String, dynamic> m) => m['t']), <String>['hello'], reason: 'no pake1 was sent');
+      expect(w.attemptsLeft, 5);
+      expect(w.isOpen, isTrue);
+    });
+
+    test('an old child meeting a new adult (pake1 without a version) is dropped silently, uncounted, and the window stays usable', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      final PairingResult old = await _client(ck, _OldChildTransport(w)).pair(sid: w.sid, password: '4829');
+      expect(old.ok, isFalse);
+      expect(old.failure, PairingFailure.notMatched);
+      expect(w.attemptsLeft, 5, reason: 'a version mismatch never costs an attempt');
+      expect(w.state, WindowState.open);
+      // The same PIN from an up-to-date child still pairs in the same window.
+      expect((await _client(ck, LoopbackPairingTransport(w)).pair(sid: w.sid, password: '4829')).ok, isTrue);
+    });
+
+    test('a wrong version number is dropped just like a missing one', () async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      final AdultWindow w = await _window(ak);
+      final PakeParty p = await PakeParty.start(isChild: true, password: '4829'.codeUnits, sid: w.sid, ci: Uint8List(0));
+      for (final Object? pv in <Object?>[null, 1, 3, '2', 2.5, true]) {
+        expect(
+            await w.handle(<String, dynamic>{
+              't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(p.share), 'pv': pv,
+            }),
+            isNull,
+            reason: 'pv=$pv');
+      }
+      expect(w.attemptsLeft, 5);
     });
   });
 
@@ -352,7 +405,7 @@ void main() {
       expect(await hello('other'), isNotNull);
 
       Future<Map<String, dynamic>?> pake1(String src) => w.handle(<String, dynamic>{
-            't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin',
+            't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'pv': kPairingProtocolVersion, 'm': 'pin',
             'Yc': b64(Uint8List.fromList(List<int>.generate(32, (int i) => (i * 7 + 3) & 0xff))),
           }, source: src);
       // Only one claim is in flight at a time (a second one is dropped without being counted), so the claim is
@@ -454,4 +507,27 @@ class _FixedTransport implements PairingTransport {
   final Map<String, dynamic> answer;
   @override
   Future<Map<String, dynamic>?> send(Map<String, dynamic> message) async => answer;
+}
+
+/// An adult that predates the version field: its hello-ok carries no `pv`.
+class _OldAdultTransport implements PairingTransport {
+  _OldAdultTransport(this.target, this.sent);
+  final AdultWindow target;
+  final List<Map<String, dynamic>> sent;
+  @override
+  Future<Map<String, dynamic>?> send(Map<String, dynamic> message) async {
+    sent.add(Map<String, dynamic>.of(message));
+    final Map<String, dynamic>? r = await target.handle(message);
+    if (r != null && r['t'] == 'hello-ok') return <String, dynamic>{...r}..remove('pv');
+    return r;
+  }
+}
+
+/// A child that predates the version field: its pake1 carries no `pv`, and it ignores the adult's.
+class _OldChildTransport implements PairingTransport {
+  _OldChildTransport(this.target);
+  final AdultWindow target;
+  @override
+  Future<Map<String, dynamic>?> send(Map<String, dynamic> message) =>
+      target.handle(<String, dynamic>{...message}..remove('pv'));
 }
