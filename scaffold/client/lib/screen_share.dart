@@ -25,6 +25,7 @@
 // There is NO road to the other phone yet: [NoShareTransport] delivers nothing, so a picture waits sealed in the outbox
 // ("Alex isn't nearby. It will go when your phones meet.") until a transport exists (family sync, FAMILY-SYNC-DESIGN.md).
 // Until a family ledger with a second grown-up exists on the phone there is nobody to send to, so the action is hidden.
+// UNVERIFIED on a device: the headless tests are the only proof so far; it needs a hardware pass before it is relied on.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';

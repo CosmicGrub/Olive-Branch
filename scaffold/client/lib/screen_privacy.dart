@@ -20,6 +20,7 @@
 //
 // ONLY the grown-up's [AppLockController] ever clears the flag (app_lock.dart). A test reads the library source and
 // fails if any other file calls `.set(false)` on the secure-screen channel.
+// UNVERIFIED on a device: the headless tests are the only proof so far; it needs a hardware pass before it is relied on.
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';

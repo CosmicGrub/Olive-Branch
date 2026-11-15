@@ -12,6 +12,7 @@
 //  * "Hide names and photos" can only hide what a screen marked. A screen with no marked places says so and the switch
 //    stays off, rather than promise something it cannot do.
 //  * A received picture is shown on a screen that blocks capture and has no send, share or save action.
+// UNVERIFIED on a device: the headless tests are the only proof so far; it needs a hardware pass before it is relied on.
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
