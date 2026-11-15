@@ -489,6 +489,10 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
     session: null,
     verifyPin: unlock.verifyBool,
     phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly),
+    // No server account, no session: her home is drawn from what the pairing delivered, never from a server.
+    localHome: true,
+    localName: p.childName,
+    localAge: p.childAge,
   ));
 }
 
@@ -697,7 +701,8 @@ class _OnboardingBootApp extends StatelessWidget {
 
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
-    required this.childId, required this.session, this.verifyPin, this.phoneUnlock});
+    required this.childId, required this.session, this.verifyPin, this.phoneUnlock,
+    this.localHome = false, this.localName, this.localAge});
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -721,6 +726,12 @@ class OliveLive extends StatefulWidget {
 
   /// The grown-up's phone as another way to unlock (a locally paired tablet only).
   final PhoneUnlock? phoneUnlock;
+
+  /// A locally paired tablet (no server account, no session): her home never asks a server and shows no
+  /// error or cloud picture. False = the connected path, unchanged.
+  final bool localHome;
+  final String? localName;
+  final int? localAge;
 
   @override
   State<OliveLive> createState() => _OliveLiveState();
@@ -797,6 +808,9 @@ class _OliveLiveState extends State<OliveLive> {
             baseUrl: _dartDefineBaseUrl,
             childId: widget.childId,
             navigatorKey: _navigatorKey,
+            localOnly: widget.localHome,
+            localName: widget.localName,
+            localAge: widget.localAge,
           ),
         ),
       );

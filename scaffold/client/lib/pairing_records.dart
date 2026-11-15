@@ -57,7 +57,9 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
         final Uint8List f = unb64(fk);
         if (f.length == 16) familyKey = f;
       }
-      return ChildPairing(cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v, familyKey: familyKey);
+      final Object? ca = raw['ca'];
+      final int? childAge = (ca is int && ca >= 3 && ca <= 17) ? ca : null;
+      return ChildPairing(cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v, familyKey: familyKey, childAge: childAge);
     } catch (_) {
       return null;
     }
@@ -72,6 +74,7 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
     }
     await _ns.put(_key, <String, Object?>{
       'cert': p.cert.toJson(), 'apk': b64(p.adultKey), 'an': p.adultName, 'cn': p.childName,
+      if (p.childAge != null) 'ca': p.childAge,
       if (p.unlockVerifier == null) 'po': true,
       if (p.familyKey != null) 'fk': b64(p.familyKey!),
     });

@@ -110,6 +110,9 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.familyService,
     this.clock,
     this.growthRepository,
+    this.localOnly = false,
+    this.localName,
+    this.localAge,
   });
 
   final String baseUrl;
@@ -147,6 +150,17 @@ class LiveChildHomeScreen extends StatefulWidget {
 
   /// Where 'your home grows' is kept. Null = this device's own store for this child.
   final GrowthRepository? growthRepository;
+
+  /// True for a tablet a grown-up approved on the same network: it has NO server account and NO session, so her
+  /// home is drawn from what this device holds (the name and age the pairing delivered, the profile it remembers)
+  /// and nothing here ever asks a server. No cloud picture, no retry button, no error of any kind is shown to her
+  /// on this path. False (the default) is the connected path above, unchanged.
+  final bool localOnly;
+
+  /// The name and age the pairing delivered, used when the profile area has nothing (or nothing newer). Only read
+  /// when [localOnly] is true.
+  final String? localName;
+  final int? localAge;
 
   @override
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
@@ -236,6 +250,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       _family = family ?? _family;
     });
     sharedAccess.setAge(next);
+    // A tablet with no server has no later answer to re-learn her age from: keep the new one on this device.
+    if (widget.localOnly) unawaited(_rememberProfile(yearsOld: next));
     await _growth.observe(next);
   }
   // Through the shared read-aloud controller, so this screen's readings obey the
@@ -258,7 +274,49 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     super.dispose();
   }
 
+  /// The locally paired tablet's home: no server, no session, no error state. Everything comes from this device.
+  Future<void> _loadLocal() async {
+    final ProfileCache? cached = await _readProfileCache();
+    FamilyChildSnapshot? family;
+    final String? knownName = (cached?.displayName?.trim().isNotEmpty ?? false)
+        ? cached!.displayName!.trim()
+        : (widget.localName?.trim().isNotEmpty ?? false) ? widget.localName!.trim() : null;
+    final String name = knownName ?? 'there';
+    // What this device remembers (a birthday it applied, a grown-up's PIN-locked age) wins; else what the pairing
+    // delivered; else the youngest end of the catalogue, so the age gate never fails open.
+    final int? knownAge = cached?.yearsOld ?? widget.localAge;
+    final int age = knownAge ?? _failClosedAge;
+    try {
+      family = await (widget.familyService ?? localFamilyService).childSnapshot(
+          FamilyPrincipal(roleName: 'child', childId: widget.childId),
+          childId: widget.childId, yearsOld: age);
+    } catch (e) {
+      debugPrint('[olive.family] not loaded this run: $e');
+    }
+    if (!mounted) return;
+    final DateTime today = _now();
+    setState(() {
+      _childName = name;
+      _childAge = (_ageFloor != null && _ageDay != null && _ageDay!.year == today.year && _ageDay!.month == today.month &&
+              _ageDay!.day == today.day && _ageFloor! > age) ? _ageFloor! : age;
+      _ageDay = today;
+      sharedAccess.setAge(_childAge);
+      _overrides = cached?.overrides == null
+          ? null
+          : decodeActivityOverrides(Map<String, dynamic>.from(cached!.overrides!));
+      _family = family;
+      _state = _LoadState.ready;
+    });
+    unawaited(_growth.observe(_childAge));
+    // Remember only what was really known, never the stand-in name or the fail-closed age.
+    unawaited(_rememberProfile(displayName: knownName, yearsOld: knownAge));
+  }
+
   Future<void> _load() async {
+    if (widget.localOnly) {
+      await _loadLocal();
+      return;
+    }
     setState(() => _state = _LoadState.loading);
     try {
       final api = await apiFor(widget.baseUrl,
