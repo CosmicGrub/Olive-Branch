@@ -20,7 +20,7 @@
 import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DateTime } from 'luxon';
+import { DateTime, IANAZone } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
@@ -53,7 +53,10 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          INVITABLE_ROLES, passkeysFor, deletePasskey, hasSecondFactorSetup,
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload,
-         webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
+         webauthnCredentialById, updateWebauthnSignCount,
+         signUpWithAllowance, childrenOf, createChildForGuardian,
+         claimGuardianInvite, confirmGuardianInvite, declineGuardianInvite,
+         guardianInvitesFor } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -73,6 +76,7 @@ import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
 import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
+import { resolveWebauthn, originAllowed } from './webauthn_config.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -150,8 +154,15 @@ export const defaultMediaStorage = new FilesystemStorage(
  * cannot go through api.register(), see that file's own header) use the
  * exact same string rather than a second, driftable copy.
  */
-export const RP_ID = 'olivebranch.local';
-export const RP_ORIGIN = `https://${RP_ID}`;
+// Identity lane: no longer a constant. server/webauthn_config.mjs reads
+// WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN / WEBAUTHN_ANDROID_ORIGINS from the
+// environment (unset = the historical dev default, so every existing test and
+// dev stack is unchanged) and server/index.mjs refuses to boot on a malformed
+// value. Android Credential Manager's `android:apk-key-hash:...` origin is
+// accepted alongside the https origin.
+export const WEBAUTHN_CFG = resolveWebauthn(process.env);
+export const RP_ID = WEBAUTHN_CFG.rpId;
+export const RP_ORIGIN = WEBAUTHN_CFG.rpOrigin;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -693,8 +704,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (typeof displayName !== 'string' || !displayName.trim()) {
         return { status: 400, body: { error: 'display_name_required' } };
       }
+      // 0050: `enrol` (true, or {label}) also enrols this device in the same
+      // transaction and returns a deviceId + deviceCredential, so the new
+      // grown-up can keep a session past the one hour via
+      // POST /v1/auth/session/refresh. Omitted = the pre-0050 shape exactly.
+      const enrol = c.body?.enrol;
+      const enrolLabel = enrol === true ? 'This device'
+        : (enrol && typeof enrol === 'object' && typeof enrol.label === 'string')
+          ? (enrol.label.trim() || 'This device') : undefined;
       const result = await bootstrapGuardianInvite(
-        pool, c.params.inviteId, displayName.trim(), new Date());
+        pool, c.params.inviteId, displayName.trim(), new Date(),
+        enrolLabel === undefined ? {} : { enrolDeviceLabel: enrolLabel });
       if (!result.ok) {
         const status = result.reason === 'not_found' ? 404
           : result.reason === 'expired' ? 410 : 409;
@@ -706,8 +726,211 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // every OTHER route that checks edgesFor() still refuses this
       // session exactly as it would refuse any guardian with zero edges.
       const token = api.issueSessionToken(
-        { userId: result.userId, roleName: 'guardian', childId: null, escalated: false });
-      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId } };
+        { userId: result.userId, roleName: 'guardian', childId: null, escalated: false,
+          ...(result.deviceId ? { deviceId: result.deviceId } : {}) });
+      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId,
+        ...(result.deviceId ? { expiresAt: api.sessionExpiresAt(), deviceId: result.deviceId,
+                                deviceCredential: result.deviceCredential } : {}) } };
+    },
+  });
+
+  // ===========================================================================
+  // IDENTITY LANE — db/migrations/0049_identity_signup.sql.
+  // A first account, a first child, a second grown-up who actually gets
+  // access. Until these routes existed the only way to any of the three was
+  // raw SQL (server/seed-dev.mjs), so a fresh production server (DEV_LOGIN is
+  // refused there) had no first user at all.
+  // ===========================================================================
+
+  // Does this principal hold a LIVE, unrestricted guardian edge to this child?
+  // (The same check every guardian-only identity route in this file runs
+  // inline; one helper here so the new routes cannot drift apart.)
+  const holdsLiveGuardianEdge = async (userId, childId) => {
+    const now = new Date();
+    const edges = await edgesFor(pool, userId);
+    return edges.some((e) =>
+      e.childId === childId && e.role === 'guardian' && !e.restricted &&
+      !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+  };
+  const isDbInputError = (e) => /^(22|23)/.test(String(e?.code ?? ''));
+  const cleanName = (v, max) => {
+    if (typeof v !== 'string') return null;
+    const t = v.trim();
+    return t && t.length <= max ? t : null;
+  };
+
+  // POST /v1/auth/signup — NO SESSION REQUIRED: this is how the first session
+  // comes into being. Invite-only: the body must carry an operator-issued,
+  // single-use allowance token (tools/provision-signup.mjs), shown to the
+  // operator once and stored only as a SHA-256. Creates the account, its
+  // first PIN and an enrolled device in one transaction and returns a session
+  // plus the device credential POST /v1/auth/session/refresh trades for
+  // fresh sessions. Per-IP limited by index.mjs (the /v1/auth/ prefix).
+  api.register({
+    method: 'POST', path: '/v1/auth/signup', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      const token = typeof b.allowanceToken === 'string' ? b.allowanceToken.trim() : '';
+      if (token.length < 20 || token.length > 128) {
+        return { status: 400, body: { error: 'allowance_token_required' } };
+      }
+      const displayName = cleanName(b.displayName, 60);
+      if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
+      if (typeof b.homeTz !== 'string' || !IANAZone.isValidZone(b.homeTz)) {
+        return { status: 400, body: { error: 'invalid_home_tz' } };
+      }
+      if (typeof b.pin !== 'string') return { status: 400, body: { error: 'pin_required' } };
+      let pinHash;
+      try { pinHash = hashPin(b.pin); }
+      catch { return { status: 400, body: { error: 'invalid_pin_format' } }; }
+      const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim() : '';
+
+      let result;
+      try {
+        result = await signUpWithAllowance(pool, {
+          token, displayName, homeTz: b.homeTz, pinHash, deviceLabel, now: new Date() });
+      } catch (e) {
+        if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
+        throw e;
+      }
+      if (!result.ok) return { status: 403, body: { error: result.reason } };
+      const sessionToken = api.issueSessionToken({
+        userId: result.userId, roleName: 'guardian', childId: null, escalated: false,
+        deviceId: result.deviceId });
+      return { status: 201, body: {
+        token: sessionToken, expiresAt: api.sessionExpiresAt(), userId: result.userId,
+        deviceId: result.deviceId, deviceCredential: result.deviceCredential } };
+    },
+  });
+
+  // GET /v1/me/children — how a guardian client learns its children's ids.
+  api.register({
+    method: 'GET', path: '/v1/me/children', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      return { status: 200, body: { children: await childrenOf(pool, c.principal.userId) } };
+    },
+  });
+
+  // POST /v1/children — a guardian creates a child; the same transaction gives
+  // THEM the guardianship edge. Handing out a child record is a step-up
+  // action (own PIN), like inviting or pairing.
+  api.register({
+    method: 'POST', path: '/v1/children', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const b = c.body ?? {};
+      const displayName = cleanName(b.displayName, 40);
+      if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
+      const birth = typeof b.birthDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.birthDate)
+        ? DateTime.fromISO(b.birthDate, { zone: 'utc' }) : null;
+      const today = DateTime.utc();
+      if (!birth || !birth.isValid || birth > today || birth < today.minus({ years: 18 })) {
+        return { status: 400, body: { error: 'invalid_birth_date' } };
+      }
+      if (typeof b.homeTz !== 'string' || !IANAZone.isValidZone(b.homeTz)) {
+        return { status: 400, body: { error: 'invalid_home_tz' } };
+      }
+      const pinCheck = await requireOwnPin(c.principal.userId, b.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+
+      let result;
+      try {
+        result = await createChildForGuardian(pool, c.principal.userId, {
+          displayName, birthDate: birth.toISODate(), homeTz: b.homeTz });
+      } catch (e) {
+        if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
+        throw e;
+      }
+      if (!result.ok) {
+        return { status: result.reason === 'too_many_children' ? 409 : 403,
+                 body: { error: result.reason } };
+      }
+      return { status: 201, body: { child: result.child } };
+    },
+  });
+
+  // GET .../guardian-invites — the caller's OWN invites for this child, so the
+  // inviter can see who is waiting for their yes. Never another guardian's.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/guardian-invites',
+    action: null, identityScopedByHandler: true,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if (!(await holdsLiveGuardianEdge(c.principal.userId, c.childId))) {
+        return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+      }
+      return { status: 200, body: {
+        invites: await guardianInvitesFor(pool, c.childId, c.principal.userId, new Date()) } };
+    },
+  });
+
+  // POST .../claim — an EXISTING account presents an accepted invite whose
+  // email is theirs. Grants nothing; the inviter's confirm does.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/claim', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const r = await claimGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        const status = r.reason === 'not_found' ? 404
+          : (r.reason === 'expired' || r.reason === 'revoked' || r.reason === 'declined') ? 410 : 409;
+        return { status, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true, status: 'waiting_for_confirmation' } };
+    },
+  });
+
+  // POST .../confirm — the only step that creates a guardianship edge for an
+  // invited adult. Inviter only, with their own PIN.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/confirm', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await confirmGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        const status = r.reason === 'not_found' ? 404
+          : r.reason === 'inviter_not_guardian' ? 403
+          : (r.reason === 'expired' || r.reason === 'revoked' || r.reason === 'declined') ? 410
+          : 409;
+        return { status, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true, role: r.role } };
+    },
+  });
+
+  // POST .../decline — the inviter turns away whoever presented the invite.
+  // No PIN: it only ever removes access that was never granted.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/decline', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const r = await declineGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        return { status: r.reason === 'not_found' ? 404 : 409, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true } };
     },
   });
 
@@ -2251,6 +2474,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       credential,
       expectedChallenge: clientData.challenge ?? '',
       expectedOrigin: RP_ORIGIN,
+      extraOrigins: WEBAUTHN_CFG.androidOrigins,
       expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
       // The 5-minute TTL and single use are enforced once, atomically, inside
       // consumeChallenge() (see server/index.mjs's login verify for the same note).
@@ -2343,7 +2567,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (clientData.type !== 'webauthn.create') {
         return { status: 400, body: { error: 'type_mismatch' } };
       }
-      if (clientData.origin !== RP_ORIGIN) {
+      if (!originAllowed(WEBAUTHN_CFG, clientData.origin)) {
         return { status: 400, body: { error: 'origin_mismatch' } };
       }
       // Atomic single-use consume — see pool.ts's consumeChallenge() for why

@@ -95,6 +95,13 @@ export function verifyAssertion(input: {
   credential: Credential | null;
   expectedChallenge: string;     // base64url
   expectedOrigin: string;
+  /**
+   * Further origins that count as this relying party. Android Credential Manager
+   * reports the ceremony origin as `android:apk-key-hash:<b64url sha256 of the
+   * signing cert>`, never as the https origin (server/webauthn_config.mjs). Exact
+   * string match only; an empty/absent list changes nothing.
+   */
+  extraOrigins?: readonly string[];
   expectedRpIdHash: Buffer;      // sha256(rpId)
   challengeIssuedAt: number;
   now: number;
@@ -112,7 +119,8 @@ export function verifyAssertion(input: {
   catch { return { ok: false, reason: 'type_mismatch' }; }
 
   if (clientData.type !== 'webauthn.get') return { ok: false, reason: 'type_mismatch' };
-  if (clientData.origin !== input.expectedOrigin) {
+  if (clientData.origin !== input.expectedOrigin &&
+      !(typeof clientData.origin === 'string' && input.extraOrigins?.includes(clientData.origin))) {
     return { ok: false, reason: 'origin_mismatch' };
   }
   // Constant-time challenge compare; a timing oracle here is a challenge oracle.

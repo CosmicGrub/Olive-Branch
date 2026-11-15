@@ -20,7 +20,8 @@ import { issueSession, verifyAssertion, newChallenge } from '../packages/auth/sr
 import { Api, readRequestBody, MAX_UNAUTH_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
          webauthnCredentialById, updateWebauthnSignCount, mediaUploadFor } from '../packages/db/src/pool.mjs';
-import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
+import { registerRoutes, RP_ID, RP_ORIGIN, WEBAUTHN_CFG, defaultMediaStorage } from './routes.mjs';
+import { assetLinks } from './webauthn_config.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
 import { createAuthLimiter, createWriteLimiter } from './rate_limit.mjs';
@@ -59,7 +60,7 @@ if (boot.problems.length) {
   process.exit(2);
 }
 
-// MASTERFILE §16.2 #6 (third reversal): CALL_PROVIDER=jitsi|livekit and the Jitsi
+// MASTERFILE ï¿½16.2 #6 (third reversal): CALL_PROVIDER=jitsi|livekit and the Jitsi
 // env are validated here like the secrets above. Unset is fine (the calls route
 // then says the provider is unavailable); set-but-malformed is not.
 const bootCalls = resolveCallConfig(process.env);
@@ -68,6 +69,16 @@ if (bootCalls.problems.length) {
   process.exit(2);
 }
 console.log(`calls: ${JSON.stringify(describeCallConfig(bootCalls))}`);
+
+// Identity lane: the WebAuthn relying party (rpId, origin, Android signing-key
+// origins) comes from WEBAUTHN_* env, validated here like the call config.
+// Unset in production is a warning (passkeys unusable, device-credential
+// sign-in unaffected); set-but-malformed refuses to boot. server/webauthn_config.mjs.
+for (const w of WEBAUTHN_CFG.warnings) console.warn(`WARNING: ${w}`);
+if (WEBAUTHN_CFG.problems.length) {
+  for (const p of WEBAUTHN_CFG.problems) console.error(`webauthn config check failed: ${p}`);
+  process.exit(2);
+}
 
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
@@ -243,6 +254,7 @@ async function webauthnLoginVerify(rawBody) {
     credential,
     expectedChallenge: clientData.challenge ?? '',
     expectedOrigin: RP_ORIGIN,
+    extraOrigins: WEBAUTHN_CFG.androidOrigins,
     expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
     // challengeIssuedAt: now â€” this repo enforces the challenge TTL and
     // single-use exactly once, inside consumeChallenge()'s own atomic UPDATE
@@ -292,6 +304,7 @@ const RAW_AUTH_PATHS = new Set([
 /** Fixed, attacker-proof label for the access log / counters. */
 function routeLabel(method, pathname, url) {
   if (pathname === '/healthz') return '/healthz';
+  if (pathname === '/.well-known/assetlinks.json') return pathname;
   if (pathname === '/internal/metrics') return '/internal/metrics';
   if (pathname.startsWith('/media/')) return '/media/:key';
   if (RAW_AUTH_PATHS.has(url)) return url;
@@ -363,6 +376,13 @@ const server = createServer(async (req, res) => {
     // data. Bounded to 3 s (P-01): with the pool exhausted, pool.query()
     // would otherwise wait for a free slot and the probe would hang with it
     // instead of reporting the outage it exists to report.
+    // Digital Asset Links: the file Android fetches from https://<rpId>/.well-known/
+    // to decide this app may use this domain's passkeys. Public by design, built
+    // from WEBAUTHN_ANDROID_ORIGINS only (no secret in it).
+    if (method === 'GET' && url === '/.well-known/assetlinks.json') {
+      return send({ status: 200, body: assetLinks(WEBAUTHN_CFG) }, { 'cache-control': 'public, max-age=3600' });
+    }
+
     if (method === 'GET' && url === '/healthz') {
       try {
         await Promise.race([

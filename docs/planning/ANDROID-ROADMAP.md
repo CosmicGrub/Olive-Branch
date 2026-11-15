@@ -50,7 +50,7 @@ The family features share one dependency: **a real family object** (see GAP-REGI
 | E. Village welcome, local-first | VILLAGE-WELCOME W1 to W9, with the design edited first so a limit on a parent restricts only actions (G-35). | Waves C and D | Usability read with real parents; counsel on the limits agreement |
 | F. About Mia profile | Guardian-only, on the device, grows the care binder; per-person sharing waits for Wave E. | Can start now for the single-guardian part | Counsel on the care-note exception (G-38); clinician review of every app-written string |
 | G. Care guides library | Offline library, reviewed date, region setting, the "For Mia" strip, the new-carer arrival links. | Clinician sign-off per guide | **Hard gate: nothing ships without sign-off** |
-| H. Server-backed family | Family tenant migration, routes and sync, the edge-creating route, the pause flag (identity PRs 8 and 9, W10). | Waves C and E; the S-D26 text | Ten-family simulation with cross-family probes: zero isolation misses |
+| H. Server-backed family | Family tenant migration, routes and sync, the pause flag (identity PRs 8 and 9, W10). The edge-creating routes, invite-only sign-up and the env-driven relying party shipped in the identity lane (migration 0050, MASTERFILE 7.17); the family tenant itself did not. | Waves C and E; the S-D26 text | Ten-family simulation with cross-family probes: zero isolation misses |
 | I. Parity docs | MASTERFILE, CHANGELOG, MARKUP and the demo shell updated with each shipped wave; totals set from CI by the lead. | Each wave | None |
 
 ## Remaining (Android), by lane

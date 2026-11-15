@@ -122,6 +122,14 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      # Identity lane: the WebAuthn relying party (server/webauthn_config.mjs). All optional:
+      # unset keeps passkeys off in production (device-credential sign-in is unaffected) and
+      # the development default elsewhere. WEBAUTHN_ANDROID_ORIGINS is a comma list of
+      # android:apk-key-hash:<base64url SHA-256 of the app signing certificate>.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      WEBAUTHN_ANDROID_ORIGINS: ${WEBAUTHN_ANDROID_ORIGINS:-}
+      WEBAUTHN_ANDROID_PACKAGE: ${WEBAUTHN_ANDROID_PACKAGE:-}
       # Pinned to the same absolute path the volume below mounts — see
       # docker-compose.prod.yml's matching line for why this is written
       # explicitly rather than left to server/routes.mjs's own
