@@ -109,9 +109,20 @@ void main() {
           final PakeParty c = await PakeParty.start(isChild: true, password: prs, sid: sid, ci: ci, seed: s);
           final PakeKey k = await c.finish(h(us[i]));
           expect(k.isk.length, 64);
+          // The DH output is the draft's q; the ISK must equal the one derived from that q and this transcript.
+          final Uint8List want = await cpaceIskFromTranscript(
+              sid, h(qs[i]), cpaceTranscriptIr(c.share, const <int>[], h(us[i]), const <int>[]));
+          expect(x(k.isk), x(want));
         });
       }
     }
+  });
+
+  test('cpaceScalarMultVfy rejects a wrong length instead of mapping it to the neutral element', () async {
+    final Uint8List ok = Uint8List(32)..[0] = 9;
+    await expectLater(cpaceScalarMultVfy(Uint8List(31), ok), throwsA(isA<PakeException>()));
+    await expectLater(cpaceScalarMultVfy(ok, Uint8List(31)), throwsA(isA<PakeException>()));
+    await expectLater(cpaceScalarMultVfy(ok, Uint8List(33)), throwsA(isA<PakeException>()));
   });
 
   group('the map', () {

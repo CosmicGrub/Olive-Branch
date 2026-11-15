@@ -42,13 +42,13 @@ Notation: `lv(x)` is LEB128 length prefix followed by `x` (`cpace.dart: lv`). `c
 
 All requests carry `sid`; the adult returns nothing (HTTP 204) for a wrong or unknown `sid`, a closed or expired window, or any malformed message.
 
-1. `hello` C to A: `{t:'hello', sid, cpk, dn}`. A answers `{t:'hello-ok', afp, apk, an, fid}` (only in state `open`).
+1. `hello` C to A: `{t:'hello', sid, cpk, dn}`. A answers `{t:'hello-ok', afp, apk, an, fid, pv}` (only in state `open`).
    C checks `SHA-256(apk)[0..16] == afp`, and, in QR mode, that `afp` equals the fingerprint in the QR.
 2. Channel identifier (CI), both sides compute the same bytes through one function, `pairingChannelId` in `cpace.dart`:
    `ci = lv(cpk) || lv( lv(afp) || lv(utf8(fid)) || lv(utf8(an)) )`
    i.e. the initiator's identity (the child device's key) first, the responder's identity (the adult's fingerprint, family id and name) second, as draft section 10.1.1 recommends. The session id is NOT inside CI any more (it is its own CPace input; earlier builds repeated it inside CI).
    Version: `hello-ok` now carries `pv: 2` and `pake1` carries `pv: 2` (`kPairingProtocolVersion`). The child stops before sending any key-exchange message if the adult's `hello-ok` has no `pv: 2`; the adult drops a `pake1` without `pv: 2` silently, before counting anything. Builds from before this change do not state a version and cannot derive the same key.
-3. `pake1` C to A: `{t:'pake1', sid, cpk, dn, m:'pin'|'qr', Yc}`. Password `prs` is `utf8(PIN)` in PIN mode, or `utf8(base64url(qs))` in QR mode (note: the base64 text, 22 chars, not the raw bytes).
+3. `pake1` C to A: `{t:'pake1', sid, cpk, dn, m:'pin'|'qr', Yc, pv}`. Password `prs` is `utf8(PIN)` in PIN mode, or `utf8(base64url(qs))` in QR mode (note: the base64 text, 22 chars, not the raw bytes).
    A computes its own share and answers `{t:'pake2', Ya}`. A stores the pending exchange; a later `pake1` replaces it.
 4. `confirm` C to A: `{t:'confirm', sid, tagC}`. A: marks a QR secret as spent (always, success or not), finishes the exchange, checks `tagC` in constant time. On failure: `attemptsLeft -= 1`, pending cleared, reply `{t:'confirm-no'}`; at zero the window closes. On success: state `awaitingApproval`, reply `{t:'confirm-ok', tagA}`.
    C checks `tagA`. Only then does C display the adult's name and the SAS.
@@ -104,7 +104,7 @@ channelKey      = kdf(ISK,"channel")                                            
 Properties the author is relying on (to be tested by you, not assumed):
 
 - A wrong PIN gives a different generator (draft: ISK is identical if and only if PRS, CI, sid and the transcripts match), so `K` and `ISK` differ and `tagC` fails on A. A passive recording gives no offline verifier for the PIN.
-- `sid` (fresh per window), `fid`, `afp`, `cpk` and `an` are all inside the generator, so a peer of another session or family, or a rogue advertiser with a different key, derives a different `ISK` even with the right PIN.
+- `sid` (fresh per window, a separate CPace input that is also inside the generator string) and the channel identifier (`cpk`, `afp`, `fid`, `an`) are all mixed in, so a peer of another session or family, or a rogue advertiser with a different key, derives a different `ISK` even with the right PIN.
 - A checks `tagC` first and only then releases `tagA`, so a client that does not know the PIN learns nothing verifiable from A beyond pass/fail.
 - Online guessing is limited by A's counter (5 failed confirmations kill the window; a new window needs the adult's PIN again).
 

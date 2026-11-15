@@ -46,6 +46,7 @@ import 'dart:math' show Random;
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'local_pin.dart' show constantTimeEquals;
 
@@ -120,7 +121,8 @@ BigInt _blind() {
 /// operands (see the header); the result is the same as [elligator2Unblinded].
 Uint8List elligator2(List<int> u32) => _elligator2(u32, blind: true);
 
-/// The same map without blinding. Only for the test that proves blinding does not change a single output.
+/// The same map without blinding (variable time). Only for the test that proves blinding does not change a single output.
+@visibleForTesting
 Uint8List elligator2Unblinded(List<int> u32) => _elligator2(u32, blind: false);
 
 Uint8List _elligator2(List<int> u32, {required bool blind}) {
@@ -172,19 +174,15 @@ class PakeException implements Exception {
 }
 
 /// G_X25519.scalar_mult_vfy: X25519(scalar, u). Returns 32 zero bytes (G.I, the neutral element) when the result is
-/// neutral; a library that throws instead of returning zeros for a low-order input is mapped to that too.
+/// neutral (the library returns zeros for the low-order inputs; the draft's B.1.10 vectors pin that). A wrong input
+/// length is a [PakeException], never silently turned into the neutral element, and no other library error is swallowed.
 Future<Uint8List> cpaceScalarMultVfy(List<int> scalar32, List<int> u32) async {
+  if (scalar32.length != 32 || u32.length != 32) throw const PakeException('bad length');
   final X25519 algo = X25519();
   final SimpleKeyPair kp = await algo.newKeyPairFromSeed(scalar32);
-  try {
-    final SecretKey k = await algo.sharedSecretKey(
-        keyPair: kp, remotePublicKey: SimplePublicKey(u32, type: KeyPairType.x25519));
-    return Uint8List.fromList(await k.extractBytes());
-  } on ArgumentError {
-    return Uint8List(32);
-  } on StateError {
-    return Uint8List(32);
-  }
+  final SecretKey k = await algo.sharedSecretKey(
+      keyPair: kp, remotePublicKey: SimplePublicKey(u32, type: KeyPairType.x25519));
+  return Uint8List.fromList(await k.extractBytes());
 }
 
 bool _isNeutral(List<int> b) => b.every((int v) => v == 0);
