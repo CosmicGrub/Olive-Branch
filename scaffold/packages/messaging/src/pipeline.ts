@@ -103,6 +103,16 @@ export interface IntentRow {
   batchId: string | null; batchSeq: number | null;
   expiresAt: string;
   state: 'pending';
+  /**
+   * The capture-time materialization (G6). captureMessage() already runs
+   * materialize() to validate the send; when that probe succeeds its answer
+   * is carried here so the row can be stored `ready` with its delivery
+   * instant, instead of sitting `pending` until the next sweep and then
+   * rolling to the next day once the slot is past its grace window. Absent
+   * means "leave it to the sweep" (how every row behaved before).
+   */
+  scheduledAt?: string | null;
+  materializedTz?: string | null;
 }
 
 /**
@@ -226,6 +236,8 @@ export function captureMessage(
       batchSeq: input.batchSeq ?? null,
       expiresAt: intentExpiry.toISO()!,
       state: 'pending',
+      scheduledAt: m.scheduledAt.toUTC().toISO(),
+      materializedTz: m.tz,
     },
   };
 }

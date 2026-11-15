@@ -2266,6 +2266,9 @@ export interface PersistedCapture {
   /** Non-null only when `opts.newBatch` was supplied, or the intent already
    * named an existing batch (message banking's later members). */
   batchId: string | null;
+  /** 'ready' when the capture-time probe resolved a delivery instant (G6),
+   * 'pending' when it was left to the sweep. */
+  state: string;
 }
 
 /**
@@ -2349,20 +2352,33 @@ export async function persistCapturedMessage(
       batchId = batchRows[0].id as string;
     }
 
+    // G6: when the capture-time probe resolved a delivery instant, store the
+    // row `ready` with it, so the delivery worker can claim it the moment it is
+    // due. Without this a row waited `pending` for the next sweep, and a
+    // bedtime slot that had already slipped more than the engine's grace
+    // window rolled to the NEXT day (a noon send for an evening bedtime
+    // arrived ~24 h late). Both columns together or neither: a ready row
+    // without scheduled_at could never be claimed.
+    const preScheduled = Boolean(i.scheduledAt && i.materializedTz);
     const intentRows = await q(
       `INSERT INTO delivery_intent
          (child_id, sender_id, sender_child_id, payload_kind, payload_ref,
           policy, target_local_date, target_daypart, batch_id, batch_seq,
-          state, expires_at)
+          state, expires_at, scheduled_at, materialized_tz, materialized_at)
        VALUES ($1,$2,$3,$4,$5,$6::delivery_policy,$7::date,$8,$9,$10,$11,
-               $12::timestamptz)
-       RETURNING id`,
+               $12::timestamptz,$13::timestamptz,$14,
+               CASE WHEN $13::timestamptz IS NULL THEN NULL ELSE now() END)
+       RETURNING id, state`,
       [i.childId, i.senderId, i.senderChildId, i.payloadKind, artifactId,
        i.policy, i.targetLocalDate, i.targetDaypart, batchId, i.batchSeq,
-       i.state, i.expiresAt],
+       preScheduled ? 'ready' : i.state, i.expiresAt,
+       preScheduled ? i.scheduledAt : null, preScheduled ? i.materializedTz : null],
     );
 
-    return { artifactId, intentId: intentRows[0].id as string, batchId };
+    return {
+      artifactId, intentId: intentRows[0].id as string, batchId,
+      state: intentRows[0].state as string,
+    };
   });
 }
 
@@ -2398,6 +2414,60 @@ export async function mediaArtifactFor(
     );
     if (!rows.length) return null;
     return { storageKey: rows[0].storage_key as string, kind: rows[0].kind as string };
+  });
+}
+
+/**
+ * G4 -- has this artifact actually been DELIVERED to this child, and is the
+ * delivery still in date? A child may only pull media that reached her
+ * inbox: before this, mediaArtifactFor() checked artifact id + child id and
+ * nothing else, so a child session holding an artifact id could fetch a
+ * message that was still banked for tomorrow (or one that had expired).
+ *
+ * Returns false -- never "exists but not yours" -- for every miss, so the
+ * caller answers with the same 404 it gives for an artifact that does not
+ * exist. The `delivered_at`-less rows from before migration 0049 are still
+ * `delivered`/`opened` by state, which is what this checks.
+ */
+export async function artifactDeliveredToChild(
+  pool: pg.Pool, childId: string, artifactId: string,
+): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT 1 FROM delivery_intent
+        WHERE child_id = $1 AND payload_ref = $2
+          AND state IN ('delivered','opened') AND expires_at > now()
+        LIMIT 1`,
+      [childId, artifactId],
+    );
+    return rows.length > 0;
+  });
+}
+
+/**
+ * G4 -- the artifact behind ONE inbox entry, but only when that entry is
+ * delivered/opened and in date; null for every other case (wrong child,
+ * unknown id, still banked, expired, revoked) so the route answers with one
+ * indistinguishable 404. Backs GET .../inbox/:messageId/media-url.
+ */
+export async function deliveredArtifactForIntent(
+  pool: pg.Pool, childId: string, intentId: string,
+): Promise<{ artifactId: string; storageKey: string; kind: string } | null> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT m.id AS artifact_id, m.storage_key, m.kind
+         FROM delivery_intent di
+         JOIN media_artifact m ON m.id = di.payload_ref AND m.child_id = di.child_id
+        WHERE di.id = $1 AND di.child_id = $2
+          AND di.state IN ('delivered','opened') AND di.expires_at > now()`,
+      [intentId, childId],
+    );
+    if (!rows.length) return null;
+    return {
+      artifactId: rows[0].artifact_id as string,
+      storageKey: rows[0].storage_key as string,
+      kind: rows[0].kind as string,
+    };
   });
 }
 

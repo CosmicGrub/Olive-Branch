@@ -402,6 +402,32 @@ services:
           memory: 256m
           cpus: "0.25"
 
+  # The DELIVERY WORKER (audit gap G1). Part of the default service set, for the
+  # same reason `scheduler` is: without it nothing ever moves a captured message
+  # to `delivered`, so the child's inbox stays empty and the product's one core
+  # promise silently never happens. Runs `tools/scheduler.mjs deliver-loop`: every
+  # DELIVERY_TICK_MS (default 30 s, floor 5 s) it expires stale intents,
+  # re-times any whose bedtime or time zone changed, and claims the ones now due
+  # (FOR UPDATE SKIP LOCKED, so a second replica could never double-deliver).
+  # It touches Postgres only: no media volume, no backup credentials. Push is
+  # not sent from here; the app polls its inbox.
+  delivery:
+    image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
+    restart: always
+    stop_grace_period: 15s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://app_runtime:${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
+      DELIVERY_TICK_MS: "${DELIVERY_TICK_MS:-30000}"
+    command: ["node", "tools/scheduler.mjs", "deliver-loop"]
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+          cpus: "0.25"
+
 volumes:
   olive-prod-pgdata:
   olive-prod-media:

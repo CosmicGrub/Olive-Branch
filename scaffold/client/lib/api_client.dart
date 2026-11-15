@@ -229,6 +229,18 @@ class OliveApi {
   // inbox_screen.dart's own _open() only flipped `watched` in LOCAL widget
   // state, invisible to the server the moment she left the screen.
   static const inboxOpened = '/v1/children/:childId/inbox/:messageId/opened';
+  // --- delivery chain: the server worker + its read/config routes ----------
+  // Declared so the client/server route-drift test (packages/api/test/
+  // contract.test.mjs) can see them; the Android screens that call them are a
+  // separate client change. [inboxMediaUrl] returns a signed URL for ONE
+  // delivered message (child; 404 until delivered). [sentMessages] is the
+  // sender's own waiting/delivered/opened view with the receipt phrase
+  // (guardian only). [dayParts] (GET/PUT) and [tzIntervals] (GET/POST) are the
+  // guardian settings that make a bedtime, and so a delivery time, exist.
+  static const inboxMediaUrl = '/v1/children/:childId/inbox/:messageId/media-url';
+  static const sentMessages  = '/v1/children/:childId/sent';
+  static const dayParts      = '/v1/children/:childId/day-parts';
+  static const tzIntervals   = '/v1/children/:childId/tz-intervals';
   // --- real object storage (§20.2b) ---------------------------------------
   // server/routes.mjs's real upload/download pair for the bytes [messages]
   // above only ever carried a `storageKey` REFERENCE to — see [uploadMedia]

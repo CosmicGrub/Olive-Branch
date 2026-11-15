@@ -97,6 +97,19 @@ const serviceBlock = (text, name) => {
     /BACKUP_ENCRYPTION_PASSPHRASE:\s*\$\{BACKUP_ENCRYPTION_PASSPHRASE:-\}/.test(sched)
       && /BACKUP_SYNC_COMMAND:\s*\$\{BACKUP_SYNC_COMMAND:-\}/.test(sched), 'true');
   check('C compose', 'scheduler mounts the backup directory', /\$\{BACKUP_DIR:-\.\/backups\}:\/backups/.test(sched), 'true');
+  // The delivery worker (audit gap G1): in BOTH compose files, in the default
+  // service set, running deliver-loop as the least-privilege role.
+  const DEV = rd(SCAFFOLD + 'docker-compose.dev.yml');
+  for (const [label, text] of [['prod', PROD], ['dev', DEV]]) {
+    const dlv = serviceBlock(text, 'delivery');
+    const c = code(dlv);
+    check('C compose', `${label} has a delivery service`, dlv.length > 0, 'true');
+    check('C compose', `${label} delivery runs the deliver-loop worker`, /"tools\/scheduler\.mjs",\s*"deliver-loop"/.test(c), 'true');
+    check('C compose', `${label} delivery is NOT behind a profile (a plain up must deliver)`, /^\s*profiles:/m.test(c), 'false');
+    check('C compose', `${label} delivery connects as app_runtime, never app_owner`, /DATABASE_URL:\s*postgres:\/\/app_runtime:/.test(c), 'true');
+    check('C compose', `${label} delivery waits for migrations`, /service_completed_successfully/.test(c), 'true');
+    check('C compose', `${label} delivery tick is configurable and defaults to 30 s`, /DELIVERY_TICK_MS:\s*"\$\{DELIVERY_TICK_MS:-30000\}"/.test(c), 'true');
+  }
   check('C compose', 'DEV_LOGIN is still the literal "0" (this pass did not weaken the prod file)', /DEV_LOGIN:\s*"0"/.test(PROD), 'true');
   check('C compose', 'the server healthcheck still targets /healthz', /fetch\('http:\/\/127\.0\.0\.1:8123\/healthz'\)/.test(server), 'true');
   const shutdownSrc = rd(SCAFFOLD + 'server/shutdown.mjs');
