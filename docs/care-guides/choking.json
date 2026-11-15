@@ -1,0 +1,1335 @@
+{
+  "id": "choking",
+  "title": "Choking in children (newborn to teen)",
+  "category": "emergency",
+  "region": "US",
+  "status": "DRAFT_UNREVIEWED",
+  "lastResearched": "2026-11-14",
+  "disclaimer": "DRAFT, not reviewed by a clinician, not medical advice, and not a substitute for a hands-on first-aid and CPR course. Where authorities differ, follow the method taught in your first-aid course. If you have not taken a course, follow the steps below.",
+  "callEmergencyNow": [
+    {
+      "sign": "Child or baby cannot breathe, cough, cry or speak, or makes no sound, or has only a weak or silent cough",
+      "ages": "all",
+      "source": [
+        0,
+        1,
+        10
+      ]
+    },
+    {
+      "sign": "High-pitched squeaking or no sound, pale or blue skin, panicked look, hands at the throat",
+      "ages": "all",
+      "source": [
+        1
+      ]
+    },
+    {
+      "sign": "Baby: hard breathing with ribs and chest pulling inward, bluish skin, or limp or unresponsive",
+      "ages": "infant",
+      "source": [
+        3,
+        7,
+        10
+      ]
+    },
+    {
+      "sign": "Child is coughing hard but is also struggling to breathe: call your emergency number",
+      "ages": "child",
+      "source": [
+        20
+      ]
+    },
+    {
+      "sign": "Child becomes unresponsive or stops breathing: start CPR and have someone call",
+      "ages": "all",
+      "source": [
+        20,
+        23
+      ]
+    },
+    {
+      "sign": "Swallowed or suspected swallowed button (coin) battery, or a battery in the nose or ear: call the National Battery Ingestion Hotline 1-800-498-8666 (24/7) now and follow their instruction; go to the emergency room; do not delay and do not wait for symptoms",
+      "ages": "all",
+      "source": [
+        14,
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "sign": "Swallowed or suspected swallowed one or more magnets: go to the emergency department straight away, or call your emergency number. Do not wait for symptoms",
+      "ages": "all",
+      "source": [
+        17,
+        22
+      ]
+    }
+  ],
+  "doNow": [
+    {
+      "n": 1,
+      "group": "first",
+      "step": "Decide whether it is mild or severe. Mild: the child is coughing forcefully, crying strongly or able to speak. Do not hit the back or squeeze the belly; encourage them to keep coughing, stay with them and watch closely. If a child is coughing hard but also struggling to breathe, call your emergency number. If you are unsure whether it is mild or severe, call your emergency number.",
+      "ages": "all",
+      "source": [
+        1,
+        3,
+        5,
+        11,
+        20
+      ]
+    },
+    {
+      "n": 2,
+      "group": "first",
+      "step": "Severe: the child cannot breathe, cough, cry or speak, has a silent or very weak cough or a high-pitched noise, or looks blue, pale or limp. Call your emergency number now (US and Canada 911, UK 999 or 112, Australia 000), on speaker so your hands stay free, or shout for someone else to call while you start first aid. If you are completely alone, shout for help and start first aid at once.",
+      "ages": "all",
+      "source": [
+        0,
+        1,
+        2,
+        3,
+        7,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "n": 3,
+      "group": "first",
+      "step": "Look in the mouth. Never poke or sweep blindly, which can push the object deeper. Do not put a finger into the mouth of a conscious child or baby; go straight to the back blows.",
+      "ages": "all",
+      "source": [
+        1,
+        2,
+        3,
+        5,
+        20
+      ]
+    },
+    {
+      "n": 4,
+      "group": "infant",
+      "step": "BABY UNDER 1, back blows: sit down and lay the baby face down along your forearm, resting your arm on your thigh. Support the head and jaw and keep the head lower than the body. Give up to 5 firm blows between the shoulder blades with the heel of your free hand, looking after each blow to see whether the object has come out.",
+      "ages": "infant",
+      "source": [
+        0,
+        2,
+        7,
+        8
+      ]
+    },
+    {
+      "n": 5,
+      "group": "infant",
+      "step": "BABY UNDER 1, chest thrusts: if the object is still stuck, turn the baby face up, supporting the head and neck, resting along your thigh with the head lower than the chest. Give up to 5 quick chest thrusts using two fingers on the breastbone in the centre of the chest, just below the nipple line, pressing down about 1.5 inches (about 4 cm), checking after each.",
+      "ages": "infant",
+      "source": [
+        0,
+        2,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "n": 6,
+      "group": "infant",
+      "step": "BABY UNDER 1, repeat: carry on in rounds of 5 back blows followed by 5 chest thrusts. Stop when the object is out and the baby coughs or cries, when help takes over, or when the baby becomes unresponsive (then follow the unresponsive steps).",
+      "ages": "infant",
+      "source": [
+        0,
+        3,
+        4,
+        7
+      ]
+    },
+    {
+      "n": 7,
+      "group": "infant",
+      "step": "BABY UNDER 1: never use abdominal (belly) thrusts on a baby.",
+      "ages": "infant",
+      "source": [
+        0,
+        4
+      ]
+    },
+    {
+      "n": 8,
+      "group": "child",
+      "step": "CHILD 1 AND OVER, back blows: stand or kneel at the child's side and slightly behind (kneel for a small child). Have them lean forward at the waist, support their chest with one arm, and give up to 5 firm blows between the shoulder blades with the heel of your other hand, looking after each blow to see whether the object has come out.",
+      "ages": "child",
+      "source": [
+        1,
+        2,
+        5,
+        20
+      ]
+    },
+    {
+      "n": 9,
+      "group": "child",
+      "step": "CHILD 1 AND OVER, abdominal thrusts: if it is still stuck, stand or kneel behind the child with your arms around the upper belly. Make a fist with the thumb side against the belly just above the navel and well below the breastbone, cover it with your other hand and pull sharply inward and upward, up to 5 times. Keep off the lower ribs and do not lift the child off the ground.",
+      "ages": "child",
+      "source": [
+        1,
+        2,
+        5,
+        11,
+        20
+      ]
+    },
+    {
+      "n": 10,
+      "group": "child",
+      "step": "CHILD 1 AND OVER, repeat: carry on in rounds of 5 back blows followed by 5 abdominal thrusts. Stop when the object is out and the child can cough, cry, speak or breathe, when help arrives, or when the child becomes unresponsive (then follow the unresponsive steps).",
+      "ages": "child",
+      "source": [
+        1,
+        4,
+        20
+      ]
+    },
+    {
+      "n": 11,
+      "group": "childLargeOrPregnant",
+      "step": "CHILD YOU CANNOT REACH AROUND, OR PREGNANT TEEN: give chest thrusts instead of abdominal thrusts, in the same pattern of 5 back blows then 5 chest thrusts. The American Red Cross and MedlinePlus both say to use chest thrusts in this situation. Only MedlinePlus describes the hand position, and this is its method: from behind, wrap your arms around the chest, make a fist, place it on the middle of the breastbone between the nipples, and give firm thrusts backward. Another first-aid organisation teaches a different hand shape (the heel of one hand on the chest in the CPR position, with the other hand supporting the back), so a hands-on course is the best way to learn this. Have someone call your emergency number.",
+      "ages": "child",
+      "source": [
+        1,
+        9,
+        24,
+        25
+      ]
+    },
+    {
+      "n": 12,
+      "group": "unresponsive",
+      "step": "UNRESPONSIVE (any age): shout for help and lay the child or baby on a firm, flat surface. If someone is with you, they call the emergency number now, on speaker. If you are alone and have a phone, put it on speaker and call as you start CPR. If you are alone with no phone and nobody answers your shouts, start CPR. BABY: after about 2 minutes of CPR (about 5 rounds of 30 compressions and 2 breaths), pick the baby up, carry them with you, call your emergency number, and carry on with CPR once the call connects. CHILD: if you did not see the child collapse, do about 2 minutes of CPR first, then go and call your emergency number, put it on speaker and carry on with CPR. If you saw the child collapse, call your emergency number right away if you can reach a phone, then begin CPR.",
+      "ages": "unresponsive",
+      "source": [
+        2,
+        3,
+        11,
+        19,
+        20,
+        23
+      ]
+    },
+    {
+      "n": 13,
+      "group": "unresponsive",
+      "step": "If an AED (defibrillator) is nearby, ask a helper to bring it, and keep doing CPR until it is ready to use. Turn it on and follow its spoken instructions. For a child, use child-size pads if the AED has them. If it has only adult pads, use those and make sure the two pads do not touch each other; for a child under 8, one pad may need to go on the front of the chest and the other on the back so they do not touch. For a child 8 or older, adult pads are fine. For a baby: child-size pads are made for children under 8, so use them if the AED has them and follow the pictures that come with the AED. If the AED has only adult pads, do not delay CPR over this; if the emergency operator is on the line, tell them you have an AED and what pads it has, and follow what they say.",
+      "ages": "unresponsive",
+      "source": [
+        18,
+        19,
+        23,
+        26
+      ]
+    },
+    {
+      "n": 14,
+      "group": "unresponsive",
+      "step": "CPR, CHILD 1 AND OVER: begin with 30 chest compressions in the centre of the chest, using the heel of one hand (two hands for a larger child), pressing about 2 inches (5 cm) deep at 100 to 120 per minute. Then look in the mouth; take out an object only if you can clearly see it and it is easy to pick out, never sweeping blindly. Give 2 breaths watching for the chest to rise, then repeat.",
+      "ages": "unresponsive",
+      "source": [
+        1,
+        18,
+        19,
+        20,
+        23
+      ]
+    },
+    {
+      "n": 15,
+      "group": "unresponsive",
+      "step": "CPR, BABY UNDER 1: give 30 compressions, then 2 breaths, and repeat. Check the mouth for a visible object before breaths. For the compressions, put the tips of two fingers on the breastbone in the centre of the chest, just below the nipple line, and press down about one third of the chest depth (about 4 cm, or 1.5 inches) at 100 to 120 per minute, letting the chest come back up each time. The American Red Cross teaches another grip for babies: both thumbs side by side on the same spot, with your other fingers wrapped around the chest toward the back. If you were taught that grip, you can use it. A hands-on first-aid course teaches this best.",
+      "ages": "unresponsive",
+      "source": [
+        0,
+        3,
+        18,
+        23
+      ]
+    },
+    {
+      "n": 16,
+      "group": "unresponsive",
+      "step": "Keep going until the child or baby recovers, trained help takes over, or it becomes unsafe to continue.",
+      "ages": "unresponsive",
+      "source": [
+        20,
+        23
+      ]
+    },
+    {
+      "n": 17,
+      "group": "after",
+      "step": "After the object comes out: even if the child seems fine, get them checked by a doctor (see Aftercare).",
+      "ages": "all",
+      "source": [
+        2,
+        3,
+        5,
+        20
+      ]
+    }
+  ],
+  "doNot": [
+    {
+      "item": "Do not hit the back or squeeze the belly of a child who is coughing forcefully, crying strongly or breathing well; let them cough.",
+      "source": [
+        3,
+        5,
+        20
+      ]
+    },
+    {
+      "item": "Do not use abdominal (belly) thrusts on a baby under 1 year old. Use back blows and chest thrusts.",
+      "source": [
+        0,
+        4
+      ]
+    },
+    {
+      "item": "Do not poke or sweep blindly in the mouth, and do not put a finger into the mouth of a conscious child or baby.",
+      "source": [
+        1,
+        2,
+        3,
+        5,
+        20
+      ]
+    },
+    {
+      "item": "Do not turn a child upside down by the feet; the Red Cross says this is ineffective and can lead to further injury if the child is dropped.",
+      "source": [
+        1
+      ]
+    },
+    {
+      "item": "Do not leave a choking child alone while they can still cough.",
+      "source": [
+        0,
+        1
+      ]
+    },
+    {
+      "item": "If a baby has stopped breathing for another reason (asthma, infection, swelling, a blow to the head), do not give back blows or chest thrusts; give CPR instead (MedlinePlus, infants).",
+      "source": [
+        3
+      ]
+    },
+    {
+      "item": "Button battery swallowed: do not make the child vomit (poison.org, Alder Hey). Do not give any food or drink unless the battery hotline tells you to. Call the National Battery Ingestion Hotline (1-800-498-8666) and follow their instruction. NEVER give honey to a baby under 12 months.",
+      "source": [
+        14,
+        16
+      ]
+    },
+    {
+      "item": "Button battery in the nose or ear: do not use ear or nose drops (poison.org).",
+      "source": [
+        14
+      ]
+    },
+    {
+      "item": "Swallowed battery or magnet: do not wait for symptoms before getting care.",
+      "source": [
+        14,
+        15,
+        17
+      ]
+    }
+  ],
+  "watchFor": [
+    {
+      "sign": "A child who is still coughing after choking: the AAP notes that coughing commonly eases within roughly a quarter of an hour regardless of whether the object has actually come out, so do not assume it is gone. Keep watching. Call your emergency number if breathing becomes noisy or hard, the cough turns weak or silent, or the child cannot speak.",
+      "for": "at least 15 minutes per the AAP; stay close for as long as coughing continues",
+      "source": [
+        10
+      ]
+    },
+    {
+      "sign": "A child who is struggling to breathe yet can still talk and cough hard: call your emergency number, because the airway could become completely blocked",
+      "for": "keep watching until the object is out",
+      "source": [
+        20
+      ]
+    },
+    {
+      "sign": "Swallowed battery not witnessed: vomiting blood, throat or chest pain, drooling, trouble swallowing or eating",
+      "for": "no end time given; treat as urgent",
+      "source": [
+        16
+      ]
+    },
+    {
+      "sign": "After a battery has passed into the stomach: fever, belly pain, vomiting, blood in stool; check stools until it passes",
+      "for": "until the battery has passed",
+      "source": [
+        14
+      ]
+    },
+    {
+      "sign": "After a swallowed magnet or battery: noisy or hard breathing, voice change, new cough, drooling, mouth blisters, chest or neck pain, blood in vomit or poo, refusing food, confusion or hard to wake",
+      "for": "go to the emergency department or call your emergency number immediately if any appear",
+      "source": [
+        17
+      ]
+    }
+  ],
+  "medicalReviewAfterEpisode": [
+    {
+      "sign": "Go to hospital for assessment after abdominal thrusts: hospital assessment is advised for any child who received abdominal thrusts, even when the blockage cleared and they look well",
+      "source": [
+        5
+      ]
+    },
+    {
+      "sign": "Any baby who choked needs a medical exam even if the object came out and the baby seems fine, because the first aid itself can cause injury",
+      "source": [
+        3
+      ]
+    },
+    {
+      "sign": "Any choking episode: get medical help even if the object comes out, because pieces may remain or the child may be hurt",
+      "source": [
+        2,
+        20
+      ]
+    },
+    {
+      "sign": "Call the child's own healthcare provider after any choking episode",
+      "source": [
+        3
+      ]
+    },
+    {
+      "sign": "After any choking episode, see a doctor or go to hospital, even if the cough cleared.",
+      "source": [
+        2,
+        3,
+        20
+      ]
+    }
+  ],
+  "byAgeBand": {
+    "0-3m": "Use the baby steps: back blows, then chest thrusts, never belly thrusts. First-aid guidance covers all babies under 1 with one set of steps and gives nothing separate for newborns. Only general prevention guidance is available for this age.",
+    "3-12m": "Baby technique [0, 2, 3, 4, 7, 8]: back blows then chest thrusts, repeat; no belly thrusts; CPR if unresponsive. Prevention: cut and mash food small and suited to development, avoid small, hard, sticky, round or raw whole foods, seat the baby upright, keep away from eating in the car or stroller [13]. Keep coins, button batteries and balloons out of reach [10] and magnets out of reach [17, 22].",
+    "1-3y": "Child technique from age 1: 5 back blows then 5 abdominal thrusts (steps 8 to 10). Highest-risk age: narrow airways, still learning to chew [12]. Hold hot dogs, whole grapes, nuts, seeds, popcorn, hard or sticky sweets, cheese chunks and raw hard fruit and vegetables until about age 4 [10, 11, 13]. Hot dogs and grapes, which are round and firm, may be served only if chopped into tiny pieces no bigger than half an inch (AAP) [10]. Toilet-roll-tube test for small objects [12].",
+    "3-5y": "Same child technique. Keep high-risk foods away until about age 4 or later, depending on development (AAP) [10]. Teach sitting down to eat and chewing well, and supervise meals, snacks and parties [10, 12]. Balloons stay a risk up to age 8 [10].",
+    "5-12y": "Same child technique; for a bigger child you cannot reach around, see step 11. Balloons stay a risk up to age 8 [10]. Watch for older siblings handing small objects or risky foods to younger children [10]. Pen or marker caps, small balls and button batteries [10] and magnets [17, 22] stay hazards; see the battery and magnet entries.",
+    "13-17y": "No guidance written specifically for teens was found. The adult sequence is the same as the child sequence: 5 back blows then 5 abdominal thrusts, alternating (St John Ambulance UK adult page [6]; the Red Cross says a child follows the adult sequence [1]). For a pregnant teen or one you cannot reach around, see step 11. If you are alone and choking, the Red Cross describes pressing your own belly against a firm chair back or railing [1]. No source gives an exact age at which the adult method takes over from the child method."
+  },
+  "prevention": [
+    {
+      "tip": "Seat your child upright to eat, in a high chair or other safe place: not lying down, crawling, walking or running. Avoid letting them eat in the car or stroller.",
+      "ages": "all",
+      "source": [
+        10,
+        13
+      ]
+    },
+    {
+      "tip": "Supervise every meal and snack in a calm, unhurried setting; teach children to chew well; do not let other children feed a young child unless closely supervised.",
+      "ages": "infant, 1-3y, 3-5y",
+      "source": [
+        10,
+        12,
+        13
+      ]
+    },
+    {
+      "tip": "Hold high-risk foods until about age 4, or later depending on the child: hot dogs, meat sticks and sausages, chunks of meat, hard, sticky or gooey sweets, marshmallows, gum, nuts and seeds, whole grapes, raw hard fruit and vegetables such as carrot and apple, popcorn, and cheese chunks or string cheese.",
+      "ages": "under 4",
+      "source": [
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "tip": "Cut food for young children into pieces no bigger than half an inch. The AAP says hot dogs and grapes may be served only if chopped into tiny pieces; SickKids says slice them lengthwise; use the smaller pieces. Finely chop or grate hard raw vegetables and fruit; remove bones, pits and seeds.",
+      "ages": "infant to 4y",
+      "source": [
+        10,
+        12,
+        13
+      ]
+    },
+    {
+      "tip": "Spread nut butter thinly; do not give chunks or spoonfuls.",
+      "ages": "infant to 4y",
+      "source": [
+        10,
+        13
+      ]
+    },
+    {
+      "tip": "Test small objects with a cardboard toilet-roll tube: if it passes through, it is a hazard for a young child. Follow toy age labels and check toys for parts that can break off.",
+      "ages": "under 3",
+      "source": [
+        10,
+        12
+      ]
+    },
+    {
+      "tip": "Keep coins, marbles, small balls, pen and marker caps, medicine syringes, and wallets and purses out of reach; check under furniture and between cushions.",
+      "ages": "infant to 8y",
+      "source": [
+        10,
+        12
+      ]
+    },
+    {
+      "tip": "Balloons are a risk up to age 8; avoid latex balloons for young children and throw away broken pieces quickly; SickKids suggests foil (Mylar) balloons as the safer choice.",
+      "ages": "under 8",
+      "source": [
+        10,
+        12
+      ]
+    },
+    {
+      "tip": "Button (coin) batteries and magnets are separate emergencies, not ordinary choking. Keep devices and toys that contain them secured and out of reach; if swallowed or suspected, act immediately (see the emergency section).",
+      "ages": "all",
+      "source": [
+        10,
+        14,
+        17,
+        22
+      ]
+    },
+    {
+      "tip": "Take a hands-on first-aid and CPR course (American Red Cross or American Heart Association; in Canada the Heart and Stroke Foundation, St John Ambulance or Red Cross). Reading a guide does not replace practice.",
+      "ages": "all",
+      "source": [
+        10,
+        11,
+        21
+      ]
+    }
+  ],
+  "helplines": [
+    {
+      "region": "US",
+      "name": "Emergency services",
+      "number": "911",
+      "source": 1
+    },
+    {
+      "region": "US",
+      "name": "National Battery Ingestion Hotline (24/7)",
+      "number": "1-800-498-8666",
+      "source": 14
+    },
+    {
+      "region": "US",
+      "name": "Poison Control",
+      "number": "1-800-222-1222",
+      "source": 14
+    },
+    {
+      "region": "UK",
+      "name": "Emergency services",
+      "number": "999 or 112",
+      "source": 5
+    },
+    {
+      "region": "UK",
+      "name": "NHS 111 (if unsure whether a battery or object was swallowed and it is not an emergency)",
+      "number": "111",
+      "source": 16
+    },
+    {
+      "region": "Australia",
+      "name": "Emergency (Triple Zero)",
+      "number": "000",
+      "source": 7
+    },
+    {
+      "region": "Canada",
+      "name": "Emergency services (SickKids)",
+      "number": "911",
+      "source": 11
+    }
+  ],
+  "needsClinicianOrInstructor": {
+    "displayToParents": false,
+    "items": [
+      "Baby chest-thrust hand position (two fingers vs heel of one hand) and depth; the 1.5 inch depth in step 5 rests on the American Red Cross alone",
+      "Baby CPR hand technique: step 15 leads with NHS two fingertips and offers the Red Cross two-thumb encircling grip as the alternative that authority teaches; the NHS text says not to use the whole hand or both hands, which may or may not be meant to exclude an encircling grip; which single technique to teach",
+      "Exact hand shape for chest thrusts in a child too large to encircle or a pregnant teen: step 11 states the fist-on-breastbone position as the MedlinePlus method (one organisation, two pages); Healthy WA teaches heel of one hand in the CPR position with the other hand on the back; the Red Cross gives no hand position",
+      "Child choking sequence (order and technique) for the app's region",
+      "Lone rescuer with no phone: step 12 is split by age. Baby: about 2 minutes of CPR then call (MedlinePlus, Red Cross). Child: about 2 minutes only if the collapse was not seen (UMass Memorial Health, WebMD Ignite content, secondary), and call at once if it was seen; the NHS says about 1 minute for both. In a choking emergency the rescuer has usually seen the collapse. Also breaths first vs compressions first",
+      "Whether a layperson may remove a clearly visible object from the mouth of a conscious child (step 3 and the do-not list say not to put a finger in; NHS and St John UK allow it if clearly visible)",
+      "AED pads on a baby: no source read addresses babies. Step 13 extrapolates from the AAP statement that pediatric pads are for younger children (under 8); the adult-pad fallback (UMass Memorial Health) and front-and-back placement (AAP) are sourced only for children",
+      "US wording for swallowed magnets",
+      "Compressions-only fallback for a rescuer not trained in breaths (UMass Memorial Health only; not added to the steps)",
+      "Three instructions rest on secondary UMass Memorial Health / WebMD Ignite content and need a second primary source before release: the 2-minute-then-call rule for an unwitnessed child collapse (step 12), the adult-pad fallback (step 13; the AAP independently supports it for children, so a primary source is needed mainly for babies), and the strong-cough-with-trouble-breathing call rule (step 1; Healthy WA only says to call if coughing does not remove the blockage)"
+    ]
+  },
+  "disagreements": {
+    "displayToParents": false,
+    "items": [
+      {
+        "topic": "Child (1 and over): which technique, and in what order?",
+        "positions": [
+          {
+            "claim": "Alternate 5 back blows with 5 abdominal thrusts, back blows first. The AHA 2025 update calls this new for children; earlier AHA guidance was abdominal thrusts only.",
+            "source": 4
+          },
+          {
+            "claim": "Same pattern of 5 back blows then 5 abdominal thrusts.",
+            "source": 1
+          },
+          {
+            "claim": "Same pattern, back blows first.",
+            "source": 5
+          },
+          {
+            "claim": "Back blows and abdominal thrusts, in either order, switching if one is not working; a small child may instead lie face down across the lap like a baby.",
+            "source": 2
+          },
+          {
+            "claim": "Over 1: back blows then CHEST thrusts, heel of one hand in the CPR position, not abdominal thrusts (Western Australia).",
+            "source": 9
+          },
+          {
+            "claim": "Abdominal thrusts only for a severe choke (page last updated 2021); it tells you not to hit the back of a child who can answer and cough, which other sources also say for a mild choke.",
+            "source": 11
+          },
+          {
+            "claim": "Nemours KidsHealth (US, reviewed April 2023): abdominal thrusts only for a conscious child who cannot breathe, talk or make noise, if you are trained; do not reach into the mouth or pat the back of a child who is coughing and can still breathe and talk.",
+            "source": 27
+          }
+        ],
+        "note": "Not resolved. The SickKids page appears older than the AHA 2025 update, and the Western Australia chest-thrust method may be a regional difference. A clinician must pick one sequence for the app's region. Nemours KidsHealth is a second North American source with the abdominal-only severe branch; it also tells an untrained rescuer to wait for help, which this guide does not carry."
+      },
+      {
+        "topic": "Baby chest thrusts: hand position and depth",
+        "positions": [
+          {
+            "claim": "Two fingers in the centre of the chest just below the nipple line, about 1.5 inches deep.",
+            "source": 0
+          },
+          {
+            "claim": "Two fingers in the middle of the chest just below the nipple line, no depth given.",
+            "source": 2
+          },
+          {
+            "claim": "Two fingers on the lower half of the breastbone.",
+            "source": 7
+          },
+          {
+            "claim": "Two fingers in the CPR compression position.",
+            "source": 8
+          },
+          {
+            "claim": "Two fingers over the lower breastbone, just below the nipple line.",
+            "source": 11
+          },
+          {
+            "claim": "The heel of a single hand at the middle of the breastbone, just under the nipples; for the back blows this page says to use the palm of the free hand.",
+            "source": 3
+          },
+          {
+            "claim": "Chest thrusts with the heel of one hand (2025 newsroom summary).",
+            "source": 4
+          }
+        ],
+        "note": "Two fingers has five authorities including the US Red Cross; heel of one hand has MedlinePlus and the AHA 2025 summary. Only the Red Cross gives a depth (1.5 inches), so the depth in step 5 rests on one organisation. Unresolved; the baby step uses two fingers and the Red Cross depth. A clinician may reverse this to the AHA position."
+      },
+      {
+        "topic": "When to call emergency services",
+        "positions": [
+          {
+            "claim": "Call as soon as severe signs appear and get equipment; do not wait for the first-aid cycle to fail.",
+            "source": 0
+          },
+          {
+            "claim": "Have someone call 911 while you begin first aid; if alone, shout and start first aid.",
+            "source": 3
+          },
+          {
+            "claim": "Call 000 immediately, before back blows.",
+            "source": 7
+          },
+          {
+            "claim": "Baby page lists calling 000 as step one.",
+            "source": 8
+          },
+          {
+            "claim": "Child with a severe choke: tell someone nearby to call 911.",
+            "source": 20
+          },
+          {
+            "claim": "Call 999 if the blockage has not cleared after back blows and chest or abdominal thrusts; call or send for help if alone, but do not leave the child.",
+            "source": 2
+          },
+          {
+            "claim": "Call 999 or 112 if the blockage has not cleared after back blows and abdominal thrusts.",
+            "source": 5
+          },
+          {
+            "claim": "Over-1 page: call 000 if coughing does not clear the blockage (before the back blows).",
+            "source": 9
+          }
+        ],
+        "note": "Some sources say call immediately, others after first aid has failed. This guide leads with 'call or have someone call now' (the more cautious option); a clinician should confirm."
+      },
+      {
+        "topic": "Child with a strong cough: call emergency services?",
+        "positions": [
+          {
+            "claim": "A child who is struggling to breathe yet can still talk and cough hard: call 911, since the airway could become completely blocked; skip the abdominal thrusts.",
+            "source": 20
+          },
+          {
+            "claim": "Mild choke (coughing, gagging, very red face): watch; call 911 for a severe choke.",
+            "source": 11
+          },
+          {
+            "claim": "Encourage coughing and stay close; act if the child cannot breathe, cough or make noise.",
+            "source": 5
+          },
+          {
+            "claim": "Encourage coughing, observe, and be ready to act if the condition changes.",
+            "source": 1
+          }
+        ],
+        "note": "UMass Memorial Health is a hospital health library carrying WebMD Ignite content, not on the primary authority list, and it is the only source that states the strong-cough call rule outright. Healthy WA says to call if coughing does not remove the blockage; Red Cross, MedlinePlus and NHS say encourage coughing and watch. No source contradicts calling, and step 1 takes that cautious reading, including call-if-unsure. Needs a second primary source. Clinician decision needed."
+      },
+      {
+        "topic": "Lone rescuer, no phone, unresponsive: how long before leaving to call?",
+        "positions": [
+          {
+            "claim": "Alone, no response to your call for help: about 1 minute of CPR before trying to get help (baby and child).",
+            "source": 18
+          },
+          {
+            "claim": "Baby, alone: 2 minutes of CPR before leaving to call or carrying the baby with you.",
+            "source": 3
+          },
+          {
+            "claim": "Child, alone, collapse not seen: about 2 minutes of CPR then call 911; if you saw the collapse, call right away.",
+            "source": 19
+          },
+          {
+            "claim": "Baby, alone: about 2 minutes (5 sets of 30:2) before calling 9-1-1.",
+            "source": 23
+          },
+          {
+            "claim": "Baby, alone, 911 not yet called: carry the baby to the phone and call while continuing CPR.",
+            "source": 11
+          }
+        ],
+        "note": "Step 12 is split by age. Baby: about 2 minutes then call, carrying the baby (two US authorities, MedlinePlus and Red Cross, plus SickKids on carrying the baby to the phone). Child: the only US source read is UMass Memorial Health (secondary, WebMD Ignite content), which gives 2 minutes only when the collapse was not witnessed and says to call at once when it was; the step carries both branches. The NHS says about 1 minute for both ages and is not carried in the step. A speakerphone avoids the question, which is why the steps say to put the phone on speaker. Clinician or instructor to choose; the child 2-minute rule needs a second primary source."
+      },
+      {
+        "topic": "CPR start: breaths first or compressions first?",
+        "positions": [
+          {
+            "claim": "Give 5 rescue breaths first, then 30 compressions to 2 breaths.",
+            "source": 18
+          },
+          {
+            "claim": "Begin CPR with compressions (Red Cross choking pages).",
+            "source": 1
+          },
+          {
+            "claim": "Child and baby CPR: 30 compressions then 2 breaths.",
+            "source": 23
+          },
+          {
+            "claim": "Child CPR starts with chest compressions.",
+            "source": 19
+          },
+          {
+            "claim": "Child choking pathway: start with 30 compressions, then look in the mouth before 2 breaths.",
+            "source": 20
+          }
+        ],
+        "note": "UK versus US difference. The steps use the US order because the guide's region is the US. Not resolved."
+      },
+      {
+        "topic": "Baby CPR hand technique",
+        "positions": [
+          {
+            "claim": "Fingertips of two fingers on the breastbone, pressing about 4 cm (one third of chest depth); the page says 'do not use the whole hand or both hands' for babies.",
+            "source": 18
+          },
+          {
+            "claim": "Two thumbs placed next to each other at the centre of the chest, just below the nipple line, with the remaining fingers wrapped round to the back, pressing about 1.5 inches; if that depth cannot be reached, the one-hand technique is suggested.",
+            "source": 23
+          }
+        ],
+        "note": "Two techniques taught by two major authorities. Step 15 leads with the NHS two fingertips (placed just below the nipple line, a landmark from the Red Cross choking page and the NHS choking page) and offers the Red Cross two-thumb encircling grip as the alternative that authority teaches. The NHS wording 'do not use the whole hand or both hands' may be a warning against palm compression and not against an encircling grip, but the text is ambiguous and could be read as advising against the two-thumb grip; a reviewer should decide. The Red Cross also suggests the one-hand technique if the 1.5 inch depth cannot be reached. Which single technique to teach is for a clinician or instructor."
+      },
+      {
+        "topic": "Honey after a swallowed button battery (clinician-facing only; never shown to parents)",
+        "positions": [
+          {
+            "claim": "Poison Control battery page contains a honey recommendation for a recent swallow in a child who can swallow, and states no age limit in the text read.",
+            "source": 14
+          },
+          {
+            "claim": "A second Poison Control page gives a different amount; no age limit stated.",
+            "source": 15
+          },
+          {
+            "claim": "Alder Hey (UK) limits honey to children older than 12 months and says to give nothing else to eat or drink.",
+            "source": 16
+          }
+        ],
+        "note": "CLINICIAN-FACING ONLY, not an instruction. The amount and the under-1 limit are unresolved and the risk is highest for babies. The parent-facing guide gives NO honey instruction, says NEVER to give honey to a baby under 12 months, and says to call the battery hotline and go to the emergency room. Amount details are kept only in the clinicianOnly block."
+      },
+      {
+        "topic": "Aftercare: who needs to be seen",
+        "positions": [
+          {
+            "claim": "A child who has had abdominal thrusts should go to hospital, whether or not the object came out.",
+            "source": 5
+          },
+          {
+            "claim": "Any baby who choked should have a medical exam even if fine.",
+            "source": 3
+          },
+          {
+            "claim": "Get medical help even if the object comes out (pieces may remain, or the child may be hurt).",
+            "source": 2
+          }
+        ],
+        "note": "Consistent in direction, differing in scope. The guide takes the wider approach; a clinician should confirm."
+      },
+      {
+        "topic": "Mouth check in a conscious child or baby: may you take out a visible object?",
+        "positions": [
+          {
+            "claim": "Do not attempt to grab and drag out the object when the baby is alert, although the same page elsewhere allows finger removal if the object is visible.",
+            "source": 3
+          },
+          {
+            "claim": "Do not put a finger into the child's mouth (strong-cough case and cannot-talk case).",
+            "source": 20
+          },
+          {
+            "claim": "An object you can see may be removed; avoid blind or repeated poking.",
+            "source": 2
+          },
+          {
+            "claim": "After each back blow, check the mouth and pick out any obvious obstruction; do not sweep.",
+            "source": 5
+          },
+          {
+            "claim": "Baby: after the back blows, open the mouth and remove loose material with the little finger (Western Australia); hold the mouth open with your fingers (St John NSW).",
+            "source": [
+              7,
+              8
+            ]
+          },
+          {
+            "claim": "Finger removal is described only for trained responders, only for an unresponsive person, and only if the object is seen.",
+            "source": 1
+          }
+        ],
+        "note": "Conflict for a conscious casualty. Step 3 and the do-not list carry the most cautious reading (no finger in the mouth of a conscious child or baby; never sweep blindly), which is stronger than the NHS and St John UK wording. Clinician to confirm."
+      },
+      {
+        "topic": "Child too large to encircle, or pregnant teen: where do the hands go for chest thrusts?",
+        "positions": [
+          {
+            "claim": "Give chest thrusts instead of abdominal thrusts for a person too large to reach around or known to be pregnant; this page gives no hand position.",
+            "source": 1
+          },
+          {
+            "claim": "From behind, wrap the arms around the chest, fist at the centre of the breastbone, midway between the nipples, firm backward thrusts (5 per round, alternating with 5 back blows). One organisation, two pages.",
+            "source": [
+              24,
+              25
+            ]
+          },
+          {
+            "claim": "Western Australia teaches chest thrusts for every over-1 choke: one hand in the middle of the back for support, heel of the other hand in the CPR compression position, slower but sharper than CPR compressions.",
+            "source": 9
+          }
+        ],
+        "note": "Landmark: MedlinePlus names the middle of the breastbone between the nipples; Healthy WA names only the CPR compression position, so the landmark is not independently confirmed. The indication (chest thrusts for a person too large to reach around or pregnant) has two independent authorities (Red Cross, MedlinePlus). The fist position and the backward direction rest on one organisation (MedlinePlus, two pages, which are not independent). Healthy WA teaches a different hand shape (heel of one hand, other hand on the back) for its general over-1 method. Step 11 states the fist as the MedlinePlus method, says only MedlinePlus describes it, and mentions that another organisation teaches a different hand shape. Hand shape needs clinician or instructor confirmation."
+      }
+    ]
+  },
+  "clinicianOnly": {
+    "display": false,
+    "note": "NOT FOR DISPLAY. Unresolved dose conflicts kept here for the reviewing clinician only. Never show amounts to parents.",
+    "honeyDoseConflict": [
+      {
+        "claim": "Poison Control battery page: 2 teaspoons of honey every 10 minutes while going to the ER, if swallowed within the prior 12 hours and the child can swallow; no age limit stated.",
+        "source": 14
+      },
+      {
+        "claim": "Second Poison Control page: 2 tablespoons of honey every 10 minutes, same conditions; no age limit stated.",
+        "source": 15
+      },
+      {
+        "claim": "Alder Hey (UK): 2 teaspoons every 10 minutes, only if older than 12 months.",
+        "source": 16
+      }
+    ],
+    "displayToParents": false
+  },
+  "sources": [
+    {
+      "id": 0,
+      "org": "American Red Cross",
+      "title": "Infant choking: how to help (Learn First Aid)",
+      "url": "https://production.redcross.org/take-a-class/learn-fa-infant-choking.html",
+      "retrieved": "2026-11-14",
+      "covers": "Infant signs, 5 back blows / 5 chest thrusts (two fingers, about 1.5 in), unresponsive infant, do not leave a coughing infant"
+    },
+    {
+      "id": 1,
+      "org": "American Red Cross",
+      "title": "Adult/Child choking: how to help (Learn First Aid)",
+      "url": "https://production.redcross.org/take-a-class/learn-fa-adult-child-choking.html",
+      "retrieved": "2026-11-14",
+      "covers": "Child signs, 5 back blows / 5 abdominal thrusts, chest thrusts if too large or pregnant (no hand position on this page), unresponsive, do-nots, 911"
+    },
+    {
+      "id": 2,
+      "org": "NHS (UK)",
+      "title": "How to stop a child from choking",
+      "url": "https://www.nhs.uk/conditions/baby/first-aid-and-safety/first-aid/how-to-stop-a-child-from-choking/",
+      "retrieved": "2026-11-14",
+      "covers": "Under-1 and over-1 techniques, order may vary, 999 after first aid fails, medical help afterwards, unconscious steps"
+    },
+    {
+      "id": 3,
+      "org": "NIH MedlinePlus",
+      "title": "Choking - first aid, infant under 1 year",
+      "url": "https://medlineplus.gov/ency/article/000048.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Infant signs, forceful cough: do not intervene, back blows / chest thrusts (heel of one hand), unresponsive CPR, 2 minutes if alone, medical exam after. Gives no CPR hand technique."
+    },
+    {
+      "id": 4,
+      "org": "American Heart Association",
+      "title": "Updated CPR guidelines tackle choking response (2025 guidelines newsroom release)",
+      "url": "https://newsroom.heart.org/news/updated-cpr-guidelines-tackle-choking-response-opioid-related-emergencies-and-a-revised-chain-of-survival",
+      "retrieved": "2026-11-14",
+      "covers": "2025: children alternate 5 back blows / 5 abdominal thrusts; infants 5 back blows / 5 chest thrusts with heel of one hand; no abdominal thrusts for infants"
+    },
+    {
+      "id": 5,
+      "org": "St John Ambulance (UK)",
+      "title": "Child choking",
+      "url": "https://www.sja.org.uk/first-aid-advice/child-choking/",
+      "retrieved": "2026-11-14",
+      "covers": "Child signs, 5 back blows / 5 abdominal thrusts, call 999/112 if not cleared, unresponsive, hospital after abdominal thrusts"
+    },
+    {
+      "id": 6,
+      "org": "St John Ambulance (UK)",
+      "title": "Choking (adult page)",
+      "url": "https://www.sja.org.uk/get-advice/first-aid-advice/choking/",
+      "retrieved": "2026-11-14",
+      "covers": "Adult sequence (applies to teens by extension; cited in the 13-17y text; age cut-off unverified)"
+    },
+    {
+      "id": 7,
+      "org": "St John Ambulance NSW (Australia)",
+      "title": "Choking, infant under 1 year",
+      "url": "https://stjohnnsw.com.au/first-aid-guides/choking-infant-under-1-year/",
+      "retrieved": "2026-11-14",
+      "covers": "Immediately call 000; back blows then two fingers on the lower half of the breastbone"
+    },
+    {
+      "id": 8,
+      "org": "Healthy WA (Government of Western Australia; content from St John Ambulance Australia)",
+      "title": "First aid for a choking infant under 1",
+      "url": "https://www.healthywa.wa.gov.au/Articles/F_I/First-aid-for-a-choking-infant-under-1",
+      "retrieved": "2026-11-14",
+      "covers": "Call 000 first; back blows then two fingers in the CPR compression position"
+    },
+    {
+      "id": 9,
+      "org": "Healthy WA (Government of Western Australia; content from St John Ambulance Australia)",
+      "title": "First aid for a choking adult or child over 1",
+      "url": "https://www.health.wa.gov.au/sitecore/content/Healthy-WA/Articles/F_I/First-aid-for-a-choking-adult-or-child-over-1",
+      "retrieved": "2026-11-14",
+      "covers": "Over-1 sequence uses back blows then chest thrusts (heel of hand, CPR position); call 000 if coughing does not clear it"
+    },
+    {
+      "id": 10,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Choking prevention",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/Choking-Prevention.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "High-risk foods until about 4 (lists popcorn, hot dogs, whole grapes, nuts), half-inch pieces, balloons to 8, small objects incl. coins, button batteries and medicine syringes, supervision, warning signs, 15-minute cough note, take a CPR course. Does not mention magnets."
+    },
+    {
+      "id": 11,
+      "org": "SickKids AboutKidsHealth (Canada)",
+      "title": "Choking first aid",
+      "url": "https://www.aboutkidshealth.ca/choking-first-aid",
+      "retrieved": "2026-11-14",
+      "covers": "Canada: call 911; mild vs severe signs, abdominal thrusts for over 1, baby sequence (two fingers), carry baby to phone; page last updated 2021"
+    },
+    {
+      "id": 12,
+      "org": "SickKids AboutKidsHealth (Canada)",
+      "title": "Preventing choking in toddlers and preschoolers",
+      "url": "https://www.aboutkidshealth.ca/preventing-choking-in-toddlers-and-preschoolers",
+      "retrieved": "2026-11-14",
+      "covers": "Food prep, toilet-roll test, balloons, under-3 greatest risk, supervision, coins and purses"
+    },
+    {
+      "id": 13,
+      "org": "CDC (citing USDA WIC)",
+      "title": "Choking hazards (Infant and Toddler Nutrition)",
+      "url": "https://www.cdc.gov/infant-toddler-nutrition/foods-and-drinks/choking-hazards.html",
+      "retrieved": "2026-11-14",
+      "covers": "Foods to avoid, preparation, sit up to eat, no eating in car or stroller, supervision. Does NOT mention coins, batteries, magnets or balloons. Verified by WebFetch quotes only (curl blocked)."
+    },
+    {
+      "id": 14,
+      "org": "National Capital Poison Center / Poison Control",
+      "title": "Button battery ingestion (poison.org/battery)",
+      "url": "https://www.poison.org/battery",
+      "retrieved": "2026-11-14",
+      "covers": "Battery hotline 1-800-498-8666, poison center 1-800-222-1222, don't delay, do not induce vomiting, no food or drink, nose/ear batteries and no drops, X-ray, a honey recommendation (clinician-only)"
+    },
+    {
+      "id": 15,
+      "org": "National Capital Poison Center / Poison Control",
+      "title": "Button batteries article",
+      "url": "https://www.poison.org/articles/button-batteries",
+      "retrieved": "2026-11-14",
+      "covers": "Don't wait for symptoms, nose/ear batteries, honey (amount differs from source 14), hotline"
+    },
+    {
+      "id": 16,
+      "org": "Alder Hey Children's NHS Foundation Trust",
+      "title": "What to do if your child swallows a button battery",
+      "url": "https://www.alderhey.nhs.uk/what-to-do-if-your-child-swallows-a-button-battery/",
+      "retrieved": "2026-11-14",
+      "covers": "A&E as soon as possible, honey only if over 12 months, nothing else to eat or drink, do not induce vomiting, warning signs, NHS 111"
+    },
+    {
+      "id": 17,
+      "org": "Alder Hey Children's NHS Foundation Trust",
+      "title": "If a child swallows a button battery or strong magnet",
+      "url": "https://www.alderhey.nhs.uk/?p=648",
+      "retrieved": "2026-11-14",
+      "covers": "Magnets and batteries: A&E straight away or 999, symptom list; a small smooth coin or plastic bead may be watched for a couple of days (UK wording)"
+    },
+    {
+      "id": 18,
+      "org": "NHS (UK)",
+      "title": "How to resuscitate a child",
+      "url": "https://www.nhs.uk/baby/first-aid-and-safety/first-aid/how-to-resuscitate-a-child/",
+      "retrieved": "2026-11-14",
+      "covers": "Baby and child CPR: 5 initial breaths, two fingers for babies, 4 cm / 5 cm, 30:2, 100-120 per minute, about 1 minute before calling if alone"
+    },
+    {
+      "id": 19,
+      "org": "UMass Memorial Health (Massachusetts) health library; content provided by WebMD Ignite",
+      "title": "Using CPR and an AED on children ages 1 to 8",
+      "url": "https://www.ummhealth.org/health-library/using-cpr-and-an-aed-on-children-ages-1-to-8",
+      "retrieved": "2026-11-14",
+      "covers": "Child CPR: 2 inches, 100-120 per minute, 30:2, AED use with child pads, 2 minutes if collapse not seen (hospital library, licensed WebMD content, not on the primary authority list)"
+    },
+    {
+      "id": 20,
+      "org": "UMass Memorial Health (Massachusetts) health library; content provided by WebMD Ignite",
+      "title": "When a child is choking (age 1 and up)",
+      "url": "https://www.ummhealth.org/health-library/when-a-child-is-choking-age-1-and-up",
+      "retrieved": "2026-11-14",
+      "covers": "Child choking pathway incl. trouble breathing with a strong cough, 5 back blows / 5 abdominal thrusts, unresponsive CPR (hospital library, licensed WebMD content, not on the primary authority list)"
+    },
+    {
+      "id": 21,
+      "org": "Canadian Paediatric Society (position statement, via PubMed Central)",
+      "title": "Preventing choking and suffocation in children",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3299355",
+      "retrieved": "2026-11-14",
+      "covers": "Caregivers should take infant/child CPR and choking courses (Heart and Stroke, St John Ambulance, Red Cross); no first-aid steps in the fetched text"
+    },
+    {
+      "id": 22,
+      "org": "US Consumer Product Safety Commission",
+      "title": "Magnets (Safety Education Centers)",
+      "url": "https://www.cpsc.gov/Safety-Education/Safety-Education-Centers/Magnets",
+      "retrieved": "2026-11-14",
+      "covers": "If magnets are suspected swallowed: seek immediate medical attention; symptoms to watch; X-rays can hide multiple magnets. Verified by WebFetch quotes only (curl blocked)."
+    },
+    {
+      "id": 23,
+      "org": "American Red Cross",
+      "title": "How to perform child and baby CPR",
+      "url": "https://www.redcross.org/take-a-class/cpr/performing-cpr/child-baby-cpr",
+      "retrieved": "2026-11-14",
+      "covers": "Call 9-1-1 and get equipment; child heel of one hand about 2 in; baby two thumbs encircling about 1.5 in (one-hand technique if depth not reached); 30:2; continue until an AED is ready; alone with a baby about 2 minutes then call. No AED pad wording."
+    },
+    {
+      "id": 24,
+      "org": "NIH MedlinePlus",
+      "title": "Choking - Heimlich maneuver",
+      "url": "https://medlineplus.gov/ency/article/000047.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Abdominal thrusts; for pregnant or obese people, chest thrusts with the arms around the chest and a fist on the middle of the breastbone between the nipples, firm backward thrusts"
+    },
+    {
+      "id": 25,
+      "org": "NIH MedlinePlus",
+      "title": "Choking - adult or child over 1 year",
+      "url": "https://medlineplus.gov/ency/article/000049.htm",
+      "retrieved": "2026-11-14",
+      "covers": "5 back blows then 5 abdominal thrusts; chest thrusts instead for pregnant or obese people (same hand position as 000047); abdominal thrust landmark well below the breastbone"
+    },
+    {
+      "id": 26,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "How to use an AED",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/Using-an-AED.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Pediatric pads for younger children under 8 (babies not mentioned); adult pads may be used under 8 with one pad on the front and one on the back so they do not touch; adult pads for 8 and older"
+    },
+    {
+      "id": 27,
+      "org": "Nemours KidsHealth (US)",
+      "title": "Choking",
+      "url": "https://kidshealth.org/en/parents/choking.html",
+      "retrieved": "2026-11-14",
+      "covers": "Call 911 for serious choking; abdominal thrusts only for a conscious child who cannot breathe, talk or make noise; do not pat the back of a coughing child who can talk; ER after any major choking episode; reviewed April 2023"
+    }
+  ],
+  "unverified": {
+    "displayToParents": false,
+    "items": [
+      "Canadian national first-aid sequence: Canadian Red Cross, CPS caringforkids and Heart and Stroke pages returned errors or binary PDFs and were not read. (The Canadian emergency number, 911, is stated by SickKids, source 11.)",
+      "Mayo Clinic and AHA child/infant FBAO algorithm PDFs: fetch blocked (403); known only from search snippets, so not used.",
+      "Newborn (0-3 months) specific technique, force or positioning: no fetched source separates newborns from the under-1 group.",
+      "Teen (13-17) specific guidance and the exact age at which child technique becomes adult technique: not stated by any fetched source.",
+      "Number of back blows/thrusts: Red Cross and AHA say 5, NHS and MedlinePlus say 'up to 5'; no source explains the difference.",
+      "Coins: only the UK Alder Hey page (source 17) gives a coin rule (a small smooth coin or plastic bead may be watched at home for a couple of days, with NHS 111 as the advice line); no US coin rule was read. Clinician to confirm.",
+      "Magnet guidance in the US: the poison.org magnets page returned 404 and no US emergency-room, 911 or Poison Control instruction for magnets was read. The US CPSC page says only 'seek immediate medical attention'; the emergency-department wording is from Alder Hey (UK). Clinician to confirm US wording.",
+      "What to do for an ongoing or recurring cough after a choking episode: only the AAP 15-minute observation and 'get checked' statements were found; no source gave a precise rule.",
+      "Honey amount and age limit: sources conflict (see Disagreements; amounts are kept only in clinicianOnly, not for display).",
+      "AHA 2025 infant chest-thrust hand position and call-911 timing beyond the newsroom summary: full guideline text not read.",
+      "AED pad choice for a baby: no fetched source addresses babies. The AAP (26) describes pediatric pads for younger children under 8, and step 13 applies that to a baby by extension. The adult-pad fallback for a child is described by UMass Memorial Health (19) and by the AAP (26); front-and-back placement for a child under 8 is AAP only.",
+      "Choking in children with disabilities, swallowing difficulty or after anaphylaxis: not researched.",
+      "Ireland HSE page and Safe Kids Worldwide choking tips: pages not retrievable or empty.",
+      "Sources 19 and 20 are WebMD Ignite content hosted by UMass Memorial Health, not guidance authored by the hospital.",
+      "CDC (13) and CPSC (22) block automated downloads; their wording was checked through WebFetch quotes, not raw page text.",
+      "Compressions-only advice for a rescuer who has not learned breaths: only UMass Memorial Health (19) says to keep doing compressions; not added to the steps, clinician to confirm for choking.",
+      "Nemours KidsHealth (27) tells an untrained rescuer to wait for help rather than give thrusts or CPR; this guide does not carry that reading (the other sources encourage acting).",
+      "Child lone-rescuer 2-minute rule (unwitnessed collapse), the strong-cough call rule and the UMass adult-pad wording rest on UMass Memorial Health / WebMD Ignite content (19, 20); AHA and Red Cross child pages were not readable, so no second primary source was found for the 2-minute child rule or the strong-cough rule."
+    ]
+  },
+  "reviewQuestionsForClinician": {
+    "displayToParents": false,
+    "items": [
+      "Which child (1 and over) sequence should the app teach: back blows then abdominal thrusts (AHA 2025, Red Cross), either order (NHS), chest thrusts (Western Australia), or abdominal only (older SickKids page)? Does your region's resuscitation council agree?",
+      "For babies, should chest thrusts use two fingers (Red Cross, NHS, SickKids, St John NSW, Healthy WA) or the heel of one hand (AHA 2025, MedlinePlus), and what depth is right for a newborn versus an 11-month-old?",
+      "Baby CPR: step 15 leads with two fingertips (NHS) and offers the two-thumb encircling grip (American Red Cross) as the alternative that authority teaches. Does the NHS wording 'do not use the whole hand or both hands' conflict with the encircling grip? Choose one technique, or confirm both?",
+      "For a child too large to encircle, or a pregnant teen: step 11 states the MedlinePlus fist on the middle of the breastbone, from behind, as the MedlinePlus method (single organisation for the hand position). Is that right, or should the app teach the Healthy WA heel of one hand with support on the back?",
+      "Should a layperson call before first aid in every severe choke, or after one round? For a lone rescuer doing CPR with no phone, step 12 is split by age: baby about 2 minutes then call (MedlinePlus, Red Cross); child 2 minutes only if the collapse was unseen, otherwise call at once (UMass only); the NHS says about 1 minute for both. Which is right, and should CPR start with 5 breaths (UK) or compressions (US)?",
+      "Honey after a swallowed button battery: the sources conflict on amount and age limit (details in clinicianOnly). Is it right for the app to say only 'call the battery hotline now, never honey under 12 months'?",
+      "Who must be assessed after an episode: only those who needed thrusts, or every child who choked? Which persistent symptoms (cough, wheeze, fever, drooling, refusing food) should trigger a same-day visit?",
+      "Mouth check: may a layperson put a finger in the mouth of a conscious choking child or baby to remove a clearly visible object (NHS and St John UK say yes if clearly visible; MedlinePlus and UMass Memorial Health say no)?",
+      "AED: is the adult-pad fallback (front-and-back pads for a child under 8, adult pads fine from age 8) acceptable as written? Step 13 tells a parent to use child pads for a baby if the AED has them, extrapolated from the AAP statement that pediatric pads are for children under 8: is that right, and what applies if the AED has only adult pads? What US wording is right for swallowed magnets and for a swallowed coin?",
+      "Should a rescuer who has not been trained in breaths be told to keep doing compressions only (UMass Memorial Health only)?",
+      "Three instructions rest on secondary UMass Memorial Health / WebMD Ignite content and need a second primary source before release: the 2-minute child rule for an unwitnessed collapse (step 12), the adult-pad fallback (step 13; also AAP for children, nothing for babies), and the strong-cough-with-trouble-breathing call rule (step 1). Can you supply AHA or Red Cross child wording?"
+    ]
+  },
+  "revision": 5,
+  "changeLog": {
+    "displayToParents": false,
+    "items": [
+      {
+        "id": "C1",
+        "what": "Battery do-not rewritten: no food or drink, no vomiting, call hotline and follow its honey instruction, never honey under 12 months; emergency-now wording; honey disagreement flagged",
+        "verified": true
+      },
+      {
+        "id": "C2",
+        "what": "AAP 15-minute cough note restored with whether or not the object comes out, plus call-911 triggers",
+        "verified": true
+      },
+      {
+        "id": "C3",
+        "what": "Step 1 now says call if unsure (UMass Memorial and SickKids), cautious reading carried",
+        "verified": true
+      },
+      {
+        "id": "C4",
+        "what": "Infant chest-thrust hand position shown both ways (two fingers vs heel of one hand) with sources; St John NSW vs UK attribution fixed; depth only attributed to Red Cross",
+        "verified": true
+      },
+      {
+        "id": "C5",
+        "what": "Mouth-check conflict added to disagreements; step carries the no-finger-in-conscious-mouth reading; check the mouth changed to look",
+        "verified": true
+      },
+      {
+        "id": "C6",
+        "what": "Magnet entry reworded; US source (CPSC) added, US wording marked clinician-to-confirm; unverified list updated",
+        "verified": true
+      },
+      {
+        "id": "C7",
+        "what": "Car or stroller (CDC read live); medicine syringes KEPT because raw AAP page lists them",
+        "verified": true
+      },
+      {
+        "id": "C8",
+        "what": "Call-first attribution: St John NSW (7) and Healthy WA (8, step one) both verified from live pages",
+        "verified": true
+      },
+      {
+        "id": "C9",
+        "what": "Lone-rescuer phone-first and no-phone timing added to unresponsive step",
+        "verified": true
+      },
+      {
+        "id": "C10",
+        "what": "Sources 19 and 20 corrected to name UMass Memorial Health (Massachusetts); Red Cross get an AED corrected to get equipment",
+        "verified": true
+      },
+      {
+        "id": "C11",
+        "what": "Revision 3 structure: one sequence per group (first steps, baby, child, large or pregnant child, unresponsive, after); every authority disagreement moved to Disagreements; steps carry only the follow-your-course pointer",
+        "verified": true
+      },
+      {
+        "id": "C12",
+        "what": "Baby CPR hand technique disclosed both ways (NHS two fingers, Red Cross two thumbs) and marked needs clinician or instructor; Red Cross CPR page added as source 23",
+        "verified": true
+      },
+      {
+        "id": "C13",
+        "what": "Honey doses removed from parent-facing text; kept only in clinicianOnly (display false)",
+        "verified": true
+      },
+      {
+        "id": "C14",
+        "what": "Canada 911 now cited to SickKids (11) and confirmed from raw text; unverified mislabel removed",
+        "verified": true
+      },
+      {
+        "id": "C15",
+        "what": "Leftover wrong hospital name in the CPR-start disagreement removed; WebMD Ignite licensing noted for sources 19 and 20",
+        "verified": true
+      },
+      {
+        "id": "C16",
+        "what": "CDC miscites removed: coins, batteries and balloons re-sourced to AAP (10), magnets to Alder Hey (17) and CPSC (22); popcorn re-sourced to SickKids (11) and CDC (13)",
+        "verified": true
+      },
+      {
+        "id": "C17",
+        "what": "Strong cough with trouble breathing: call emergency number (UMass Memorial Health, raw text confirmed); earlier wording that UMass says call even with a plain strong cough corrected",
+        "verified": true
+      },
+      {
+        "id": "C18",
+        "what": "AED added to unresponsive steps from UMass (19) and Red Cross CPR page (23); child pads from 19 only",
+        "verified": true
+      },
+      {
+        "id": "C19",
+        "what": "Disclaimer field added to JSON; bookkeeping lines moved out of unverified into this changeLog; battery in nose or ear added; coin line limited to the UK Alder Hey rule; 1-3 year food wording tightened to AAP (tiny pieces)",
+        "verified": true
+      },
+      {
+        "id": "C20",
+        "what": "SickKids 'do not hit the back' re-read: it applies to a child who can answer and cough, so the separate 'striking a responsive child' contradiction was merged into the child-technique disagreement",
+        "verified": true
+      },
+      {
+        "id": "C21",
+        "what": "Bookkeeping from earlier revisions: the Healthy WA page credits St John Ambulance Australia (read raw); St John NSW and Alder Hey pages were readable raw with a browser user agent; CDC and CPSC wording rests on WebFetch quotes only",
+        "verified": true
+      },
+      {
+        "id": "C22",
+        "what": "Revision 4: step 11 now gives the MedlinePlus (000047, 000049) position, fist on the middle of the breastbone between the nipples from behind with firm backward thrusts; Healthy WA heel-of-hand variant moved to Disagreements; false 'no source gives a hand position' removed",
+        "verified": true
+      },
+      {
+        "id": "C23",
+        "what": "Step 15 baby CPR now offers both authority-taught techniques (NHS two fingertips, Red Cross two thumbs with hands encircling) as alternatives, one third of chest depth; course and clinician question kept",
+        "verified": true
+      },
+      {
+        "id": "C24",
+        "what": "Step 13 AED: adult-pad fallback (UMass 19, AAP 26) and AAP front-and-back placement for a child under 8; baby pads still a clinician question",
+        "verified": true
+      },
+      {
+        "id": "C25",
+        "what": "Step 12 no-phone lone rescuer: default about 2 minutes of CPR then call (MedlinePlus, Red Cross, UMass); NHS 1 minute shown as a disagreement",
+        "verified": true
+      },
+      {
+        "id": "C26",
+        "what": "callDoctorSameDay renamed medicalReviewAfterEpisode (it holds go-to-hospital advice); the Aftercare section in the markdown matches",
+        "verified": true
+      },
+      {
+        "id": "C27",
+        "what": "Corrected two errors in the CORRECTIONS2 reasoning: poison.org page 14 does say do not induce vomiting (citation restored); the AAP page does list popcorn (AAP 10 restored as a popcorn source)",
+        "verified": true
+      },
+      {
+        "id": "C28",
+        "what": "Step 5 'or forearm' removed (face-up support is the thigh in the sources); Nemours KidsHealth added as source 27 and to Disagreement 1",
+        "verified": true
+      },
+      {
+        "id": "C29",
+        "what": "Honey disagreement rewritten as clinician-facing only; displayToParents false added to every clinician-facing block (needsClinicianOrInstructor, disagreements, unverified, reviewQuestionsForClinician, changeLog, clinicianOnly)",
+        "verified": true
+      },
+      {
+        "id": "C30",
+        "what": "Revision 5: all nine parent-facing 'see Disagreements' pointers removed (steps 3, 5, 10, 11, 12, 14, 15, do-not, 1-3y row) and replaced with standalone wording; depth 1.5 inches added to step 5 (Red Cross, single source)",
+        "verified": true
+      },
+      {
+        "id": "C31",
+        "what": "Revision 5: clinician meta removed from parent text (strictest-source remark, guide's cautious rule, guide's own rule, UK wording tags, UNVERIFIED and ask-the-clinician sentences in the 0-3m and 13-17y rows, NEEDS CLINICIAN AED sentence, Nemours remark); source-number parentheticals in the by-age rows converted to bracket citations; disclaimer keeps the banner and adds a default for untrained readers",
+        "verified": true
+      },
+      {
+        "id": "C32",
+        "what": "Revision 5: step 11 presents the fist on the middle of the breastbone as the MedlinePlus method (single organisation) and says another organisation teaches a different hand shape; Red Cross and MedlinePlus both cited for the indication",
+        "verified": true
+      },
+      {
+        "id": "C33",
+        "what": "Revision 5: step 12 split by age (baby about 2 minutes then call, MedlinePlus and Red Cross; child 2 minutes only if the collapse was not seen, call at once if seen, UMass only); 'any age' timing and 'three US sources' removed; NHS 1 minute kept only in Disagreement 5",
+        "verified": true
+      },
+      {
+        "id": "C34",
+        "what": "Revision 5: step 13 AED gives a usable baby sentence (child pads if the AED has them, extrapolated from AAP under 8; keep CPR going; follow the operator) and adult pads fine from age 8 (AAP); source 23 now cited only for continuing CPR until an AED is ready; baby extrapolation flagged for review",
+        "verified": true
+      },
+      {
+        "id": "C35",
+        "what": "Revision 5: step 15 leads with the NHS two-fingertip method and offers the Red Cross two-thumb encircling grip as the alternative that authority teaches; NHS 'both hands' wording disclosed in Disagreement 7; source 3 kept only for the mouth check",
+        "verified": true
+      },
+      {
+        "id": "C36",
+        "what": "Revision 5: step 1 no longer calls the unsure-call rule this guide's rule; strong-cough call rule, 2-minute child rule and adult-pad fallback recorded as resting on secondary UMass / WebMD Ignite content needing a second primary source (needsClinician, unverified, review questions); Disagreement 11 now says one organisation (two pages)",
+        "verified": true
+      }
+    ]
+  }
+}
