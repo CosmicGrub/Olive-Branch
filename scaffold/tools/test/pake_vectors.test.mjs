@@ -1,4 +1,4 @@
-// The PAKE golden vectors: a fresh generation equals the committed file, a matching password agrees, a wrong
+// Olive's own end-to-end PAKE golden vectors (the draft's are in cpace_draft21.test.mjs): a fresh generation equals the committed file, a matching password agrees, a wrong
 // one does not, and different passwords or sessions give different generators.
 import { readFileSync } from 'node:fs';
 import { generate } from '../gen-pake-vectors.mjs';
@@ -16,5 +16,7 @@ ok(by['qr secret (16 random bytes) as password'].agree === true, 'qr secret agre
 ok(by['same pin'].gC !== by['8 digit pin'].gC, 'different password or session gives a different generator');
 ok(file.cases.every((c) => c.gC.length === 64 && c.Yc.length === 64 && c.Ya.length === 64), 'every point is 32 bytes');
 ok(file.cases.every((c) => c.gC === c.gA || c.agree === false), 'equal generators imply the passwords matched');
+const ch = by['channel identifier built from the pairing fields'];
+ok(ch && ch.agree === true && ch.ciParts && ch.ci.length > 2 * (32 + 16), 'the channel-identifier case agrees and carries its parts for the Dart side');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

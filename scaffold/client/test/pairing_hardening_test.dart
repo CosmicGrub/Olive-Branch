@@ -96,7 +96,7 @@ void main() {
     expect(ok, isNotNull);
     final PakeParty p = await PakeParty.start(isChild: true, password: '4829'.codeUnits, sid: w.sid, ci: Uint8List(0));
     final Map<String, dynamic> claim = <String, dynamic>{
-      't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin', 'Yc': b64(p.share),
+      't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'pv': kPairingProtocolVersion, 'm': 'pin', 'Yc': b64(p.share),
     };
     // No signature, a signature by another key, and a signature over a made-up nonce: all dropped.
     expect(await t.send(claim), isNull);

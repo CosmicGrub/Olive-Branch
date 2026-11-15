@@ -140,7 +140,7 @@ Why a ledger and not just "a roster in the certificate": a roster inside each ce
 
 ### 3.4 Binding FID and FK into the PAKE channel
 
-The PAKE stays CPace-style with the PIN (or the one-time QR secret) as the password; `cpace.dart` is not changed. What changes is the channel identifier `ci`, the messages around it, and two explicit modes.
+The PAKE stays CPace with the PIN (or the one-time QR secret) as the password; `cpace.dart` is not changed by this design. What changes is the channel identifier `ci`, the messages around it, and two explicit modes. (Note 2026-11-14: `cpace.dart` now conforms to CPace draft-21 and the channel identifier is built in one place, `pairingChannelId`; any new field this design puts into `ci` goes through that function and needs a bump of the key-exchange version `kPairingProtocolVersion`, otherwise old and new builds would derive different keys without saying so.)
 
 New channel identifier (all pieces length-prefixed, as now):
 
@@ -157,7 +157,7 @@ ci_v2 = "olive-pair-v2" | mode | sid | fc | ledgerHead | afp | cpk | adultName |
   - absent: an unclaimed device. Normal join, adult approves.
 - **Member side refuses first.** A device that holds a family never answers a window whose `fc` it cannot match to its own FID, unless it is explicitly in a "being moved" state that an adult (with the PIN) put it in. This is the property the current code lacks (section 1.1, last paragraph): pairing can no longer cross families by accident, by a neighbour with the same PIN, or by a hostile window.
 - **Post-join key confirmation.** After the sealed credential arrives, the joiner derives `tagJ = HMAC(FK_derived, transcriptHash)` and sends it; the adult verifies it. This proves the joiner really received this family's FK (not a truncated or substituted credential) and closes the loop between FK and the PAKE transcript. For `join-guardian` and `join-child` the joiner had no FK before, so FK cannot enter the PAKE itself; this step is the honest equivalent.
-- **Version negotiation without downgrade.** `hello-ok` carries a `v` field; a v2 adult window never answers a v1 `pake1`, and a v2 joiner that gets a v1 `hello-ok` from a window the user chose just completes the old protocol only if the adult device is a legacy single-guardian family (so existing families keep working through the migration, section 5). v1 and v2 channel identifiers differ in their first element, so a mixed transcript cannot confirm.
+- **Version negotiation without downgrade.** `hello-ok` and `pake1` carry a `pv` field (SHIPPED as kPairingProtocolVersion = 2); a mismatch is a quiet hard stop on both sides before any password-dependent step, never counted as an attempt, so there is no fallback to an older protocol (the earlier plan here, a v2 joiner that completes the old protocol on a v1 `hello-ok` only if the adult device is a legacy single-guardian family, was dropped). v1 and v2 generators differ (different DSI and layout), so a mixed transcript could not confirm anyway.
 - The adult name in `ci` stays (the child picks windows by it today). Whether the name should keep appearing on the air is a separate decision (open question 8).
 
 What a child sees: nothing changes. The match picture, the word, the neutral screens. All new refusals are silent on the child device.

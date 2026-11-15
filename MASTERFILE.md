@@ -5233,10 +5233,15 @@ server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
    in the answer. The window also budgets each source address (full IPv6 address, LRU-bounded table that never refuses
    a new source: 2 failed confirmations, 12 first messages, 6 key exchanges) and answers a source past its budget with
    the silence of a closed window; the child never sees a count or a reason, only the shared calm card.
-3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`, a CPace-style exchange over
-   X25519). It is never sent, and a recording cannot be used to guess it offline. The session id, family id, the
-   adult device's key fingerprint, the adult's name and the child device's key are bound into it, so another
-   family, another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation.
+3. The PIN is the password of a **password-authenticated key exchange** (`cpace.dart`: CPace as specified in
+   draft-irtf-cfrg-cpace-21, suite CPACE-X25519-SHA512, the child device as initiator and the adult device as
+   responder; the draft's published test vectors pass byte for byte in Dart and in Node). It is never sent, and a
+   recording cannot be used to guess it offline. The session id and a channel identifier (the child device's key
+   first, then the adult device's key fingerprint, family id and name) are bound into it, so another family,
+   another window, or a rogue advertiser (even with the same PIN) cannot pass key confirmation. The first message
+   of each side carries the key-exchange **version** (`pv`, now 2): a build from before this alignment cannot
+   derive the same key, so a version mismatch ends quietly before any password-dependent step and without
+   costing an attempt, and the child just sees its usual calm "could not connect" card (no version text).
    **What the instructions say (matches the screens).** The grown-up's phone, after the PIN: "This phone will then show a picture. On her device, tap "A grown-up does this", then "I'm the grown-up", tap the same picture, and type the same PIN." While waiting, the phone shows a nameless coloured picture (no letters to read out) and says to tap "the picture shown here"; the child's options screen says to open "Connect a child's device" on the phone "then tap the same picture here". The Match step says "Her device is showing three pictures and a colour. Tap the card here that has the same ones."
 4. The child's screen then shows **three pictures and a colour** (no words, no name; about 21 bits, derived from the
    finished key exchange). The grown-up's phone shows **four candidate sets and "None of these"** and the grown-up
@@ -5327,11 +5332,18 @@ tablet** removes it from the phone's list so the phone stops answering it; the t
 is disconnected from the tablet itself ("Disconnect this tablet" behind the grown-up button, answered by the phone)
 or its data is cleared. The connection grants no account or server access.
 
-**Honest limits.** `cpace.dart` is custom cryptographic code (the Elligator2 map and transcript) that follows the
-CFRG CPace draft's structure but is not byte-compatible with it and has not been checked against its vectors; it
-agrees byte for byte with an independent Node implementation (`tools/pake_cpace.mjs`, golden vectors in
-`client/test/vectors/pake_vectors.json`) and **needs an external cryptographic review before families rely on
-it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
+**Honest limits.** `cpace.dart` is still our own implementation (no maintained Dart CPace library exists). Down to
+the shared key ISK it now follows draft-irtf-cfrg-cpace-21 for CPACE-X25519-SHA512 and reproduces the draft's
+appendix B.1 vectors (generator, both shares, K, ISK in both modes, session id output, and the low-order and
+non-canonical points of B.1.10) byte for byte, in Dart (`client/test/cpace_draft21_test.dart`) and in the
+independent Node reference (`tools/test/cpace_draft21.test.mjs`), both reading
+`client/test/vectors/cpace_draft21_vectors.json`; Olive's own end-to-end vectors are in
+`client/test/vectors/pake_vectors.json`. The confirmation tags, the confirmation word and the Match values are
+Olive's own layer on top of ISK and are not part of CPace. The draft asks for constant time and this is **not
+achieved**: Dart `BigInt` is not constant time, so the two password-dependent operations of the Elligator2 map
+run on randomly blinded operands (the output is unchanged; a test proves it), which narrows but does not close the
+leak for a local attacker measuring the device. The code **still needs an external cryptographic review before
+families rely on it**. The child device keeps a salted slow hash of the grown-up's PIN (so a grown-up can type it there to leave the
 lock offline) with its own 5-tries/15-minutes lock: a stolen, rooted tablet with its keystore could brute-force a
 short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial of service, not a pairing). The
 online relay of windows through the server is **not
@@ -8234,7 +8246,7 @@ Each row is something this document or the product's own screens might lead a re
 | Not built | What exists | What is missing, and what it needs |
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
-| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange now matches the CPace draft-21 vectors but still needs an external cryptographic review, and is not constant time (the map's password-dependent operations are blinded, not constant time); the associated-data fields of the draft are empty; a vetted native library is not used. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
 | **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |

@@ -1,6 +1,8 @@
 # External cryptographic review brief: Olive device pairing (PAKE and key confirmation)
 
-Prepared 2026-11-14 from the code on `origin/main` at commit `6c40e02`. Everything below is read from the source files named in each section. Where the author is guessing, that is said. This is a docs-only brief: no product code changes.
+Prepared 2026-11-14 from the code on `origin/main` at commit `6c40e02`, then UPDATED the same day for the draft-21 alignment (branch `feat/cpace-draft21`, PR "CPace draft-21 conformance"). Everything below is read from the source files named in each section. Where the author is guessing, that is said.
+
+**What changed since the first version of this brief (read this first).** The first version described a protocol that differed from `draft-irtf-cfrg-cpace-21` in labels and in the layout of three strings. Those differences are now removed in code and the draft's own appendix B.1 vectors are golden tests in both Dart and Node. Sections 1, 2, 4 (Q1, Q6, Q8, Q9), 6 and 8 below are rewritten for the new code; section 9 is kept as the research record with a status line; section 11 lists the change precisely. The PAKE you review is now: **CPACE-X25519-SHA512 of draft-21, initiator/responder, with empty ADa and ADb, plus Olive's confirmation layer on top.** Anything that is Olive's own (not in the draft) is marked "Olive layer".
 
 Audience: an outside cryptographer (or a small review firm) who has not seen the project. You should be able to start from this page and the five files in section 1.
 
@@ -14,10 +16,11 @@ All paths are under `scaffold/client/`.
 
 | File | Lines | What it is |
 |---|---|---|
-| `lib/cpace.dart` | 168 | The PAKE. Generator derivation, the Elligator2 map, X25519 each way, ISK, confirmation tags, SAS bytes, channel key. **Primary target.** |
-| `lib/pairing_protocol.dart` | 446 | The message flow: `AdultWindow` (adult state machine, attempt counter, expiry), `ChildPairingClient`, channel identifier construction, the sealed credential (AES-GCM under the exchange's key). **Primary target.** |
-| `tools/pake_cpace.mjs` | 76 | Independent Node reference implementation (`scaffold/tools/`). Used to produce golden vectors. |
-| `test/vectors/pake_vectors.json`, `tools/gen-pake-vectors.mjs`, `test/pake_vectors_test.dart`, `tools/test/pake_vectors.test.mjs` | | Golden vectors and the tests that pin Dart to Node. |
+| `lib/cpace.dart` | 319 | The PAKE. Draft-21 generator derivation, the Elligator2 map (blinded, see Q9), X25519 each way, ISK (CPace part); then Olive's confirmation tags, SAS bytes, match bytes, channel key (Olive layer). **Primary target.** |
+| `lib/pairing_protocol.dart` | 763 | The message flow: `AdultWindow` (adult state machine, attempt counter, expiry), `ChildPairingClient`, the key-exchange version field `pv`, the sealed credential (AES-GCM under the exchange's key). The channel identifier is now built by `pairingChannelId` in `cpace.dart`. **Primary target.** |
+| `tools/pake_cpace.mjs` | 133 | Independent Node reference implementation (`scaffold/tools/`), for the draft's functions and the Olive layer. |
+| `test/vectors/cpace_draft21_vectors.json`, `test/cpace_draft21_test.dart`, `tools/test/cpace_draft21.test.mjs` | | **The draft's appendix B.1 vectors** (B.1.1 to B.1.7, B.1.10) and the tests that hold Dart and Node to them byte for byte. Start here. |
+| `test/vectors/pake_vectors.json`, `tools/gen-pake-vectors.mjs`, `test/pake_vectors_test.dart`, `tools/test/pake_vectors.test.mjs` | | Olive's own end-to-end golden vectors (five cases, including a real-shaped channel identifier) and the tests that pin Dart to Node. |
 | `lib/device_keys.dart` | | `DeviceKey` (Ed25519), `fingerprintOf` (first 16 bytes of SHA-256 of the public key), `PairingCert` (signed bytes layout). Read for the certificate, not for storage. |
 | `lib/lan_pairing_transport.dart` | 226 | HTTP transport and the LAN-only source address filter. Read for what the network sees. |
 | `lib/pairing_qr.dart` | 45 | Parser for the one-time QR payload. |
@@ -39,12 +42,13 @@ Notation: `lv(x)` is LEB128 length prefix followed by `x` (`cpace.dart: lv`). `c
 
 All requests carry `sid`; the adult returns nothing (HTTP 204) for a wrong or unknown `sid`, a closed or expired window, or any malformed message.
 
-1. `hello` C to A: `{t:'hello', sid, cpk, dn}`. A answers `{t:'hello-ok', afp, apk, an, fid}` (only in state `open`).
+1. `hello` C to A: `{t:'hello', sid, cpk, dn}`. A answers `{t:'hello-ok', afp, apk, an, fid, pv}` (only in state `open`).
    C checks `SHA-256(apk)[0..16] == afp`, and, in QR mode, that `afp` equals the fingerprint in the QR.
-2. Channel identifier, both sides compute the same bytes:
-   `ci = lv(sid) || lv(utf8(fid)) || lv(afp) || lv(cpk) || lv(utf8(an))`
-   (`_channelId` on A, inline in `ChildPairingClient.pair` on C).
-3. `pake1` C to A: `{t:'pake1', sid, cpk, dn, m:'pin'|'qr', Yc}`. Password `prs` is `utf8(PIN)` in PIN mode, or `utf8(base64url(qs))` in QR mode (note: the base64 text, 22 chars, not the raw bytes).
+2. Channel identifier (CI), both sides compute the same bytes through one function, `pairingChannelId` in `cpace.dart`:
+   `ci = lv(cpk) || lv( lv(afp) || lv(utf8(fid)) || lv(utf8(an)) )`
+   i.e. the initiator's identity (the child device's key) first, the responder's identity (the adult's fingerprint, family id and name) second, as draft section 10.1.1 recommends. The session id is NOT inside CI any more (it is its own CPace input; earlier builds repeated it inside CI).
+   Version: `hello-ok` now carries `pv: 2` and `pake1` carries `pv: 2` (`kPairingProtocolVersion`). The child stops before sending any key-exchange message if the adult's `hello-ok` has no `pv: 2`; the adult drops a `pake1` without `pv: 2` silently, before counting anything. Builds from before this change do not state a version and cannot derive the same key.
+3. `pake1` C to A: `{t:'pake1', sid, cpk, dn, m:'pin'|'qr', Yc, pv}`. Password `prs` is `utf8(PIN)` in PIN mode, or `utf8(base64url(qs))` in QR mode (note: the base64 text, 22 chars, not the raw bytes).
    A computes its own share and answers `{t:'pake2', Ya}`. A stores the pending exchange; a later `pake1` replaces it.
 4. `confirm` C to A: `{t:'confirm', sid, tagC}`. A: marks a QR secret as spent (always, success or not), finishes the exchange, checks `tagC` in constant time. On failure: `attemptsLeft -= 1`, pending cleared, reply `{t:'confirm-no'}`; at zero the window closes. On success: state `awaitingApproval`, reply `{t:'confirm-ok', tagA}`.
    C checks `tagA`. Only then does C display the adult's name and the SAS.
@@ -58,36 +62,37 @@ All requests carry `sid`; the adult returns nothing (HTTP 204) for a wrong or un
 
 ### 2.3 The PAKE (`cpace.dart`)
 
-Constants: `DSI = "OliveCPace255"`; field `p = 2^255 - 19`; Montgomery `A = 486662`.
+Constants: `DSI = "CPace255"` (`G_X25519.DSI`); field `p = 2^255 - 19`; Montgomery `A = 486662`; `H = SHA-512` with input block size 128. The child device is the draft's initiator "A"; the adult device is the responder "B". (In the code and the Olive vectors the child's share is `Yc` = the draft's `Ya`, the adult's share is `Ya` = the draft's `Yb`. Section 11 gives the mapping.)
 
 ```
-generator(prs, sid, ci):
+generator(prs, sid, ci):                                    // draft sections 8.1 and 8.2
   dsi  = lv(DSI);  p = lv(prs)
-  zpad = max(0, 128 - 1 - len(p) - len(dsi))              // 128 = SHA-512 block size
-  gs   = dsi || p || zeros(zpad) || lv(ci) || lv(sid)       // NOTE: zpad is NOT length-prefixed here
+  zpad = max(0, 128 - len(p) - len(dsi) - 1)               // 128 = SHA-512 block size
+  gs   = dsi || p || lv(zeros(zpad)) || lv(ci) || lv(sid)   // lv_cat(DSI, PRS, ZPAD, CI, sid): the zero pad IS length-prefixed
   u32  = SHA-512(gs)[0..32]
   g    = elligator2(u32)                                    // 32-byte little-endian u-coordinate
 
 elligator2(u32):                                            // RFC 9380 map_to_curve_elligator2 for curve25519, Z = 2
-  u   = (u32 with top bit cleared) as LE integer mod p
+  u   = (u32 with top bit cleared) as LE integer mod p      // decodeUCoordinate
   den = 1 + 2 u^2
-  w   = (den == 0) ? -A : -A / den                          // modular inverse
+  w   = (den == 0) ? -A : -A / den                          // modular inverse (on a blinded operand, see Q9)
   v   = w^3 + A w^2 + w
   return  isSquare(v) ? w : (-A - w)                        // u-coordinate only; v (the y-like coordinate) discarded
 ```
 
-Exchange (symmetric except for `Yc`/`Ya` ordering):
+Exchange:
 
 ```
 start:   y = 32 CSPRNG bytes (X25519 private seed, standard clamping inside X25519)
          Y = X25519(y, g)                                   // this party's share, sent to the peer
-finish:  K = X25519(y, peerShare);  reject if K is all zero or peerShare is not 32 bytes
-         (yc, ya) = child ? (Y, peerShare) : (peerShare, Y)
-         ISK = SHA-512( lv("OliveCPace255_ISK") || lv(sid) || lv(K) || lv(yc) || lv(ya) )
-         transcript = lv(yc) || lv(ya) || lv(ci) || lv(sid)
+finish:  K = X25519(y, peerShare);  abort if K is all zero or peerShare is not 32 bytes   // draft: abort if K = G.I
+         (yc, ya) = child ? (Y, peerShare) : (peerShare, Y)  // child = initiator, so the child's share is first
+         ISK = SHA-512( lv("CPace255_ISK") || lv(sid) || lv(K) || lv(yc) || lv(ADc) || lv(ya) || lv(ADa) )
+               // = H(lv_cat(DSI_ISK, sid, K) || transcript_ir(Yinit, ADinit, Yresp, ADresp)); ADc and ADa are empty here, so each is the single byte 0x00
+         confirmation transcript (Olive layer, not CPace) = lv(yc) || lv(ya) || lv(ci) || lv(sid)
 ```
 
-Derived values:
+Derived values (all of this is the Olive layer, NOT part of CPace):
 
 ```
 kdf(key, label) = SHA-512( lv(label) || lv(key) )[0..32]
@@ -98,8 +103,8 @@ channelKey      = kdf(ISK,"channel")                                            
 
 Properties the author is relying on (to be tested by you, not assumed):
 
-- A wrong PIN gives a different generator, so `K` and `ISK` differ and `tagC` fails on A. A passive recording gives no offline verifier for the PIN.
-- `sid` (fresh per window), `fid`, `afp`, `cpk` and `an` are all inside the generator, so a peer of another session or family, or a rogue advertiser with a different key, derives a different `ISK` even with the right PIN.
+- A wrong PIN gives a different generator (draft: ISK is identical if and only if PRS, CI, sid and the transcripts match), so `K` and `ISK` differ and `tagC` fails on A. A passive recording gives no offline verifier for the PIN.
+- `sid` (fresh per window, a separate CPace input that is also inside the generator string) and the channel identifier (`cpk`, `afp`, `fid`, `an`) are all mixed in, so a peer of another session or family, or a rogue advertiser with a different key, derives a different `ISK` even with the right PIN.
 - A checks `tagC` first and only then releases `tagA`, so a client that does not know the PIN learns nothing verifiable from A beyond pass/fail.
 - Online guessing is limited by A's counter (5 failed confirmations kill the window; a new window needs the adult's PIN again).
 
@@ -126,7 +131,7 @@ Numbered so the report can answer them one by one. "Is it OK" means: please say 
 
 Protocol construction
 
-- **Q1.** Is this construction a sound balanced PAKE in the CPace family? List every deviation from `draft-irtf-cfrg-cpace` (the latest revision the author checked is -21, section 9 of this brief) and say which ones weaken security versus which are cosmetic. In particular: (a) the generator string does not length-prefix the zero padding; (b) `DSI` is `OliveCPace255` rather than `CPace255`; (c) the ISK hash input is `lv(yc) || lv(ya)` with no associated-data fields, while the draft's initiator/responder transcript is `lv(Ya)||lv(ADa)||lv(Yb)||lv(ADb)`; (d) the channel identifier `ci` is used inside the generator (as the draft allows) and again inside the confirmation transcript but **not** inside ISK.
+- **Q1.** Is this a sound use of CPace as specified, and is Olive's layer on top sound? The deviations the first version of this brief listed are gone: (a) the zero padding is now length-prefixed; (b) `DSI` is now `CPace255`; (c) the ISK hash input is now the draft's `lv_cat(DSI_ISK, sid, K) || transcript_ir(Ya, ADa, Yb, ADb)` with empty ADa and ADb. What remains for you: (d) the channel identifier `ci` is inside the generator (as the draft allows) and again inside Olive's confirmation transcript, but not inside ISK except through the generator; the draft's guarantee is that ISK matches only if CI matches, so please confirm that is enough for the binding Olive wants (child key, adult fingerprint, family id, adult name) and that the choice to put identities in CI rather than in ADa/ADb is right given draft 10.1.1 and the fact that the responder's identity is chosen by the (possibly rogue) responder; (e) is leaving ADa and ADb empty acceptable given initiator/responder mode; (f) the draft asks for constant time and this code does not have it (Q9); (g) everything in the Olive layer (confirmation tags, SAS, match, channel key) is outside the draft and is yours to judge.
 - **Q2.** Key confirmation (not part of the draft): the tag is `HMAC-SHA256(kdf(ISK,"confirm"), lv(role) || transcript)`. Is domain separation between the two tags and between `confirm`/`sas`/`channel` sufficient? Is `SHA-512(lv(label)||lv(key))[0..32]` an acceptable KDF here instead of HKDF, given ISK is already a uniformly distributed 512-bit hash output?
 - **Q3.** The adult releases `tagA` only after `tagC` verified. The child sends `tagC` first, so a rogue adult learns whether one guess was correct. Confirm this is the intended "one guess per exchange" bound, and state whether any other single message lets an attacker test more than one PIN candidate per exchange.
 - **Q4.** Roles: `isChild` selects the order `(yc, ya)`. The two sides never share a role in a real run. Is there any reflection or role-confusion attack if one device is both (for example a device that pairs with itself)?
@@ -134,10 +139,10 @@ Protocol construction
 
 The map and the group
 
-- **Q6.** Is `elligator2` in `cpace.dart` a correct implementation of RFC 9380 `map_to_curve_elligator2` for curve25519 as used by CPACE-X25519-SHA512, including the zero-denominator branch (`1 + 2u^2 = 0`, which the author argues is unreachable because `-1/2` is a non-residue) and the choice between `w` and `-A - w`? The author compared output against the draft-21 test vector (section 9), which matched for the generator, both shares, `K` and `ISK` once the two deviations in Q1(a),(b) were removed. Please confirm independently, and review the derivation, not just the one vector.
+- **Q6.** Is `elligator2` in `cpace.dart` a correct implementation of RFC 9380 `map_to_curve_elligator2` for curve25519 as used by CPACE-X25519-SHA512, including the zero-denominator branch (`1 + 2u^2 = 0`, which the author argues is unreachable because `-1/2` is a non-residue) and the choice between `w` and `-A - w`? Status: the generator, both shares, `K`, both ISK modes, the session id output and the draft's twelve low-order and non-canonical points now pass as golden tests in Dart and Node (section 6). The mapping is also property-tested (the blinded and unblinded implementations agree on 300 random inputs; bit 255 is ignored; outputs are below p). Please confirm independently, and review the derivation, not just the vectors.
 - **Q7.** Only the u-coordinate is used; X25519 clamps the private scalar and so clears the cofactor. Any issue with generators on the twist (the map can return a u that lies on the twist; the author believes X25519 handles this) or with small-subgroup components in `g`?
-- **Q8.** Point validation: the code rejects an all-zero X25519 output and a share that is not 32 bytes. The draft additionally requires correct handling of non-canonical u-coordinates (bit 255 set) and of all low-order points on the curve and the twist (draft section 8.2.1). Whether the Dart `cryptography` package (pinned 2.9.0, X25519 implementation not inspected by the author) maps all of these to the zero output is **not verified**. Please test it, with the draft's B.1.10 low-order vectors.
-- **Q9.** Timing and side channels: Dart `BigInt` arithmetic (`modInverse`, `modPow`) is not constant time and operates on a value derived from the PIN (`u` comes from `SHA-512(... PIN ...)`). Is that a practical leak on a phone for a local attacker, and would you require a constant-time map?
+- **Q8.** Point validation: the code rejects an all-zero X25519 output and a share that is not 32 bytes. The draft additionally requires correct handling of non-canonical u-coordinates (bit 255 set) and of all low-order points on the curve and the twist (draft section 8.2.1). Status: the draft's B.1.10 vectors u0 to ub now run against the Dart `cryptography` package (pinned 2.9.0, pure Dart on every platform; `cryptography_flutter` is not a dependency): all twelve results equal the draft's q0 to qb byte for byte, and u0, u1, u2, u3, u4, u5, u7 abort the exchange when received as the peer's message (the seven the draft lists). The author did NOT read the package's X25519 source, so this is test evidence for those twelve inputs, not an audit. In Node the same vectors pass against OpenSSL and against a separate RFC 7748 BigInt ladder written in the test.
+- **Q9.** Timing and side channels: Dart `BigInt` arithmetic (`modInverse`, `modPow`) is not constant time and operates on a value derived from the PIN (`u` comes from `SHA-512(... PIN ...)`). Mitigation now in the code, not a fix: the two password-dependent operations of the map (the modular inverse of `1 + 2u^2` and the Legendre-symbol exponentiation) run on operands multiplied by a fresh random non-zero field element (`r * (den * r)^-1 = den^-1`; `v * s^2` has the same Legendre symbol as `v`), so their running time no longer follows the password-derived value. The rest of the map (additions, multiplications, the byte-to-integer conversion, the final reduction), the SHA-512 over the PIN and X25519 are still variable time as far as the author knows. Is that a practical leak on a phone for a local attacker, does the blinding actually help or only look like it helps, and would you require a constant-time map (the draft says SHALL, section 10.10)?
 
 Binding and authentication
 
@@ -178,7 +183,8 @@ Requirements: Node 20+ (no packages needed for the Node side); Flutter/Dart SDK 
 Node (cross-implementation vectors, fast, no dependencies):
 
 ```
-node scaffold/tools/test/pake_vectors.test.mjs         # asserts the vector file equals a fresh generation
+node scaffold/tools/test/cpace_draft21.test.mjs        # the draft's appendix B.1 vectors, byte for byte (73 assertions)
+node scaffold/tools/test/pake_vectors.test.mjs         # Olive's own vectors: asserts the vector file equals a fresh generation
 node scaffold/tools/gen-pake-vectors.mjs --print       # print the vectors (writes the file without --print)
 ```
 
@@ -186,15 +192,16 @@ Dart (from `scaffold/client`):
 
 ```
 flutter pub get
-flutter test -j 1 test/pake_vectors_test.dart          # Dart agrees with Node on every vector, plus properties
+flutter test -j 1 test/cpace_draft21_test.dart         # the draft's appendix B.1 vectors against cpace.dart, plus map properties
+flutter test -j 1 test/pake_vectors_test.dart          # Dart agrees with Node on Olive's own vectors, plus properties
 flutter test -j 1 test/pairing_protocol_test.dart      # protocol: happy path, wrong PIN, two families same PIN, replay, expiry, QR
 flutter test -j 1 test/lan_pairing_transport_test.dart # HTTP half over loopback (no mDNS)
 flutter test -j 1 test/play_admission_test.dart        # only if reviewing section 7
 ```
 
-What those tests cover today: golden vectors (4 cases: same PIN, wrong PIN, 8-digit PIN, QR secret), same PIN agrees and confirms both ways, one wrong digit / different session id / different channel never confirms, malformed and low-order share refused (`Uint8List(32)` all-zero only), and the protocol scenarios listed in `pairing_protocol_test.dart` (happy path; declined; wrong PIN burns attempts and the fifth kills the window; two families with the same PIN do not cross; two simultaneous sessions; replay; rogue advertiser; expiry; QR once-only; PIN not on the wire; cert bound to child/family; malformed input).
+What those tests cover today: the draft's appendix B.1 vectors (generator string, its hash, the decoded field element, g, both shares, K, transcript_ir and ISK, transcript_oc and ISK, both session id outputs, and the twelve B.1.10 points including the seven that must abort), Olive's own golden vectors (5 cases: same PIN, wrong PIN, 8-digit PIN, QR secret, a real-shaped channel identifier), same PIN agrees and confirms both ways, one wrong digit / different session id / different channel never confirms, a share of the wrong length or a low-order share refused, the old generator layout differing from the draft's, blinding changing no output, associated data changing ISK, and the protocol scenarios listed in `pairing_protocol_test.dart` (happy path; declined; wrong PIN burns attempts and the fifth kills the window; two families with the same PIN do not cross; two simultaneous sessions; replay; rogue advertiser; expiry; QR once-only; PIN not on the wire; cert bound to child/family; malformed input; and, new, an old child meeting a new adult and the reverse, a missing or odd-typed version, none of which costs an attempt).
 
-What they do NOT cover (so you can ask for it): the CPace draft's official vectors (not in the repo until this brief; section 9 gives the reproduction recipe), non-canonical u-coordinate and twist low-order points, Wycheproof-style X25519 vectors, any statistical or fuzz test of the map, constant-time behaviour.
+What they do NOT cover (so you can ask for it): Wycheproof-style X25519 vectors beyond the draft's twelve, any statistical or fuzz test of the map beyond the 300-input equivalence check, constant-time behaviour (the tests cannot show it), the CPace draft's vectors for the other suites (only the suite Olive uses is implemented).
 
 ## 7. Optional second pass: `play_admission.dart` and `play_frame.dart`
 
@@ -204,11 +211,11 @@ A separate later protocol (admission of a paired device to an ad-hoc play sessio
 
 In rough order of worry:
 
-1. **The generator padding and the other draft deviations (Q1).** Found while preparing this brief: the generator string does not length-prefix the zero pad, which the draft does (`lv_cat(DSI, PRS, ZPAD, CI, sid)`). Because both the Dart and the Node implementation share the same choice, their agreement proves nothing about it. Security impact: the padding is a fixed function of the other fields' lengths, so it is probably cosmetic, but "probably" is the author's guess.
-2. **Elligator2 correctness beyond one vector (Q6).** Matching the single draft-21 vector for g, Ya, K and ISK is strong evidence the mapping is right for ordinary inputs, but exceptional cases (zero denominator, `v = 0`, non-square branch for edge u) have only the author's reasoning behind them.
-3. **Dart X25519 behaviour on bad points (Q8).** The author checks only for an all-zero output. Whether the library already maps non-canonical and twist-low-order inputs to zero is unverified.
-4. **Non-constant-time BigInt on a PIN-derived value (Q9).** Likely low risk on a family phone, but unmeasured.
-5. **ISK not covering `ci` and the 8-bit SAS (Q1, Q12).** Channel binding is achieved through the generator and the confirmation transcript rather than ISK; the author believes it is equivalent and cannot prove it.
+1. **The Olive layer (Q2, Q12, Q13, Q14).** The CPace part now matches the draft's vectors; the confirmation tags, the 8-bit SAS, the match bytes, the channel key and the sealed credential are the author's own composition and have no external test vectors beyond the author's own.
+2. **Elligator2 correctness beyond the draft's vector (Q6).** The draft's one generator vector and 300 equivalence checks are strong evidence for ordinary inputs, but exceptional cases (zero denominator, `v = 0`, non-square branch for edge u) have only the author's reasoning behind them; the draft's vector file has no such case.
+3. **Dart X25519 on bad points (Q8).** Now tested on the draft's twelve points; the package's source was not read.
+4. **Non-constant-time BigInt on a PIN-derived value (Q9).** Mitigated by blinding the two password-dependent operations, not eliminated, and unmeasured on a real phone. Likely low risk on a family phone; the draft says constant time SHALL.
+5. **ISK covers `ci` only through the generator, and the 8-bit SAS (Q1, Q12).** That is how the draft works (ISK equal iff CI equal); the author believes it gives the binding Olive wants and cannot prove it for the specific identities chosen.
 6. **PIN reuse as PAKE password and verifier source (Q14), and one verifiable guess per typing by a name-copying advertiser (Q17).**
 7. **The KDF is a labelled SHA-512, not HKDF, and AES-GCM has no AAD (Q2, Q13).** The author believes both are fine because ISK is a full-entropy hash output used once per label, but has not argued it formally.
 8. **The sid is only contributed by the adult (Q5)** and discovery publishes it.
@@ -245,6 +252,8 @@ Note on the label "audited standard": all three RFCs are IRTF **Informational** 
 
 Honest summary: **there is no maintained, mobile-capable, audited Dart package** for any of these protocols today (as far as these searches show). The only audited code found (1Password, Rust) targets a different group and an older draft revision, and would require adding a native bridge to a Flutter app that currently has no Rust toolchain.
 
+> **Status (same day, after this research): option B was done.** The three string-layout differences below were removed in code and the draft's vectors are golden tests; see section 11. The text of 9.3 and 9.4 is kept as the research record and describes the code BEFORE that change.
+
 ### 9.3 The author's measured evidence for the custom code (new in this brief)
 
 The CPace draft's own test vector for `CPACE-X25519-SHA512` (draft -21, appendix B.1) was read and compared to the project's Node reference implementation (`tools/pake_cpace.mjs`, whose Dart port `cpace.dart` is pinned to it byte for byte by the golden vectors). Result of running the existing `elligator2`, `x25519` and `sha512` functions on the draft's inputs:
@@ -277,3 +286,26 @@ Options:
 - [RFC 9382](https://www.rfc-editor.org/rfc/rfc9382), [RFC 9383](https://www.rfc-editor.org/rfc/rfc9383), [RFC 9807](https://www.rfc-editor.org/rfc/rfc9807) (abstract pages only).
 - [pub.dev `spake2plus`](https://pub.dev/packages/spake2plus), [1Password/cpace](https://github.com/1Password/cpace), docs.rs pages for `pake-cpace` and `opaque-ke`, [stef/libopaque](https://github.com/stef/libopaque) and Debian metadata (search results only), BoringSSL and Java SPAKE2 pages (search results only).
 - Not read: the Cure53 audit report, the CPace draft sections outside those listed, the libopaque LICENSE file, pub.dev's own search for cpace/opaque, Bouncy Castle docs.
+
+## 11. What changed in the draft-21 alignment (the change list)
+
+Code: `scaffold/client/lib/cpace.dart`, `lib/pairing_protocol.dart`, `scaffold/tools/pake_cpace.mjs`. Tests and vectors: see section 1.
+
+| Item | Before | After |
+|---|---|---|
+| Domain separator `DSI` | `OliveCPace255` (and `OliveCPace255_ISK`) | `CPace255` (and `CPace255_ISK`) |
+| Zero padding in the generator string | raw zero bytes, not length-prefixed | length-prefixed, `lv_cat(DSI, PRS, ZPAD, CI, sid)`; generator string for the draft's vector is 170 bytes (was 169) |
+| ISK input | `lv(DSI_ISK) \|\| lv(sid) \|\| lv(K) \|\| lv(yc) \|\| lv(ya)` | `lv_cat(DSI_ISK, sid, K) \|\| transcript_ir`, with `transcript_ir = lv(Y_init) \|\| lv(AD_init) \|\| lv(Y_resp) \|\| lv(AD_resp)`; AD fields empty in pairing |
+| Channel identifier | `lv(sid) \|\| lv(fid) \|\| lv(afp) \|\| lv(cpk) \|\| lv(an)`, built twice (adult, child) | `lv(cpk) \|\| lv(lv(afp) \|\| lv(fid) \|\| lv(an))`, initiator identity first, built once by `pairingChannelId`; the session id is a separate input only |
+| Neutral K | exception on all-zero output | same, via `cpaceScalarMultVfy` returning the draft's `G.I` for neutral results; B.1.10 vectors tested |
+| Elligator2 | plain BigInt | the two password-dependent operations on blinded operands (output identical, tested); still not constant time |
+| Wire | no version field | `pv: 2` in `hello-ok` and `pake1`; mismatch ends quietly and uncounted |
+| Confirmation tags, SAS, match, channel key | on ISK | unchanged in design, still on ISK (so their values changed because ISK changed); kept as a labelled Olive layer |
+
+Name mapping for the vectors: draft A (initiator) = Olive child = `Yc`, `yc`, `tagC`; draft B (responder) = Olive adult = `Ya`, `ya`, `tagA`. In `cpace_draft21_vectors.json` the draft's own names are kept (`Ya`, `Yb`, `ya`, `yb`).
+
+Provenance of `cpace_draft21_vectors.json`: extracted by a script from the text of `draft-irtf-cfrg-cpace-21` (the plain text on the IETF archive, appendix B.1) and cross-checked against the draft's own three BASE64 JSON blocks (B.1.1.1, B.1.9, B.1.10.1) for every value that appears in them; the low-order scalar `s` and the results `q0` to `qb` appear only in the draft's text and were taken from it. The values were not typed by hand. Anyone repeating the check should fetch the draft text and compare.
+
+Compatibility: certificates and keys already issued do not depend on the PAKE and are unaffected. Only a pairing in progress between a build from before this change and one after it fails (calmly, no attempt used). Nothing is migrated.
+
+Still open after this change (nothing here was done about them): the external review itself; a constant-time implementation or a vetted native library (section 9.4 option C); the PIN doubling as stored verifier (Q14); one verifiable guess per typing by a name-copying advertiser (Q17); the SAS length (Q12); AES-GCM without associated data (Q13); the `sid` contributed only by the adult (Q5). The CPace draft was an Internet-Draft awaiting the RFC Editor on 2026-11-14; if the final RFC changes any detail of the X25519 suite, the vectors here must be refreshed (the check is: fetch the final appendix B.1 and rerun the extraction).

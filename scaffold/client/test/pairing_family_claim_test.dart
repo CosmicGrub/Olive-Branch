@@ -29,12 +29,11 @@ Map<String, dynamic> _hello(AdultWindow w, DeviceKey ck) => <String, dynamic>{'t
 
 Future<Map<String, dynamic>?> _pake1(AdultWindow w, DeviceKey ck, String pin) async {
   final PakeParty p = await PakeParty.start(isChild: true, password: pin.codeUnits, sid: w.sid, ci: await _ci(w, ck));
-  return w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'm': 'pin', 'Yc': b64(p.share)});
+  return w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'T', 'pv': kPairingProtocolVersion, 'm': 'pin', 'Yc': b64(p.share)});
 }
 
-Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => cat(<List<int>>[
-      lv(w.sid), lv('fam-1'.codeUnits), lv(w.adultKey.fingerprint), lv(ck.publicKey), lv('Mom'.codeUnits),
-    ]);
+Future<Uint8List> _ci(AdultWindow w, DeviceKey ck) async => pairingChannelId(
+    childPublicKey: ck.publicKey, adultFingerprint: w.adultKey.fingerprint, familyId: 'fam-1', adultName: 'Mom');
 
 void main() {
   group('family tag', () {

@@ -1,5 +1,6 @@
-// OLIVE BRANCH — the PAKE against the golden vectors the independent Node implementation produced
-// (tools/gen-pake-vectors.mjs), plus the properties that matter. Verified by CI, headless.
+// OLIVE BRANCH — the PAKE against Olive's own golden vectors, which the independent Node implementation produced
+// (tools/gen-pake-vectors.mjs), plus the properties that matter. The draft's published vectors are in
+// cpace_draft21_test.dart. Verified by CI, headless.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -30,6 +31,18 @@ void main() {
       expect(x(await kc.tag('C')), c['tagC']);
       expect(x(await ka.tag('A')), c['tagA']);
       expect(x(await kc.sas()), c['sas']);
+      expect(x(await kc.match()), c['match']);
+      final Map<String, dynamic>? parts = c['ciParts'] as Map<String, dynamic>?;
+      if (parts != null) {
+        expect(
+            x(pairingChannelId(
+                childPublicKey: h(parts['cpk'] as String),
+                adultFingerprint: h(parts['afp'] as String),
+                familyId: parts['fid'] as String,
+                adultName: parts['an'] as String)),
+            c['ci'],
+            reason: 'the channel identifier layout is the same in Dart and Node');
+      }
       expect(x(kc.isk) == x(ka.isk), c['agree']);
     });
   }
