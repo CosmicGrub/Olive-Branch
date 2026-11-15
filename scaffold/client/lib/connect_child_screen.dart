@@ -29,6 +29,7 @@ import 'pairing_picture_widgets.dart';
 import 'pairing_protocol.dart';
 import 'pairing_records.dart';
 import 'pairing_trust.dart';
+import 'screen_privacy.dart';
 
 /// What serves an open window to the network. Injectable so tests need no sockets.
 abstract class WindowHost {
@@ -291,7 +292,9 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text("Connect a child's device")),
         body: SafeArea(
           child: Padding(

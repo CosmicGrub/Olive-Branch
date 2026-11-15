@@ -29,6 +29,7 @@ import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 import 'growing_care_store.dart' show GrowingCareStores;
 import 'growing_care_widgets.dart' show confirmPutAway;
 import 'hub_widgets.dart';
+import 'screen_privacy.dart';
 
 /// Asks the phone's photo picker for ONE photo a grown-up chooses; null if none was chosen. A plan needs to be
 /// readable, so this asks for more than the small thumbnails the other suites keep. Never called by the app on
@@ -147,7 +148,9 @@ class _PinDialogState extends State<_PinDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) => AlertDialog(
         title: const Text('Enter your PIN'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text(widget.why),
@@ -738,7 +741,10 @@ class _PartState extends State<CareProfilePartScreen> {
       );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SensitiveScreen(active: widget.part.locked, child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     if (_refused || !canEditStructure(widget.principal)) return const CareProfileNotForYou();
     final CareProfileDoc? d = _doc;
     final String title = careProfilePartTitle(widget.part, widget.childName);
@@ -1282,7 +1288,10 @@ class _SheetState extends State<CareProfileSheetScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SensitiveScreen(active: _health || _moods, child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) {
     if (_refused || !canEditStructure(widget.principal)) return const CareProfileNotForYou();
     final String? text = _text;
     return Scaffold(

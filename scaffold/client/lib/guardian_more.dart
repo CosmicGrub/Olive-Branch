@@ -13,6 +13,7 @@ import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'app_lock_screen.dart';
+import 'screen_share_ui.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
@@ -813,8 +814,12 @@ class GuardianMoreScreen extends StatelessWidget {
                 childId: childId, childName: childName, httpClient: availabilityHttpClient))
             : _needsLive(context, 'Parental controls')),
         SettingsRow(id: 'applock', icon: Icons.lock_clock_outlined, title: 'App lock and privacy',
-          subtitle: 'Lock on leaving, hide in recent apps, quick hide',
+          subtitle: 'Lock on leaving, screens on this phone, quick hide',
           onTap: () => _openAppLock(context)),
+        if (local?.services.shares != null)
+          SettingsRow(id: 'screenshares', icon: Icons.mobile_screen_share_outlined, title: 'Screens shared between grown-ups',
+            subtitle: 'Pictures of a screen sent from one grown-up to another. They expire, and can be taken back',
+            onTap: () => _open(context, ScreenShareInboxScreen(service: local!.services.shares!))),
         SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this phone',
           subtitle: 'What lives here, and clear it',
           onTap: () => _open(context, ClearLocalDataScreen(

@@ -17,12 +17,18 @@ import 'device_role.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
 import 'local_pin_recovery.dart';
+import 'family_state.dart';
 import 'local_services.dart';
+import 'screen_share.dart';
 
 class GuardianLocalServices {
   GuardianLocalServices({required this.roles, required this.families, required this.pin, this.recovery,
-      AppLockPrefsRepository? lockPrefs})
+      AppLockPrefsRepository? lockPrefs, this.shares})
       : lockPrefs = lockPrefs ?? MemoryAppLockPrefsRepository();
+
+  /// Sharing a screen with another grown-up inside the app (screen_share.dart). Null in a tree built without it: the
+  /// "Share this screen" action then never appears.
+  final ScreenShareService? shares;
 
   final DeviceRoleRepository roles;
   final LocalFamilyRepository families;
@@ -46,6 +52,7 @@ class GuardianLocalServices {
           iterations: pinIterations ?? kLocalPinIterations,
         ),
         lockPrefs: LocalStoreAppLockPrefsRepository.over(s),
+        shares: _screenShares(s),
         recovery: GuardianRecovery(
           peers: LocalStoreGuardianPeerRepository(s.area('localpin', ownerId: kLocalGuardianScope)),
           deviceKey: () => DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey'))),
@@ -64,6 +71,24 @@ class GuardianLocalServices {
         ),
       );
 }
+
+/// Screen sharing over this phone's own family record. With no family record, or one without a second grown-up, the
+/// service finds nobody to send to and the action stays hidden. A record that cannot be read counts as no family.
+ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
+      box: LocalStoreShareBoxRepository(s.area('screenshares', ownerId: kLocalGuardianScope)),
+      identity: () async {
+        try {
+          final DeviceKey device = await DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey')));
+          final int now = DateTime.now().millisecondsSinceEpoch;
+          final FamilyContext? ctx = await FamilyContext.load(
+              LocalStoreFamilyRepository(s.area('familyledger', ownerId: kLocalGuardianScope)), device, nowMs: now);
+          if (ctx == null || !ctx.keyring.guardianDevice) return null;
+          return ShareIdentity(device: device, agreement: ctx.agreement, state: await ctx.state(nowMs: now));
+        } catch (_) {
+          return null;
+        }
+      },
+    );
 
 /// Holds the loaded local family (so a changed age shows everywhere at once) and the
 /// optional "connect this device" action.

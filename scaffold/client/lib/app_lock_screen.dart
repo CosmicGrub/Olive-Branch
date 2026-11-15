@@ -4,6 +4,11 @@
 import 'package:flutter/material.dart';
 
 import 'app_lock.dart';
+import 'local_pin.dart';
+
+/// The one calm sentence shown before screenshots are allowed (owner-approved wording, QR-VETTING-BRAINSTORM.md).
+const String kScreenshotsAllowedWarning =
+    'Anyone with this phone can then take pictures of what is on screen, and send them anywhere.';
 
 class AppLockSettingsScreen extends StatefulWidget {
   const AppLockSettingsScreen({super.key, required this.controller, required this.pinIsSet});
@@ -17,6 +22,24 @@ class AppLockSettingsScreen extends StatefulWidget {
 class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
   AppLockController get c => widget.controller;
   String? _error;
+
+  /// Private needs nothing. Screenshots allowed needs the grown-up's PIN on this phone and one yes to the sentence above.
+  Future<void> _chooseScreens(AppLockPrefs p, bool allowed) async {
+    if (allowed == p.screenshotsAllowed) return;
+    if (!allowed) {
+      await _set(p.copyWith(hideRecents: true));
+      return;
+    }
+    if (!widget.pinIsSet) {
+      setState(() => _error = 'Set a PIN for this phone first (Settings, Change PIN). Screenshots stay off until then.');
+      return;
+    }
+    final bool? yes = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => _AllowScreenshotsDialog(controller: c),
+    );
+    if (yes == true) await _set(p.copyWith(hideRecents: false));
+  }
 
   Future<void> _set(AppLockPrefs next) async {
     try {
@@ -72,12 +95,31 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
                     ),
                   ],
                   const Divider(),
-                  SwitchListTile(
-                    key: const Key('hideRecentsSwitch'),
-                    title: const Text('Hide Olive in the recent apps list'),
-                    subtitle: const Text('The preview shows a blank card. This also stops screenshots in Olive.'),
-                    value: p.hideRecents,
-                    onChanged: (bool v) => _set(p.copyWith(hideRecents: v)),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, top: 8, right: 16),
+                    child: Text('Screens on this phone', style: Theme.of(context).textTheme.titleSmall),
+                  ),
+                  RadioGroup<bool>(
+                    groupValue: p.screenshotsAllowed,
+                    onChanged: (bool? v) {
+                      if (v != null) _chooseScreens(p, v);
+                    },
+                    child: const Column(children: <Widget>[
+                      RadioListTile<bool>(
+                        key: Key('screensPrivate'),
+                        title: Text('Private'),
+                        subtitle: Text('The recent apps preview is a blank card, and screenshots and screen '
+                            'recordings of Olive are blocked.'),
+                        value: false,
+                      ),
+                      RadioListTile<bool>(
+                        key: Key('screensAllowed'),
+                        title: Text('Screenshots allowed'),
+                        subtitle: Text('Needs your PIN. PIN screens, locked health history and moods, and the '
+                            'pairing picture stay blocked.'),
+                        value: true,
+                      ),
+                    ]),
                   ),
                   if (_error != null)
                     Padding(
@@ -102,5 +144,66 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
             ),
           );
         },
+      );
+}
+
+/// Asks for the PIN (this phone's own), then shows the sentence. Pops true only after both.
+class _AllowScreenshotsDialog extends StatefulWidget {
+  const _AllowScreenshotsDialog({required this.controller});
+  final AppLockController controller;
+  @override
+  State<_AllowScreenshotsDialog> createState() => _AllowScreenshotsDialogState();
+}
+
+class _AllowScreenshotsDialogState extends State<_AllowScreenshotsDialog> {
+  final TextEditingController _pin = TextEditingController();
+  String? _message;
+  bool _working = false;
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    if (_working) return;
+    setState(() => _working = true);
+    final PinCheck r = await widget.controller.confirmAllowScreenshots(_pin.text);
+    if (!mounted) return;
+    _pin.clear();
+    if (r.ok) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() {
+      _working = false;
+      _message = r.outcome == PinOutcome.locked ? kLocalPinLockedMessage : 'That is not your PIN.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Allow screenshots?'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          const Text(kScreenshotsAllowedWarning, key: Key('screensWarning')),
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('screensPinField'),
+            controller: _pin,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Your PIN'),
+            onSubmitted: (_) => _go(),
+          ),
+          if (_message != null)
+            Padding(padding: const EdgeInsets.only(top: 8), child: Text(_message!, key: const Key('screensMessage'))),
+        ]),
+        actions: <Widget>[
+          TextButton(
+              key: const Key('screensCancel'), onPressed: () => Navigator.of(context).pop(false), child: const Text('Keep it private')),
+          FilledButton(
+              key: const Key('screensConfirm'), onPressed: _working ? null : _go, child: const Text('Allow screenshots')),
+        ],
       );
 }

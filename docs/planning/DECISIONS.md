@@ -20,6 +20,14 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 - Table games use a minimum age of 4 to 6; the fallback age is 5.
 - Wording: soft for children, plain for adults (play notices have both variants).
 
+## Screenshots and sharing a screen (adopted 2026-11-14, built in the screenshot-setting PR)
+
+- **System screenshots are a per-phone setting, "Screens on this phone": Private (default) or Screenshots allowed.** Allowing needs the grown-up's PIN and one calm sentence. Android treats the recents card, screenshots and screen recordings as one flag, and the screen says so.
+- **Sensitive screens stay blocked even when screenshots are allowed:** PIN and lock screens, locked health history and moods in About her (and the doctor sheet while they are on it), the pairing window and codes, and anything shown over the lock.
+- **A child's device always blocks screenshots.** No setting in her app. The developer switch (`OLIVE_ALLOW_SCREENSHOTS`, development builds only) is unchanged and a store build can never carry it.
+- **Sharing a screen is inside the app, from one grown-up to another grown-up only, never a child, never the phone's share sheet.** It has a preview, "Hide names and photos", a note, an expiry (1 to 30 days, 7 by default) and take-back by the sender at any time. A child device can neither send nor receive. The family history keeps one line that a share happened, never the picture.
+- A share needs no agreement from the receiver: it arrives as a quiet item they can put away. Telling both parents when a screen goes to a third grown-up needs family sync and is not built.
+
 ## Adults, PINs and pairing
 
 - Adults set every PIN on adult devices (4 to 8 digits, easy-guess refusal). A child device shows only the calm "a grown-up does this" card, never a keypad flow.
