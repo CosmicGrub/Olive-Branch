@@ -598,7 +598,7 @@ fi
 
 echo ""
 echo "── Dev-only cleartext define ──────────────────────────────────"
-# Not counted into TOTAL_PASS. OLIVE_ALLOW_DEV_CLEARTEXT lets a RELEASE build speak http to the literal loopback
+# Not counted into TOTAL_PASS. The dev-only cleartext define (see tools/check-dev-cleartext.mjs) lets a RELEASE build speak http to the literal loopback
 # addresses (127.0.0.1, ::1) so the device lane can reach the dev server over `adb reverse`. Only tools/device-sync.sh
 # may pass it; this fails if any other script, workflow, Dockerfile or release config does (a store build must never
 # carry it) or if device-sync.sh stops passing it as exactly `=true`.
