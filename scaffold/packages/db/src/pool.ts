@@ -5279,7 +5279,39 @@ export async function claimGuardianInvite(
 
 export type ConfirmInviteError =
   | 'not_found' | 'revoked' | 'declined' | 'not_claimed' | 'expired'
-  | 'already_confirmed' | 'inviter_not_guardian' | 'claimant_unavailable' | 'edge_exists';
+  | 'already_confirmed' | 'inviter_not_guardian' | 'claimant_unavailable' | 'edge_exists'
+  | 'family_full';
+
+/**
+ * Caps adopted in docs/planning/DECISIONS.md (G-37): at most 4 parents and 8
+ * carers per child. A "parent" is the role family of someone who raises the
+ * child (guardian, step_parent, foster_parent); every other role is a carer.
+ * Enforced where an edge is CREATED (confirmGuardianInvite, the only route that
+ * makes an invited adult's edge), under a lock on the child row so two invites
+ * confirmed at the same moment cannot both pass.
+ */
+export const MAX_PARENT_EDGES_PER_CHILD = 4;
+export const MAX_CARER_EDGES_PER_CHILD = 8;
+const PARENT_ROLES: readonly string[] = ['guardian', 'step_parent', 'foster_parent'];
+export const isParentRole = (role: string): boolean => PARENT_ROLES.includes(role);
+
+/**
+ * Counts the LIVE edges to one child by class, for the cap check. Runs inside
+ * the caller's transaction (its `q`), after the caller has locked the child
+ * row, so the answer cannot go stale before the INSERT that follows it.
+ */
+async function liveEdgeCounts(q: Query, childId: string): Promise<{ parents: number; carers: number }> {
+  const rows = await q(
+    `SELECT role, count(*)::int AS n FROM guardianship
+      WHERE child_id = $1 AND closed_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())
+      GROUP BY role`, [childId]);
+  let parents = 0, carers = 0;
+  for (const r of rows as any[]) {
+    if (isParentRole(r.role)) parents += r.n; else carers += r.n;
+  }
+  return { parents, carers };
+}
 
 /**
  * POST /v1/guardian-invites/:inviteId/confirm — THE step that creates a
@@ -5316,6 +5348,16 @@ export async function confirmGuardianInvite(
     const claimant = await q(
       `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL`, [row.claimant_user_id]);
     if (!claimant.length) return { ok: false, reason: 'claimant_unavailable' };
+
+    // Lock the child row, THEN count: two confirmations for the same child at the same
+    // instant serialise here, so the G-37 cap cannot be passed by both (each already holds
+    // FOR UPDATE on its OWN invite row only).
+    await q(`SELECT 1 FROM child WHERE id = $1 FOR UPDATE`, [row.child_id]);
+    const live = await liveEdgeCounts(q, row.child_id);
+    if (isParentRole(row.role) ? live.parents >= MAX_PARENT_EDGES_PER_CHILD
+                               : live.carers >= MAX_CARER_EDGES_PER_CHILD) {
+      return { ok: false, reason: 'family_full' };
+    }
 
     const inserted = await q(
       `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
@@ -5730,6 +5772,25 @@ export async function houseRulesFor(
       mine: all.filter((r) => r.authorGuardianId === guardianId),
       others: all.filter((r) => r.authorGuardianId !== guardianId),
     };
+  });
+}
+
+// ============================================================ delivery backlog ==
+// Read-only view of the delivery queue for /readyz (how much is waiting, how old the
+// oldest due row is). The worker itself is tools/scheduler.mjs runDeliverSweep: ONE
+// implementation (the delivery lane's), which this file does not duplicate.
+
+/** Counts for the log line and /readyz: how much is waiting, and how old the oldest is. */
+export async function deliveryBacklog(pool: pg.Pool): Promise<{
+  pending: number; ready: number; oldestReadyAgeSec: number | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT count(*) FILTER (WHERE state = 'pending')::int AS pending,
+              count(*) FILTER (WHERE state = 'ready')::int AS ready,
+              EXTRACT(EPOCH FROM (now() - min(scheduled_at) FILTER (WHERE state = 'ready' AND scheduled_at <= now())))::int AS oldest
+         FROM delivery_intent WHERE state IN ('pending','ready')`);
+    const r = rows[0];
+    return { pending: r.pending ?? 0, ready: r.ready ?? 0, oldestReadyAgeSec: r.oldest ?? null };
   });
 }
 

@@ -46,11 +46,14 @@
  * own header:
  *   - Does not touch `materialize.ts`'s or `health-alert.mjs`'s own logic.
  *     Both are called exactly as they already exist.
- *   - (Closed since: the `deliver` job below, run by `deliver-loop`, calls
+ *   - (Closed since: the `deliver` job below, run by `deliver-loop` or by the
+ *     server's in-process host `server/delivery_tick.mjs`, calls
  *     `expire_stale_intents()` then the rematerialize sweep then
  *     `claim_due_intents()`, so a `ready` intent now becomes `delivered` and
- *     visible in the child's inbox. It does NOT push to a device: the app
- *     reads by polling, and no push provider is configured.)
+ *     visible in the child's inbox, and then sends one content-free
+ *     `message_ready` push per child when a sender is supplied. There is ONE
+ *     implementation of that worker (`runDeliverSweep`); the server host only
+ *     adds a timer, a post-send nudge and a readiness signal around it.)
  *   - Does not resolve `on_event` targets. `childCtxFor()`
  *     (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants`
  *     (no caller anywhere in this repo does), so an `on_event` intent's
@@ -108,6 +111,7 @@ import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges,
          adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS }
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
+import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
 import { digestRecordFor, DIGEST_LEAD_DAYS } from '../packages/storage/src/retention.mjs';
 import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
@@ -333,10 +337,16 @@ export const DEFAULT_DELIVER_BATCH = 200;
  *      never double-deliver). The child app reads by polling its inbox; this
  *      is the moment a row becomes visible to her.
  *
- * Push is deliberately not here: no provider is configured (DECISIONS.md parks
- * it) and the app is offline-first -- it learns of a message by polling. When
- * FCM is wired, the claimed `child_id`s returned below are exactly what a
- * `message_ready` notification needs; the hook belongs after step 3.
+ *   4. push (only when `opts.notify` is supplied) -- one content-free
+ *      `message_ready` per child that just received something, best effort:
+ *      a push failure never undoes a delivery. The payload carries an opaque
+ *      intent id and the kind and NOTHING else (no sender, count, caption or
+ *      time; child-safety P1-P11), and notify.mjs applies sendGuard() and the
+ *      asleep/school gate on top, so a sleeping child's lock screen never
+ *      lights. The app stays offline-first: it still learns of a message by
+ *      polling its inbox, push only shortens the wait. No push provider is
+ *      configured by default (FCM needs the owner's Firebase project), in which
+ *      case notify reports a per-device config result and nothing is sent.
  *
  * Every step is independent: a failure in one is reported and does not stop
  * the next, because a stuck rematerialize must never block delivery of rows
@@ -345,7 +355,8 @@ export const DEFAULT_DELIVER_BATCH = 200;
 export async function runDeliverSweep(pool, opts = {}) {
   const now = opts.now ?? DateTime.utc();
   const limit = opts.limit ?? DEFAULT_DELIVER_BATCH;
-  const out = { expired: 0, rematerialized: null, delivered: 0, ids: [], children: [], errors: [] };
+  const out = { expired: 0, rematerialized: null, delivered: 0, ids: [], children: [], errors: [],
+                pushed: 0, pushFailed: 0 };
 
   try {
     const r = await withSystemSession(pool, (q) => q(`SELECT expire_stale_intents() AS n`));
@@ -363,6 +374,20 @@ export async function runDeliverSweep(pool, opts = {}) {
     out.delivered = claimed.length;
     out.ids = claimed.map((r) => r.id);
     out.children = [...new Set(claimed.map((r) => r.child_id))];
+    // One push per child however many messages landed; the ref is the newest intent id.
+    if (opts.notify) {
+      const newest = new Map();
+      for (const r of claimed) newest.set(r.child_id, r.id);
+      for (const [childId, intentId] of newest) {
+        try {
+          const results = await opts.notify(pool, { childId }, {
+            kind: 'message_ready', ref: intentId, collapseKey: 'message_ready' });
+          if (results.some((x) => x.ok)) out.pushed++;
+        } catch (e) {
+          out.pushFailed++; // the message is already delivered; a push error is not a delivery error
+        }
+      }
+    }
   } catch (e) { out.errors.push(`claim: ${String(e?.message ?? e).slice(0, 200)}`); }
 
   return out;
@@ -731,7 +756,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
   try {
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
-      if (jobName === 'deliver') return runDeliverSweep(pool, {});
+      if (jobName === 'deliver') return runDeliverSweep(pool, { notify: opts.notify ?? notifyDevices });
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
@@ -788,6 +813,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       (ok ? logLine : errLine)({
         event: 'end', job: jobName, status: ok ? 'ok' : 'failed', duration_ms: durationMs,
         delivered: r.delivered, children: r.children.length, expired: r.expired,
+        pushed: r.pushed, push_failed: r.pushFailed,
         scanned: r.rematerialized?.scanned ?? 0, materialized: r.rematerialized?.materialized ?? 0,
         ...(ok ? {} : { error: r.errors.join('; ') }), at: DateTime.utc().toISO(),
       });
@@ -979,9 +1005,15 @@ export const MIN_DELIVER_TICK_MS = 5_000;
  * A tick that throws is logged and the loop carries on -- a worker that dies
  * on one bad tick is a worker that silently stops delivering.
  */
+export function deliverTickMsFromEnv(env = process.env) {
+  const raw = Number(env.DELIVERY_TICK_MS ?? DEFAULT_DELIVER_TICK_MS);
+  return Number.isFinite(raw) ? Math.max(MIN_DELIVER_TICK_MS, raw) : DEFAULT_DELIVER_TICK_MS;
+}
+
 export async function deliverLoop(pool, databaseUrl, opts = {}) {
-  const raw = Number(opts.tickMs ?? process.env.DELIVERY_TICK_MS ?? DEFAULT_DELIVER_TICK_MS);
-  const tickMs = Number.isFinite(raw) ? Math.max(MIN_DELIVER_TICK_MS, raw) : DEFAULT_DELIVER_TICK_MS;
+  const tickMs = opts.tickMs !== undefined
+    ? (Number.isFinite(Number(opts.tickMs)) ? Math.max(MIN_DELIVER_TICK_MS, Number(opts.tickMs)) : DEFAULT_DELIVER_TICK_MS)
+    : deliverTickMsFromEnv(process.env);
   let stopping = false;
   const stop = () => { stopping = true; };
   process.on('SIGTERM', stop);

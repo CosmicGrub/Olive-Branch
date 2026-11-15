@@ -75,6 +75,7 @@ import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/s
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
 import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { cleanName as cleanDisplayName, cleanTz, cleanBirthDate } from './identity_input.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
 import { resolveWebauthn, originAllowed } from './webauthn_config.mjs';
@@ -449,6 +450,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   const pairingMissBudget = opts.pairingMissBudget ?? createPairingMissBudget();
   // S-B6: per-principal cap on concurrent media/homework body decodes.
   const uploadLimiter = opts.uploadLimiter ?? createUploadLimiter();
+  // G1: called after a message is banked so anything already due is delivered at once.
+  const afterMessageBanked = opts.afterMessageBanked ?? (() => {});
   const mediaQuotaBytes = opts.mediaChildQuotaBytes ?? mediaQuotaFromEnv();
   /** Best-effort security-event write: the audited action already happened, the trail must not fail it. */
   const audit = async (userId, kind, o) => {
@@ -565,9 +568,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // GUARDIAN INVITATION — real create/read/accept-decision/revoke. §11, §8.5.
   // Closes half of invitation_screen.dart's own named gap: "the API surface
   // names POST /v1/children/:id/guardianships, but no such route exists."
-  // Does NOT create a `guardianship` row — see 0014_guardian_invite.sql's own
-  // header for why that would fabricate an account-creation security step
-  // this codebase has never built.
+  // Does NOT create a `guardianship` row. Neither does accept or bootstrap: the
+  // edge is made only by the inviter's own confirm step (POST
+  // /v1/guardian-invites/:inviteId/confirm, identity lane, migration 0050).
   // ===========================================================================
 
   api.register({
@@ -687,9 +690,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // did a brand-new guardian ever acquire one. This route closes exactly
   // that and nothing more — it does NOT touch WebAuthn registration itself
   // (POST .../webauthn/register/challenge and .../verify above are
-  // completely unchanged) and does NOT create a guardianship row (see
-  // 0014/0020_guardian_invite_bootstrap.sql's own headers for why that
-  // stays a real, separate, still-open gap).
+  // completely unchanged) and does NOT create a guardianship row: the edge
+  // comes only from the inviter's confirm step (identity lane, migration 0050),
+  // which also re-checks that the inviter still holds a live guardian edge.
   //
   // noSessionRequired, same reason as GET/accept above: the caller has no
   // app_user row yet, so there is nothing for them to hold a session token
@@ -721,11 +724,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           : result.reason === 'expired' ? 410 : 409;
         return { status, body: { error: result.reason } };
       }
-      // Mints exactly what guardian_setup.dart's real passkey registration
-      // needs and nothing else: an ordinary guardian session with NO
-      // guardianship edge to any child (none was created — see above), so
-      // every OTHER route that checks edgesFor() still refuses this
-      // session exactly as it would refuse any guardian with zero edges.
+      // Mints an ordinary guardian session with NO guardianship edge yet: every
+      // route that checks edgesFor() still refuses it until the inviter confirms
+      // (POST /v1/guardian-invites/:inviteId/confirm). Account first, access second.
       const token = api.issueSessionToken(
         { userId: result.userId, roleName: 'guardian', childId: null, escalated: false,
           ...(result.deviceId ? { deviceId: result.deviceId } : {}) });
@@ -754,11 +755,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
   };
   const isDbInputError = (e) => /^(22|23)/.test(String(e?.code ?? ''));
-  const cleanName = (v, max) => {
-    if (typeof v !== 'string') return null;
-    const t = v.trim();
-    return t && t.length <= max ? t : null;
-  };
+  const cleanName = cleanDisplayName; // NFC, collapsed, code-point length, no control characters
 
   // POST /v1/auth/signup — NO SESSION REQUIRED: this is how the first session
   // comes into being. Invite-only: the body must carry an operator-issued,
@@ -778,9 +775,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
       const displayName = cleanName(b.displayName, 60);
       if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
-      if (typeof b.homeTz !== 'string' || !IANAZone.isValidZone(b.homeTz)) {
-        return { status: 400, body: { error: 'invalid_home_tz' } };
-      }
+      const signupTz = cleanTz(b.homeTz);
+      if (!signupTz) return { status: 400, body: { error: 'invalid_home_tz' } };
       if (typeof b.pin !== 'string') return { status: 400, body: { error: 'pin_required' } };
       // Judge the allowance and the policy BEFORE hashing the PIN: scrypt is
       // synchronous and blocks the one event loop (~tens of ms), and this route
@@ -798,7 +794,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       let result;
       try {
         result = await signUpWithAllowance(pool, {
-          token, displayName, homeTz: b.homeTz, pinHash, deviceLabel, now: new Date() });
+          token, displayName, homeTz: signupTz, pinHash, deviceLabel, now: new Date() });
       } catch (e) {
         if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
         throw e;
@@ -838,22 +834,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const b = c.body ?? {};
       const displayName = cleanName(b.displayName, 40);
       if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
-      const birth = typeof b.birthDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.birthDate)
-        ? DateTime.fromISO(b.birthDate, { zone: 'utc' }) : null;
-      const today = DateTime.utc();
-      if (!birth || !birth.isValid || birth > today || birth < today.minus({ years: 18 })) {
-        return { status: 400, body: { error: 'invalid_birth_date' } };
-      }
-      if (typeof b.homeTz !== 'string' || !IANAZone.isValidZone(b.homeTz)) {
-        return { status: 400, body: { error: 'invalid_home_tz' } };
-      }
+      const birthDate = cleanBirthDate(b.birthDate);
+      if (!birthDate) return { status: 400, body: { error: 'invalid_birth_date' } };
+      const childTz = cleanTz(b.homeTz);
+      if (!childTz) return { status: 400, body: { error: 'invalid_home_tz' } };
       const pinCheck = await requireOwnPin(c.principal.userId, b.pin);
       if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
 
       let result;
       try {
         result = await createChildForGuardian(pool, c.principal.userId, {
-          displayName, birthDate: birth.toISODate(), homeTz: b.homeTz });
+          displayName, birthDate, homeTz: childTz });
       } catch (e) {
         if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
         throw e;
@@ -4102,6 +4093,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
 
       const persisted = await persistCapturedMessage(pool, result);
+      // Best effort and never awaited: delivery is the worker's job, this only nudges the
+      // in-process host (if there is one) so a message that is already due need not wait a tick.
+      try { afterMessageBanked(); } catch { /* a nudge must never fail the send */ }
       // `state` is what was actually stored: 'ready' when the capture-time
       // probe resolved a delivery instant (the worker delivers it when due),
       // 'pending' when it was left to the sweep.

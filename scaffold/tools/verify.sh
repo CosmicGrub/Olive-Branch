@@ -141,7 +141,7 @@ for spec in \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "CPace draft-21 appendix B.1 vectors (CPACE-X25519-SHA512), byte for byte|tools/test/cpace_draft21.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
-  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -454,6 +454,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "letters route: real age-gated open, RLS child-owned (real DB)|server/test/letters_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "delivery chain: send, worker tick, inbox, media, receipt; day-parts + tz routes; hostile cases (real DB, real RLS)|server/test/delivery_chain.test.mjs" \
+            "live chain: sign-up, confirmed edge, caps, delivery host, readiness (real DB, real RLS)|server/test/live_chain.test.mjs" \r
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" \
             "db pool: no self-deadlock, limits, broken clients (real RLS)|packages/db/test/pool_concurrency.test.mjs" \
@@ -515,6 +516,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: exchange route|server/test/exchange_route.test.mjs" \
             "as app_runtime: inbox route|server/test/inbox_route.test.mjs" \
             "as app_runtime: delivery chain|server/test/delivery_chain.test.mjs" \
+            "as app_runtime: live chain|server/test/live_chain.test.mjs" \r
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \

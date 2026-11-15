@@ -111,7 +111,10 @@ const serviceBlock = (text, name) => {
     check('C compose', `${label} delivery tick is configurable and defaults to 30 s`, /DELIVERY_TICK_MS:\s*"\$\{DELIVERY_TICK_MS:-30000\}"/.test(c), 'true');
   }
   check('C compose', 'DEV_LOGIN is still the literal "0" (this pass did not weaken the prod file)', /DEV_LOGIN:\s*"0"/.test(PROD), 'true');
-  check('C compose', 'the server healthcheck still targets /healthz', /fetch\('http:\/\/127\.0\.0\.1:8123\/healthz'\)/.test(server), 'true');
+  check('C compose', 'the server healthcheck targets /readyz (db + schema level + media volume + not draining), not bare liveness',
+    /fetch\('http:\/\/127\.0\.0\.1:8123\/readyz'\)/.test(server), 'true');
+  check('C compose', 'and the server still serves /healthz as the pure liveness probe',
+    /method === 'GET' && url === '\/healthz'/.test(rd(SCAFFOLD + 'server/index.mjs')), 'true');
   const shutdownSrc = rd(SCAFFOLD + 'server/shutdown.mjs');
   const deadline = Number(/DEFAULT_SHUTDOWN_DEADLINE_MS = (\d+)/.exec(shutdownSrc)?.[1]);
   check('C compose', 'the compose grace period leaves headroom over the code\'s shutdown deadline', grace * 1000 > deadline, 'true');

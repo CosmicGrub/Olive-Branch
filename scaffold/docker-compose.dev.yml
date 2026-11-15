@@ -142,6 +142,23 @@ services:
       # outstanding signed media URL on the next `docker compose up`/restart
       # — found by this project's own post-tier audit.
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+      # Audit G1/G7/G8. This stack runs the dedicated `delivery` service below (the ONE
+      # delivery worker, `tools/scheduler.mjs deliver-loop`), so the server does not host a
+      # second copy of it: DELIVERY_IN_SERVER=0. Set it to 1 (and drop the `delivery`
+      # service) for a single-container deployment; running both is safe (one advisory lock)
+      # but wasted work. Sign-up is invite-only through `POST /v1/auth/signup`, gated by
+      # allowance tokens the operator issues with `node tools/provision-signup.mjs issue`.
+      # INTERNAL_METRICS_TOKEN lets a scraper on the docker network reach
+      # /internal/metrics (it is loopback-only otherwise, and a published port does not
+      # arrive from loopback).
+      DELIVERY_IN_SERVER: ${DELIVERY_IN_SERVER:-0}
+      INTERNAL_METRICS_TOKEN: ${INTERNAL_METRICS_TOKEN:-}
+      # G4: Firebase service-account key for the message_ready push. Optional. EITHER the JSON
+      # itself, or a path to it inside the container (a docker secret or a read-only bind mount
+      # from outside the repository). Checked once at boot; live push is unverified until a
+      # real Firebase project exists. Never commit either.
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they
@@ -169,7 +186,7 @@ services:
       # image. start_period gives the process time to open its DB pool on
       # first boot before failures start counting against retries.
       test: ["CMD", "node", "-e",
-             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+             "fetch('http://127.0.0.1:8123/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 3s
       retries: 5
