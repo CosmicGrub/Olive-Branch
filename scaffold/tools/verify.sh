@@ -573,6 +573,19 @@ else
 fi
 
 echo ""
+echo "── Release resource shrinking ─────────────────────────────────"
+# Not counted into TOTAL_PASS (same reasoning as the release-target guard above). The Jitsi SDK reads string
+# resources at startup; Flutter enables resource shrinking for release unless the build says otherwise, and a
+# release APK crashed on launch with "String resource ID #0x0" while CI stayed green. This is the emulator-free
+# half of the defence (the emulator half is .github/workflows/release-smoke.yml; its verdict logic is unit-tested here too).
+if node tools/test/release_shrink.test.mjs >/tmp/rs.out 2>&1 && node tools/check-release-shrink.mjs >>/tmp/rs.out 2>&1 && node tools/test/release_smoke_eval.test.mjs >>/tmp/rs.out 2>&1; then
+  echo "  release resource shrinking  $(grep -c 'PASS' /tmp/rs.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/rs.out
+  echo "  RELEASE RESOURCE SHRINKING GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually
