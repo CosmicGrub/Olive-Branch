@@ -146,14 +146,17 @@ const get = (childId, tok) => api.handle(
     res.body.zone === 'America/New_York', 'false');
 
   // Independently compute the expected wall-clock answer the SAME way the
-  // route does, from the SAME frozen `now` the route's Api instance uses --
+  // route does, from the real clock readings taken around the request --
   // proving the full pipeline (real row -> zone -> childLocalTime/zoneAbbr),
-  // not just that some non-home_tz string happened to come back.
-  const expected = DateTime.fromMillis(t1, { zone: 'utc' }).setZone('America/Los_Angeles');
+  // not just that some non-home_tz string happened to come back. The zone
+  // abbreviation may legitimately change inside the window (a DST switch), so
+  // either end's abbreviation is accepted, never a third value.
+  const abbrAt = (t) => DateTime.fromMillis(t, { zone: 'utc' })
+    .setZone('America/Los_Angeles').toFormat('ZZZZ');
   check('A real interval', 'childLocalTime matches independently-computed LA wall clock',
     wallClockWithin(res.body.childLocalTime, 'America/Los_Angeles', t0, t1), 'true');
   check('A real interval', 'zoneAbbr matches independently-computed LA abbreviation',
-    res.body.zoneAbbr, expected.toFormat('ZZZZ'));
+    [abbrAt(t0), abbrAt(t1)].includes(res.body.zoneAbbr), 'true');
 
   // The owning child herself can also read it, and must get the identical,
   // real interval-derived answer -- not some child-safe stand-in.
