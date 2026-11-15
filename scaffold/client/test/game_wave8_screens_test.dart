@@ -139,7 +139,7 @@ void main() {
       Finder down() => find.bySemanticsLabel('Card, face down');
       expect(down(), findsNWidgets(6));
       // A miss: both show, then after 900 ms both are face down again.
-      await t.tap(find.byKey(Key('memoryCard_0')));
+      await t.tap(find.byKey(const Key('memoryCard_0')));
       await t.pump();
       await t.tap(find.byKey(Key('memoryCard_$other')));
       await t.pump();
@@ -149,7 +149,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
       expect(down(), findsNWidgets(6));
       // A match: both stay up.
-      await t.tap(find.byKey(Key('memoryCard_0')));
+      await t.tap(find.byKey(const Key('memoryCard_0')));
       await t.pump();
       await t.tap(find.byKey(Key('memoryCard_$partnerOf0')));
       await t.pump(const Duration(milliseconds: 1000));
@@ -191,9 +191,9 @@ void main() {
     testWidgets('reduced motion leaves a miss face up longer (1200 ms, not 900 ms)', (t) async {
       final List<int> c = newMemory(3, Random(1)).cards;
       final int other = List<int>.generate(6, (int i) => i).firstWhere((int i) => c[i] != c[0]);
-      await t.pumpWidget(MaterialApp(home: MediaQuery(
-        data: const MediaQueryData(disableAnimations: true),
-        child: const GameMemoryPairs(childAge: 3, seed: 1))));
+      await t.pumpWidget(const MaterialApp(home: MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: GameMemoryPairs(childAge: 3, seed: 1))));
       await t.tap(find.byKey(const Key('memoryCard_0')));
       await t.pump();
       await t.tap(find.byKey(Key('memoryCard_$other')));

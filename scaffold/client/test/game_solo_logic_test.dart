@@ -191,10 +191,10 @@ void main() {
     });
 
     test('the higher card takes both cards', () {
-      WarSolo s = WarSolo(
-        mine: const <PlayingCard>[PlayingCard(rank: 9, suit: Suit.hearts)],
-        theirs: const <PlayingCard>[PlayingCard(rank: 4, suit: Suit.clubs), PlayingCard(rank: 2, suit: Suit.clubs)],
-        myTable: const <PlayingCard>[], theirTable: const <PlayingCard>[], pot: const <PlayingCard>[],
+      WarSolo s = const WarSolo(
+        mine: <PlayingCard>[PlayingCard(rank: 9, suit: Suit.hearts)],
+        theirs: <PlayingCard>[PlayingCard(rank: 4, suit: Suit.clubs), PlayingCard(rank: 2, suit: Suit.clubs)],
+        myTable: <PlayingCard>[], theirTable: <PlayingCard>[], pot: <PlayingCard>[],
         round: 1, phase: WarSoloPhase.ready, note: null, ended: null);
       s = warSoloFlip(s);
       expect(s.phase, WarSoloPhase.revealed);
@@ -205,12 +205,12 @@ void main() {
     });
 
     test('a tie keeps every card in the pot and the next flip settles it', () {
-      WarSolo s = WarSolo(
-        mine: const <PlayingCard>[
+      WarSolo s = const WarSolo(
+        mine: <PlayingCard>[
           PlayingCard(rank: 7, suit: Suit.hearts), PlayingCard(rank: 3, suit: Suit.hearts), PlayingCard(rank: 12, suit: Suit.hearts)],
-        theirs: const <PlayingCard>[
+        theirs: <PlayingCard>[
           PlayingCard(rank: 7, suit: Suit.clubs), PlayingCard(rank: 3, suit: Suit.clubs), PlayingCard(rank: 2, suit: Suit.clubs)],
-        myTable: const <PlayingCard>[], theirTable: const <PlayingCard>[], pot: const <PlayingCard>[],
+        myTable: <PlayingCard>[], theirTable: <PlayingCard>[], pot: <PlayingCard>[],
         round: 1, phase: WarSoloPhase.ready, note: null, ended: null);
       s = warSoloResolve(warSoloFlip(s));
       expect(s.pot.length, 2);
