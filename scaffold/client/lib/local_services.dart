@@ -281,6 +281,10 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
           'the date), so one can be forgotten later. Sealed on the device.'),
   LocalDataEntry(
+      area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 128 * 1024,
+      what: 'On a grown-up\'s device: which child devices it added and when it last met them, the ones it stopped or '
+          'forgot, and a plain-language list of what happened (a device was added, paused, stopped). Sealed on the device.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '

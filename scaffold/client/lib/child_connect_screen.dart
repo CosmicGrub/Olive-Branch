@@ -244,6 +244,15 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       deviceName: widget.deviceName,
       pollEvery: widget.pollEvery,
     );
+    // A device that already belongs to a family holds that family's key and checks the window shows the same family
+    // BEFORE any key exchange (the hint is blinded: a stranger's window cannot tell which family this device is in).
+    Uint8List? claimedKey;
+    final PairingPictureRepository? picRepo = widget.pictures;
+    if (picRepo != null) {
+      try {
+        claimedKey = (await PairingPictureService(picRepo).state()).familyKey;
+      } catch (_) {}
+    }
     final PairingResult r = await client.pair(
       sid: target.sid,
       handle: target.handle,
@@ -251,6 +260,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       viaQr: viaQr,
       expectedAdultFingerprint: fp ?? _pinnedFp,
       expectedFamilyId: widget.claimedFamilyId,
+      expectedFamilyKey: claimedKey,
       onMatched: (PairingMatch m) {
         if (mounted) setState(() => _match = m);
       },

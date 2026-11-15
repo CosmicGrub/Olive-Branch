@@ -39,6 +39,15 @@ Notation: `lv(x)` is LEB128 length prefix followed by `x` (`cpace.dart: lv`). `c
 
 All requests carry `sid`; the adult returns nothing (HTTP 204) for a wrong or unknown `sid`, a closed or expired window, or any malformed message.
 
+> **PROTOCOL VERSION 2 (current code, branch `feat/pairing-hardening`) differs from steps 1, 2, 4, 6 and 7 below as follows; the steps are kept for the review history.**
+> - `hello` carries `pv:2`; a window answers only `pv >= 2` (silence otherwise). `pake1` carries `pv:2` and `fb` (1 = the child binds the grown-up fingerprint it already holds).
+> - `hello-ok` is `{pv, sid, ft?, fa?, hn?}`. It contains NO `afp`, `apk`, `an` or `fid`. `ft` = first 8 bytes of HMAC-SHA256(key = family key, `lv("olive-fam-hello/2") || lv(sid) || lv(cpk)`), present when the window has a family key; `fa` = first 8 bytes of HMAC-SHA256(key = the grown-up fingerprint, `lv("olive-adult-hello/2") || lv(sid) || lv(cpk)`). A child that holds the family key or the expected fingerprint checks them and stops before `pake1`.
+> - Channel identifier: `ci = lv("olive-pair-ci/2") || lv(sid) || lv(cpk) || lv(fb ? afp : "")`. The name and family id are NOT in it.
+> - `confirm-ok` is `{tagA, n, id}` where `id` = AES-256-GCM(key = `channelKey`, random 96-bit nonce, associated data `"olive-pair-id/2"`) of the JSON `{apk, an, fid}`. The child opens it only after `tagA` verifies, then checks `SHA-256(apk)[0..16]` against the expected fingerprint (if any) and `fid` against the expected family (if any), before the match step and before polling.
+> - The credential seal (step 7) now uses associated data `"olive-pair-cred/2"`; the certificate is v2 when it has an end date: signed bytes `lv("olive-cert-v2") || ... || lv(decimal exp)`; `approve()` sets exp = iat + 180 days. v1 certificates (no `exp`) still verify. `verifier` is omitted by default (`po:true`); it is present only when the grown-up opted in to the keypad.
+> - Questions that change because of this: Q10 (the child no longer accepts `apk` from `hello-ok`; it comes from the sealed message), Q14 (the verifier no longer exists by default). New for the reviewer: is the sealed identity message, authenticated only by the exchange key, enough in place of binding `afp`/`an`/`fid` into the identifier, for the PIN path?
+> - `cpace.dart` is unchanged by this work.
+
 1. `hello` C to A: `{t:'hello', sid, cpk, dn}`. A answers `{t:'hello-ok', afp, apk, an, fid}` (only in state `open`).
    C checks `SHA-256(apk)[0..16] == afp`, and, in QR mode, that `afp` equals the fingerprint in the QR.
 2. Channel identifier, both sides compute the same bytes:

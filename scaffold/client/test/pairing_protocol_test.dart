@@ -111,7 +111,7 @@ void main() {
     expect(rs[0].pairing!.cert.childDeviceKey, isNot(rs[1].pairing!.cert.childDeviceKey));
     // Session 1's messages mean nothing to session 2.
     final AdultWindow w3 = await _window(ak), w4 = await _window(ak);
-    final Map<String, dynamic>? crossed = await w4.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w3.sid), 'cpk': b64(c1.publicKey)});
+    final Map<String, dynamic>? crossed = await w4.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w3.sid), 'cpk': b64(c1.publicKey)});
     expect(crossed, isNull);
   });
 
@@ -241,7 +241,7 @@ void main() {
     final DeviceKey ak = await _key();
     final AdultWindow w = await _window(ak);
     expect(await w.handle(<String, dynamic>{}), isNull);
-    expect(await w.handle(<String, dynamic>{'t': 'pake1', 'sid': b64(w.sid), 'cpk': 5}), isNull);
+    expect(await w.handle(<String, dynamic>{'t': 'pake1', 'pv': 2, 'sid': b64(w.sid), 'cpk': 5}), isNull);
     expect(await w.handle(<String, dynamic>{'t': 'confirm', 'sid': b64(w.sid)}), isNull);
     expect(w.attemptsLeft, 5);
   });
@@ -286,7 +286,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       final Map<String, dynamic>? p = await w.handle(
-          <String, dynamic>{'t': 'pake1', 'h': b64(w.discoveryHandle), 'cpk': b64(ck.publicKey), 'Yc': b64(ck.publicKey)});
+          <String, dynamic>{'t': 'pake1', 'pv': 2, 'h': b64(w.discoveryHandle), 'cpk': b64(ck.publicKey), 'Yc': b64(ck.publicKey)});
       expect(p, isNull);
     });
 
@@ -299,7 +299,7 @@ void main() {
     test('a hello answer with a session id of the wrong size is refused', () async {
       final DeviceKey ck = await _key();
       final PairingResult r = await _client(ck, _FixedTransport(<String, dynamic>{
-        't': 'hello-ok', 'sid': b64(<int>[1, 2, 3]), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f',
+        't': 'hello-ok', 'pv': 2, 'sid': b64(<int>[1, 2, 3]),
       })).pair(handle: Uint8List(16), password: '4829');
       expect(r.ok, isFalse);
       expect(r.failure, PairingFailure.malformed);
@@ -344,7 +344,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       Future<Map<String, dynamic>?> hello(String src) =>
-          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+          w.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
       for (int i = 0; i < kSourceMaxHello; i++) {
         expect(await hello('spam'), isNotNull);
       }
@@ -352,7 +352,7 @@ void main() {
       expect(await hello('other'), isNotNull);
 
       Future<Map<String, dynamic>?> pake1(String src) => w.handle(<String, dynamic>{
-            't': 'pake1', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin',
+            't': 'pake1', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey), 'dn': 'x', 'm': 'pin',
             'Yc': b64(Uint8List.fromList(List<int>.generate(32, (int i) => (i * 7 + 3) & 0xff))),
           }, source: src);
       // Only one claim is in flight at a time (a second one is dropped without being counted), so the claim is
@@ -370,7 +370,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       for (int i = 0; i < kSourceMaxHello + 5; i++) {
-        expect(await w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}), isNotNull);
+        expect(await w.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}), isNotNull);
       }
     });
 
@@ -378,7 +378,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       Future<Map<String, dynamic>?> hello(String src) =>
-          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+          w.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
       for (int i = 0; i < kMaxTrackedSources * 3; i++) {
         expect(await hello('s$i'), isNotNull, reason: 'source $i is never refused for want of room');
       }
@@ -393,7 +393,7 @@ void main() {
         await _client(ck, LoopbackPairingTransport(w, source: 'burner')).pair(sid: w.sid, password: '0000');
       }
       Future<Map<String, dynamic>?> hello(String src) =>
-          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+          w.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
       for (int i = 0; i < kMaxTrackedSources * 3; i++) {
         await hello('flood$i');
       }
@@ -404,7 +404,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final AdultWindow w = await _window(ak);
       Future<Map<String, dynamic>?> hello(String src) =>
-          w.handle(<String, dynamic>{'t': 'hello', 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
+          w.handle(<String, dynamic>{'t': 'hello', 'pv': 2, 'sid': b64(w.sid), 'cpk': b64(ck.publicKey)}, source: src);
       for (int i = 0; i < kSourceMaxHello; i++) {
         await hello('active');
       }

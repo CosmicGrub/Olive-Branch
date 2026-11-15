@@ -35,7 +35,7 @@ void main() {
     final UnlockChallenge c = host.issue(UnlockPurpose.unlock);
     final ChallengeView? v = await phone.inspect(c.toQr());
     expect(v, isNotNull);
-    expect(v!.kid.deviceName, 'Tablet');
+    expect(v!.kid!.deviceName, 'Tablet');
     final String grant = await phone.grant(v);
     expect(grant, isNot(contains('4829')));
     expect(await host.accept(grant), isTrue);

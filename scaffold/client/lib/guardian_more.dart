@@ -1185,7 +1185,14 @@ class GuardianMoreScreen extends StatelessWidget {
               if (!context.mounted) return;
               _open(context, UnlockChildScreen(
                 pin: local.services.pin,
-                responder: UnlockResponder(adultKey: key, kids: kids.load),
+                // The trust book makes every meeting with a tablet a live "keeping watch" contact (and tells a
+                // stopped or forgotten tablet it is disconnected); the family id is what its certificates were issued under.
+                responder: UnlockResponder(
+                  adultKey: key,
+                  kids: kids.load,
+                  trust: TrustBook(LocalStoreTrustRepository(services.area('trust', ownerId: kLocalGuardianScope))),
+                  familyId: 'local-${b64(key.fingerprint)}',
+                ),
                 childName: childName,
               ));
             }),

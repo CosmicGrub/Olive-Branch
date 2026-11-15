@@ -31,8 +31,9 @@ class MemoryChildPairingRepository implements ChildPairingRepository {
 }
 
 class LocalStoreChildPairingRepository implements ChildPairingRepository {
-  LocalStoreChildPairingRepository(this._ns, this._unlock);
+  LocalStoreChildPairingRepository(this._ns, this._unlock, {DateTime Function()? now}) : _now = now ?? DateTime.now;
   final LocalNamespace _ns;
+  final DateTime Function() _now;
 
   /// Where the unlock verifier (and its lockout counters) live.
   final LocalPinRepository _unlock;
@@ -57,7 +58,20 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
         final Uint8List f = unb64(fk);
         if (f.length == 16) familyKey = f;
       }
-      return ChildPairing(cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v, familyKey: familyKey);
+      // MIGRATION of a pairing made before certificates expired: it has no signed end date, so the first time this
+      // build looks at it the tablet is given a fixed grace (kLegacyCertGrace) to meet the grown-up's phone once,
+      // which renews it. The grace is remembered, so it cannot be extended by restarting the app.
+      int? grace = raw['lg'] is int ? raw['lg'] as int : null;
+      if (cert.expiresAtMs == null && grace == null) {
+        grace = _now().add(kLegacyCertGrace).millisecondsSinceEpoch;
+        try {
+          await _ns.put(_key, <String, Object?>{...raw.cast<String, Object?>(), 'lg': grace});
+        } catch (_) {
+          // Held for this run only; the next run starts the grace again (a failed write must not strand the tablet).
+        }
+      }
+      return ChildPairing(
+          cert: cert, adultKey: key, adultName: an, childName: cn, unlockVerifier: v, familyKey: familyKey, graceUntilMs: grace);
     } catch (_) {
       return null;
     }
@@ -74,7 +88,18 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
       'cert': p.cert.toJson(), 'apk': b64(p.adultKey), 'an': p.adultName, 'cn': p.childName,
       if (p.unlockVerifier == null) 'po': true,
       if (p.familyKey != null) 'fk': b64(p.familyKey!),
+      if (p.graceUntilMs != null && p.cert.expiresAtMs == null) 'lg': p.graceUntilMs,
     });
+  }
+
+  /// A verified renewal: keep the pairing, swap in the certificate the grown-up's phone re-signed. The caller has
+  /// already checked it verifies under the pinned adult key. The legacy grace ends, because the certificate now has
+  /// a signed end date of its own.
+  Future<void> replaceCert(PairingCert renewed) async {
+    final Object? raw = await _ns.get(_key);
+    if (raw is! Map) return;
+    final Map<String, Object?> next = <String, Object?>{...raw.cast<String, Object?>(), 'cert': renewed.toJson()}..remove('lg');
+    await _ns.put(_key, next);
   }
 
   /// A verified phone-only grant: keep the pairing, delete the PIN verifier. A typed code can never work again.
