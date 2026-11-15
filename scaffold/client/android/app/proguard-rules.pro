@@ -23,3 +23,14 @@
 # screen shows its calm "not ready" state). R8 must not treat that as a build error.
 -dontwarn org.webrtc.**
 -dontwarn com.cloudwebrtc.webrtc.**
+
+# Jitsi Meet SDK is a React Native app underneath. R8 must not strip or rename what
+# React Native and the SDK reach by reflection at startup (native modules, the Hermes
+# runtime, JNI entry points). These are the keep rules the Jitsi sample app itself ships.
+-keep class org.jitsi.meet.sdk.** { *; }
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.hermes.** { *; }
+-keep class com.facebook.jni.** { *; }
+-keep class com.swmansion.** { *; }
+-dontwarn com.facebook.react.**
+-dontwarn org.jitsi.meet.sdk.**

@@ -196,3 +196,25 @@ bound, forgotten tablets unanswered); the gate's "Use my phone" and "Disconnect 
 connecting: no PIN verifier is ever sent; or later: the flag rides a signed answer and the tablet deletes its
 verifier; one way only); the grown-up screens "Unlock a child's device with my phone" and "Connected child devices"
 (forget, phone-only). Still not built: a server-side revocation list, biometric, the online relay (D5, D6).
+
+## 15. Addendum 2026-11-14: a persistent QR is allowed only as non-secret public identity, followed by PIN-PAKE
+
+This addendum amends how D1, R5 and section 7.2 are read. It does not reverse them.
+
+- **D1 and R5 still hold** for any code that carries a secret or authorizes anything: no static family QR, no QR that
+  pairs without the adult-opened window, no standing bearer secret that can be photographed and used later.
+- **What is now allowed** (owner request 2026-11-14, design `docs/planning/PERSISTENT-QR-PAIRING.md`): a persistent
+  QR that is only a **public, revocable identity and rendezvous label for one device** (its role, its public key, a
+  rotatable salt, a counter and an optional blinded family tag). A scan is an introduction, never a key. It
+  selects and pins the other device and nothing more.
+- **It is always followed by** the adult-opened window, the PIN as the key-exchange password (the PIN-PAKE of
+  section 6, unchanged), the Match check and the adult's explicit Yes. Photographing the picture gains an attacker
+  only a handle for recognising windows, which "Make a new code" rotates.
+- **Section 7.2 is unchanged.** Unlock never uses a persistent picture: it uses a fresh signed nonce that is single
+  use and expires. The rejection of a persistent QR for unlock stands.
+- **The one-shot QR** (`olive://pair/1`, a secret that burns on first use) stays optional and separate. The two
+  parsers reject each other's strings.
+- **Status:** the picture is built and headless-tested (PR #197). The planned reuse of the same introduction idea to
+  welcome a person (rather than a device) is design only (`docs/planning/VILLAGE-WELCOME-DESIGN.md`).
+  No real two-device run has happened, and the external cryptographic review of the key exchange (D2) is still
+  required.
