@@ -6707,6 +6707,8 @@ drift. Nothing is written that is not in it.
 | `child.<id>.care` | Care binder sections and contacts, hospital-mode notes, appointment checklists and questions. All guardian-written; guardian-side only, never in her app. | **Yes** |
 | `child.<id>.emergencycard` | The local emergency card a guardian wrote (§8.24.4): allergies, conditions, medicines, doctor, contacts, every word typed by a guardian; the version counter; the append-only history (who, when, what it said before; never deleted); guardians' remembered names. Guardian-only. | **Yes** |
 | `child.<id>.coordination` | Care and coordination, grown-up side only (§8.24.7): the medicines a guardian wrote and their dose log (who gave it and when; never edited or deleted), the expenses a guardian recorded and each answer to them (append-only events, with the explicit self-accept marker), and the handover log (notes in a hash chain with the same framing as the server and the court export). Every word is a guardian's; the app adds no medical text and no amounts and moves no money. Never in her app. | **Yes** |
+| `child.<id>.aboutchild` | The care profile ("About her", §8.24.8), grown-up side only: what a guardian wrote under Keep her safe, her everyday, what helps, health history and moods and habits (the last two behind the guardian PIN); today's heads-up (one note for one local day, never kept as a log; not shown after local midnight and removed the next time the profile is opened or changed); the people it is shown to on this phone and until when; the dates for the "is this still right?" prompts and her birthday if a guardian gave it; a short edit history of each entry (who changed it and when; not an evidence log, not hashed, not exported). Every word is a guardian's; the app adds no medical text and works out no dose. Never in her app. | **Yes** |
+| `child.<id>.aboutplans` | Photos of a doctor's plan (an asthma or allergy action plan) that a guardian chose to keep, each with a label the guardian typed (§8.24.8). The app never takes, edits or reads one; the picker's temporary copy is deleted once the sealed copy is made. Guardian side only. | **Yes** |
 | `child.<id>.explainers` | Picture stories a guardian wrote and whether each is shown to her. The app writes none. | **Yes** |
 | `guardian.<id>.learn` | Parent Learn: settings and, only if the guardian chose "saved", reflections and their own rules list. Default private; turning a setting off **deletes** what it stored. | **Yes** |
 | `child.<id>.rhythm` | Rhythm, on this device only (§8.20): the routine and first-then cards a grown-up set (pictures and short names), her bag list, how-the-app-feels settings (sound, motion, brightness), and which steps she has ticked **today** (dropped the next day). No score, streak or count; nothing is shared with her other home. | No |
@@ -8232,6 +8234,7 @@ Each row is something this document or the product's own screens might lead a re
 |---|---|---|
 | **Role-led first run: what is left** (owner addition 2026-11-08) | Built: the role picker, the role per device, the unified live entry, the guardian onboarding with a local family and a local PIN, the age lock in the UI, the rename screen and the neutral placeholders (§8.5.8 to §8.5.10). | (1) The child shell now installs the label scope at its root (`KidLabelsHost`, from the local family and the cached locked age; neutral words when nobody is known), but the guardian-facing hard-coded "Dad"/"Mom" text is not adopted. (2) Real names and labels from the server's `/me` for a connected child (the child session has no grown-up list today). (3) The guardian-side row "Ivy calls you Dada": nicknames live on the child's device and there is no sync (§8.16.7). (4) One role per device: a guardian phone does not run the Kid onboarding, and a role cannot be changed without a wipe. (5) No in-app recovery for a forgotten local PIN (the only reset is clearing the app's storage, which erases the family). (6) A zone other than "this phone" is not converted offline (no zone database on the phone). (7) The local family is never uploaded and connecting does not create a server family: no route takes it, and a new parent still has no server-side sign-up (audit A-G1, server half). |
 | **Simple pairing: what is left** (owner request 2026-11-08, section 8.5.11) | Built: the adult-gate card, the PIN-primary key exchange with an adult-opened window, the confirmation word and picture, the signed per-device certificate, the optional proximity QR, the same-network transport, the adult and child screens, the child-side unlock verifier. | (1) Never run on two real devices (mDNS and the offline child home with no session). (2) The key exchange needs an external cryptographic review. (3) A server-side revocation list for a forgotten tablet (today a forgotten tablet is revoked only on the phone and by disconnecting it from the tablet). (4) Relaying a window through the server when the devices are apart (a new migration and routes). (5) Biometric as the grown-up's unlock factor. (6) A child's server session for a device paired this way (it runs on what the device has until then). |
+| **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
@@ -8567,7 +8570,8 @@ where things are kept. Nothing is generated about a new partner or a family chan
 - **Guardian:** Settings hub, **Her** group, "Growing" (time capsule, first times, growing
   marks); Settings hub, **Family** group, "Care" (care binder, hospital mode, picture
   stories, appointment prep). Each hub carries a switch per suite; a suite switched off is
-  not offered. Care is reachable only from the guardian shell.
+  not offered. Care is reachable only from the guardian shell. The care binder's sections are
+  also copied once into the care profile, "About her" (§8.24.8); the binder keeps its own copy.
 - **Her:** the "Keep and grow" section of the child **More** hub (`child_more.dart`). It exists
   only when the family-structure model says so: the youngest band's home has no More hub
   (`ChildView.hasTile('more')`), so it gets nothing; from the 5 to 7 band up all five
@@ -9300,6 +9304,135 @@ references the care files, posture at 344, 390, 600 and 800 dp at 2.0x text).
 the custody schedule's two-week list with swap markers, the month calendar with house shapes, the
 exchange bag merged with the packing list ("medicines that travel"), reminders for due medicines, and
 the per-tile counts on the guardian home.
+
+### 8.24.8 The care profile ("About her")
+
+The guardian-only care binder, emergency card and medicines log, grown into **one profile a grown-up
+writes about the child**, kept on this device and shown in her app **never**. Design source:
+`docs/planning/QR-VETTING-BRAINSTORM.md` ("About the child: the care profile") and mockups H0 to H11 in
+`docs/planning/qr-vetting-mockups.html`. Code: `client/lib/care_profile_logic.dart` (the rules, pure),
+`care_profile_store.dart` (the sealed document, the PIN on the locked parts, the photo store) and
+`care_profile_screens.dart` (the screens).
+
+**It loses nothing.** The binder's sections are copied in once each (allergies to Keep her safe; routines,
+school and notes to Her everyday; a blank section waits until it has words; each copied entry says "from the
+care binder" and the date, because the binder never recorded who wrote it); the binder is not changed or
+emptied and stays reachable. **The copy is made once and the two then drift:** a later edit in the binder does
+not reach the profile or the doctor sheet, and the hub says so; write changes in the profile. The emergency card and the medicines log are **read where they are kept**,
+never copied, so they cannot drift: the card's allergies, conditions, doctor and contacts go on the doctor
+sheet, and the Medicines part opens the existing medicines screen with its dose log and double-dose guard
+unchanged (`care_local.dart`).
+
+**What the app writes: nothing medical.** Every entry is a grown-up's words with "written by <name>, <date>".
+The app supplies section names, plain instructions and the honest notes on each screen. It gives no advice,
+no suggested wording, no pre-written prompt, and works out no dose (a medicine line is the dose and the gap
+the grown-up typed). The neutral writing prompts of the design ("What helps when she's upset?") are **not
+shipped**: they are app-written strings and need clinical and child-development review first.
+
+| Part | What it holds | Who may be shown it |
+|---|---|---|
+| **Keep her safe** | Entries a grown-up wrote (allergies, what must not be missed, who to call), the photos of a doctor's plan, and the emergency card on the sheet. | A grown-up with a say in her care: always. Others: only if a parent chose. |
+| **Her everyday** | Food, sleep, routines, school, what she likes. | Same rule. |
+| **What helps** | What calms, what overwhelms, how a break is asked for. | Same rule. |
+| **Today's heads-up** | One short note for one local day. **Not shown after local midnight, and removed from the sealed file the next time the profile is opened or changed (nothing runs at midnight itself); never logged, never revised, never on the doctor sheet.** | Same rule, and only on its day. |
+| **Medicines** | The existing list and dose log. | Same rule (shown as written: name, dose, times, the gap set, the note, who gave the last dose). |
+| **Health history** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
+| **Moods and habits** | Entries a grown-up wrote. **Parents only, behind the guardian PIN.** | Never anyone else. |
+
+**The child never sees any of it.** `careProfileVisibleToChild` is false for every part (the shape of
+`careNoteVisibleTo`); only the guardian shell imports the profile files, and no file whose name marks it as her side
+(child_, kid_, journal_, my_marks, her_colour_, kiosk_) reaches them directly or through anything it imports,
+or can name its types or areas (`care_profile_structure_test.dart` reads the real sources; the guarantee rests on
+the importer check, and the role gate in each screen decides at run time);
+every screen of the profile is the guardian shell and refuses a non-guardian with one neutral line before
+reading anything; a service call from a child or no principal is refused `guardian_only` for reads and writes
+alike. No label, count, score, streak or place is stored (P1 to P11).
+
+**Rules held in the service, not the screens.**
+- **The PIN on the locked parts.** Health history and Moods and habits can be read or written only after the
+  guardian PIN check accepts the PIN, and only for five minutes after the last use (use slides the window; the
+  screen closes them on leaving). The window belongs to the phone's shared service, not to one guardian: after one parent enters the PIN, another guardian using the same app on that phone can open those parts until it closes, and it keeps running while the app is in the background. A read before the PIN does not contain those entries at all. With no PIN on
+  the device they stay closed and the screen says to set one. The file itself is sealed with the phone's own key,
+  not the PIN: the PIN decides who sees it in the app.
+- **The tone guard.** What describes her (Her everyday, What helps, Today's heads-up, Moods and habits) goes
+  through the care note's `careNoteBanned` list plus a few labels (`careProfileLabelWords`: "bad mood",
+  "naughty", "spoiled", "attention seeking", "manipulative", "a brat", "bad girl", "bad boy") **before** an entry
+  is created or edited; a refused entry is never written, and the screen names the phrase and says to describe
+  what is needed or what helps. Keep her safe and Health history are not checked (a doctor's wording stays
+  verbatim). Entries copied from the binder are not checked (they are what a grown-up already wrote).
+- **Never a silent overwrite; both versions.** A grown-up changes only what they wrote (`not_yours`
+  otherwise). To differ with the other parent they **write their version beside** the entry (same part, same
+  title). Two active entries with the same title, by different writers, saying different things are shown
+  side by side under "These differ. Both are shown until you agree", each with its writer. "Use this one" puts
+  the others away: they are kept, shown under "Put away", and can be brought back. The same grouping shows on
+  the doctor sheet ("the grown-ups wrote this differently").
+- **The edit history is not an evidence log.** Changing your own entry keeps what it said before, with who
+  changed it and when, for the last 8 changes only. It is not hashed or chained, uses nothing from the court
+  export, is in no export, and the screen says it is a plain note and not a record of anything. The care-note
+  rule stands.
+- **Sharing on one device, and honest about it.** A grown-up adds the people a part may be shown to (a trusted
+  carer, a visit, view only, a helper page), switches each shareable part on or off for each, and can time-box
+  each grant (just tonight until 6 in the morning, 24 hours, 7 days, until taken back). New people start with the
+  table's defaults (a carer: Keep-safe, everyday, the heads-up; a visit: Keep-safe and the heads-up until the
+  next 6 in the morning; the other two: nothing). **Health history and Moods and habits can never be granted**
+  (refused in the service and dropped on read); a view-only person can be given Keep-safe and nothing else.
+  "Show for tonight" is one tap. The enforcement that exists is `cpViewFor`: **"Show as <name>"** on this phone
+  shows exactly the granted, un-ended parts (the heads-up only on its day, put-away entries never), and the
+  screen says that leaving it is not locked (use the phone's own screen pinning to hand it over). **Sharing
+  between phones is not built**, and every sharing screen says so in plain words; nothing is sent.
+- **Keeping it true.** A review prompt ("is what you wrote still right?") appears at her birthday (if a
+  grown-up gave the month and day; 29 February is 1 March in a common year), every 90 days, and after a medicine
+  change (the list changed, not a dose given: a fingerprint of names, doses, times, gaps, notes and retired
+  state). "Yes, still right" resets the count; "Not now" hides it for the visit. Nothing is scheduled or sent.
+- **The photo of a doctor's plan.** A grown-up chooses a photo (the phone's picker, gallery only) and types a
+  label; it is kept sealed in `child.<id>.aboutplans`. JPEG or PNG by its first bytes only, 600 KB at most, 6 at
+  most. The app never takes, crops, enhances, reads or turns one into text, and keeps the file exactly as the picker gave it (no resizing or recompression), deleting the picker's temporary copy afterwards; a person granted Keep-safe is shown
+  it in "Show as". The sheet lists it by label only.
+- **The doctor sheet.** A print-style one-page text built only from what grown-ups wrote: Keep her safe, the
+  emergency card's allergies, conditions, doctor and contacts, the medicines as written, the labels of the
+  plan photos, and (each a chip) Her everyday, What helps and, only if the PIN was given, Health history and
+  Moods and habits. It is selectable text with a copy button, like the binder's print view; there is no print
+  dialog and nothing is sent. The heads-up is never on it.
+- **A teen's "My health sheet".** Behind a flag that **defaults OFF** and is a grown-up's preview only: when on,
+  and she is 13 to 17, a grown-up can see what the sheet would hold (Keep her safe and the medicines list,
+  nothing else). **There is no door to it on any child's device**; whether a teen should have one, and the
+  step where a teen agrees before anything private is shared with a carer, are owner decisions still open.
+
+**Storage.** Two sealed (AES-256-GCM) catalogued areas, per child: `child.<id>.aboutchild` (4 MiB) and
+`child.<id>.aboutplans` (6 MiB), both in §8.16.4 and listed by the "Data on this phone" screen
+("About her: the care profile (grown-up side)", "Photos of a doctor's plan (grown-up side)"); the device wipe
+and "forget this child" remove both. One document, written atomically, one write at a time; a full box refuses
+the write (`full`) and keeps what it had; an unreadable file reads as an empty profile.
+
+**Where it is reached.** Settings, **Family**, "About <child>" (new row `aboutprofile`), and the first row of
+**Care and coordination** ("About <child>") in the offline guardian shell. Both open the same screens. Settings
+is behind the local PIN where one is set.
+
+**Verified** by `care_profile_logic_test` (the rules: tone guard, both-versions grouping, who may be shown
+what, defaults, "tonight", the review reasons including 29 February, the sheet, the teen rule, a tolerant
+read), `care_profile_store_test` (guardian-only denials, the PIN window, no silent overwrite, the bounded
+history, the heads-up leaving the file for good, sharing refusals, the binder copied once with the binder
+untouched, the medicine-change fingerprint with the real medicines log and its double-dose guard, the photo
+limits, sealed storage and restart, a full box), `care_profile_screens_test` (every screen driven by taps, the
+child and no-principal lines, the PIN box, posture at 344, 390, 600 and 800 dp at 2.0x text) and
+`care_profile_structure_test` (no child-side file reaches the profile; no network, no export, no hash; one
+photo door; no unit-bearing number in what the app writes). **Not run on a device.**
+
+**Not built, and why.**
+- **Sharing between phones** (no sync exists; the grants are enforced only by "Show as" and the sheet on this
+  phone), a helper page a sitter can open on their own phone, and the carer's own first screen ("About her,
+  tonight" in front of "Who to call" when a carer is welcomed): they need a connected family and the village
+  welcome.
+- **The "For <child>" strip beside the care guides** and its "follow her doctor's plan" line: the guides are an
+  unreviewed draft and ship nothing; the strip waits for clinician review.
+- **A teen's own view on a child's device**, and a teen's agreement before private notes are shared (owner
+  decision pending; the flag defaults OFF and only previews for a grown-up).
+- **Neutral writing prompts and the skippable "Tell us about <child>" onboarding** (app-written text needs
+  clinical and child-development review).
+- **Editing the other parent's entry in place** (deliberately not: write your version beside it); a restricted
+  co-parent profile (with equal guardians on one device no profile hides anything from a parent).
+- **Reminders or notifications for a review**, a print dialog or PDF, reading a plan photo as text, adding
+  appointment prep or hospital-mode notes to the sheet.
 
 ---
 

@@ -38,6 +38,8 @@ import 'availability_screen.dart';
 import 'busy_fork.dart';
 import 'care_local.dart' show CareService;
 import 'care_local_screens.dart';
+import 'care_profile_screens.dart';
+import 'care_profile_store.dart';
 import 'care_screens.dart';
 import 'call_provider.dart' show CallGrant, CallUnavailableReason, callUnavailableLine;
 import 'call_screen.dart';
@@ -507,9 +509,34 @@ class GuardianMoreScreen extends StatelessWidget {
         binder: (_) => CareBinderScreen(childName: childName),
         appointments: (_) => AppointmentPrepScreen(childName: childName),
         schedule: (_) => FamilyHomesScreen(ctx: _familyCtx()),
+        aboutChild: (BuildContext c) => _aboutChildScreen(c, svc),
       ),
     ));
   }
+
+  /// The care profile ("About her"): guardian shell only. It gathers the care binder (copied in once), the
+  /// emergency card and the medicines log, all read where they are kept. [meds] is the on-device medicines log
+  /// when this build has one.
+  Widget _aboutChildScreen(BuildContext context, CareService? meds) {
+    final Future<bool> Function(String pin)? pin = GuardianLocalScope.maybeOf(context)?.services.pin.verifyBool;
+    return CareProfileScreen(
+      service: CareProfileService.forChild(childId),
+      plans: CarePlanPhotoService.forChild(childId),
+      principal: _careMe,
+      childName: childName,
+      childAge: GuardianLocalScope.maybeOf(context)?.family?.age ?? childAge,
+      byName: _careByName(context),
+      verifyPin: pin,
+      meds: meds,
+      emergency: EmergencyCardService.forChild(childId),
+      binder: GrowingCareStores.forChild(childId: childId),
+      openMedicines: meds == null
+          ? null
+          : (BuildContext c) => LocalMedsScreen(service: meds, principal: _careMe, childName: childName, byName: _careByName(c)),
+    );
+  }
+
+  void _openAboutChild(BuildContext context) => _open(context, _aboutChildScreen(context, _localCare(context)));
 
   /// Unlike [_openAvailability] above, this ALWAYS opens the real screen —
   /// HandoverNotesScreen has a genuine, intentional offline demo mode of its
@@ -760,6 +787,9 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'adults', icon: Icons.person_add_alt_outlined, title: 'Adults and helpers',
           subtitle: 'Sitter pass, grandparent page, who else can be invited',
           onTap: () => _openAdultsAndHelpers(context)),
+        SettingsRow(id: 'aboutprofile', icon: Icons.person_search_outlined, title: 'About $childName',
+          subtitle: 'What helps, what keeps her safe, who sees what. Kept on this device; never in her app',
+          onTap: () => _openAboutChild(context)),
         SettingsRow(id: 'care', icon: Icons.health_and_safety_outlined, title: 'Care',
           subtitle: 'Care binder, hospital mode, picture stories, appointment prep. Kept on this device',
           onTap: () => _open(context, GrowingCareHubScreen(care: true, childName: childName,
