@@ -249,6 +249,24 @@ services:
     command: ["node", "tools/scheduler.mjs", "loop"]
     restart: unless-stopped
 
+  # The DELIVERY WORKER -- NOT profile-gated, unlike `scheduler` above, because
+  # without it nothing ever moves a captured message to `delivered`: a child's
+  # inbox stays empty no matter what a grown-up sends (audit gap G1). The
+  # `scheduler` profile is gated because its nightly jobs (backup, orphan sweeps)
+  # mutate state under a developer's live debugging; this loop only claims rows
+  # that are already due, every DELIVERY_TICK_MS (default 30 s). See
+  # scaffold/docs/scheduler.md, section "The delivery worker".
+  delivery:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://app_runtime:app_runtime@db:5432/olive_devicetest
+      DELIVERY_TICK_MS: "${DELIVERY_TICK_MS:-30000}"
+    command: ["node", "tools/scheduler.mjs", "deliver-loop"]
+    restart: unless-stopped
+
 volumes:
   olive-dev-pgdata:
   olive-dev-media:

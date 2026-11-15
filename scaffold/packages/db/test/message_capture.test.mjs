@@ -198,7 +198,31 @@ const edge = (o = {}) => ({ childId: CHILD, userId: DAD, role: 'guardian', scope
     intentRows.rows[0]?.payload_ref, persisted.artifactId);
   check('B persist', 'policy is at_daypart (no explicit date)', intentRows.rows[0]?.policy,
     'at_daypart');
-  check('B persist', 'state starts pending', intentRows.rows[0]?.state, 'pending');
+  // G6: captureMessage() carries its materialize() probe on the intent, and
+  // persist stores the row READY with that instant (no nightly sweep needed).
+  check('B persist', 'state is ready: the capture-time probe is persisted (G6)', intentRows.rows[0]?.state, 'ready');
+  check('B persist', 'persisted.state agrees', persisted.state, 'ready');
+  const sched = await admin.query(
+    `SELECT scheduled_at, materialized_tz, materialized_at FROM delivery_intent WHERE id = $1`, [persisted.intentId]);
+  check('B persist', 'scheduled_at is the child-local bedtime (20:30 Central daylight = 01:30Z next day)',
+    sched.rows[0].scheduled_at.toISOString(), '2026-08-12T01:30:00.000Z');
+  check('B persist', 'materialized_tz and materialized_at are stamped',
+    `${sched.rows[0].materialized_tz}/${sched.rows[0].materialized_at !== null}`, 'America/Chicago/true');
+  // An intent WITHOUT a probe result (any other caller of persist) is still
+  // stored pending, exactly as before, and left to the sweep.
+  const bare = structuredClone(capture);
+  delete bare.intent.scheduledAt; delete bare.intent.materializedTz;
+  bare.artifact.storageKey = 'device/reply-bare';
+  const pBare = await persistCapturedMessage(pool, bare);
+  const bareRow = await admin.query(`SELECT state, scheduled_at FROM delivery_intent WHERE id = $1`, [pBare.intentId]);
+  check('B persist', 'no probe on the intent -> stays pending with no scheduled_at',
+    `${bareRow.rows[0].state}/${bareRow.rows[0].scheduled_at}`, 'pending/null');
+  const halfRow = structuredClone(capture);
+  delete halfRow.intent.materializedTz;               // instant without a zone: not trusted
+  halfRow.artifact.storageKey = 'device/reply-half';
+  const pHalf = await persistCapturedMessage(pool, halfRow);
+  check('B persist', 'a probe missing its zone is not trusted (stays pending)',
+    (await admin.query(`SELECT state FROM delivery_intent WHERE id = $1`, [pHalf.intentId])).rows[0].state, 'pending');
   check('B persist', 'batch_id is null on the row too', intentRows.rows[0]?.batch_id, 'null');
 
   // THE SEAM, on real rows this time (pipeline.test.mjs's M1 proves the pure

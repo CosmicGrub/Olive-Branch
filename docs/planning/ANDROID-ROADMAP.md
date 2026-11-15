@@ -2,7 +2,7 @@
 
 Snapshot written 2026-11-14 against `origin/main` at 8440203 (merged through PR #199). Android comes first and is completed first; iOS lives in `docs/roadmaps/IOS-ROADMAP.md` and starts only when the owner says Android is complete.
 
-Direction in force: **offline-first and on-device**. Online features (network calls, push, the delivery worker, network invites, any server relay) stay parked behind honest "later" states, never fake success. The server runs in Docker for now. Calls will use the self-hosted Jitsi stack (see [HOSTING-AND-CALLS.md](HOSTING-AND-CALLS.md)).
+Direction in force: **offline-first and on-device**. Online features (network calls, push, network invites, any server relay) stay parked behind honest "later" states, never fake success. The server runs in Docker for now. Calls will use the self-hosted Jitsi stack (see [HOSTING-AND-CALLS.md](HOSTING-AND-CALLS.md)). The server-side delivery worker is no longer parked: it only moves rows inside the server's own database and the app reads by polling its inbox, so it neither needs credentials nor gates local use (MASTERFILE section 7.16). The Android screens that use it (media player, sender receipts, bedtime and zone settings) are still to build.
 
 Every gap between the planned family features and the shipped code is in [GAP-REGISTER.md](GAP-REGISTER.md); this file says what is done and what comes next.
 
@@ -64,7 +64,7 @@ Lane C, server and security (starts when capacity frees): the security findings 
 
 Lane D, release and QA (starts last): store-readiness audit, release cut 0.52, real-device test plan and runs, the 10-family simulation as a standing check.
 
-Parked online items (need credentials or hosting): calls over the internet, push (FCM and APNs), the delivery worker, network invites, networked games beyond the encrypted relay, the public server address, relaying a pairing window through the server.
+Parked online items (need credentials or hosting): calls over the internet, push (FCM and APNs), network invites, networked games beyond the encrypted relay, the public server address, relaying a pairing window through the server.
 
 ## Gates before real families rely on any of this
 

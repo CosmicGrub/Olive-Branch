@@ -20,7 +20,7 @@
 import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { DateTime } from 'luxon';
+import { DateTime, IANAZone } from 'luxon';
 import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPinCredential,
          attemptPinFor, createChallenge, consumeChallenge,
          storeWebauthnCredential, availabilityFor,
@@ -53,15 +53,16 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          INVITABLE_ROLES, passkeysFor, deletePasskey, hasSecondFactorSetup,
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload,
+         artifactDeliveredToChild, deliveredArtifactForIntent,
          webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
-import { partsOn } from '../packages/delivery-engine/src/materialize.mjs';
+import { partsOn, activeDayPart } from '../packages/delivery-engine/src/materialize.mjs';
 import { runHomeworkCapture } from '../packages/homework/src/capture-route.mjs';
 import { hashPin, verifyAssertion } from '../packages/auth/src/auth.mjs';
 import { parseAttestationObject, extractCredentialPublicKey } from '../packages/auth/src/attestation.mjs';
-import { captureMessage } from '../packages/messaging/src/pipeline.mjs';
+import { captureMessage, openReceipt } from '../packages/messaging/src/pipeline.mjs';
 import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 import { resolveCallConfig } from './call_config.mjs';
@@ -1954,14 +1955,22 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // before — deliveredAtLabel below is this route's first real reader of
       // it, so the cast needed to be right before it became load-bearing.
       const rows = await q(
-        `SELECT di.id, di.payload_kind, di.sender_id, di.state,
-                to_char(di.materialized_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        // G4: `media_id` is the artifact id the app asks the media routes for --
+        // an opaque uuid, never a storage key. G7: the "delivered" moment is
+        // delivered_at (set when the worker claimed the row); rows delivered
+        // before migration 0049 have none and fall back to materialized_at,
+        // exactly what this label always used. G9: a row past its retention
+        // window is not shown (its blob may already be reaped).
+        `SELECT di.id, di.payload_kind, di.payload_ref AS media_id, di.sender_id, di.state,
+                to_char(COALESCE(di.delivered_at, di.materialized_at) AT TIME ZONE 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
                   AS materialized_at,
                 u.display_name AS sender_name
            FROM delivery_intent di
            JOIN app_user u ON u.id = di.sender_id
           WHERE di.child_id = $1 AND di.state IN ('delivered','opened')
-          ORDER BY di.materialized_at DESC NULLS LAST
+            AND di.expires_at > now()
+          ORDER BY COALESCE(di.delivered_at, di.materialized_at) DESC NULLS LAST
           LIMIT 50`,
         [c.childId],
       );
@@ -2040,13 +2049,32 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // applyRetentionOnOpen() checks out a second connection. A retention
       // failure after the commit is retry-safe: the re-fetch below finds
       // the already-'opened' row and re-applies retention.
+      // The receipt is FIXED at this moment: the zone she was in and the
+      // day-part that was active are written beside opened_at, so a later
+      // edit of her schedule or time-zone timeline can never re-word an old
+      // receipt (migration 0049). Computing it can never block opening: a
+      // failure here leaves the columns NULL and the reader falls back.
+      let snapCtx = null;
+      try { snapCtx = await childCtxFor(pool, c.childId); } catch { snapCtx = null; }
       const opened = await inSession(c, async (q) => {
       const updated = await q(
-        `UPDATE delivery_intent SET state = 'opened'
+        `UPDATE delivery_intent SET state = 'opened', opened_at = now()
           WHERE id = $1 AND child_id = $2 AND state = 'delivered'
-          RETURNING id, payload_ref`,
+          RETURNING id, payload_ref,
+                    to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_iso`,
         [c.params.messageId, c.childId],
       );
+      if (updated.length && snapCtx) {
+        let snap = null;
+        try { snap = receiptSnapshot(snapCtx, DateTime.fromISO(updated[0].opened_iso, { zone: 'utc' })); }
+        catch { snap = null; }
+        if (snap) {
+          await q(
+            `UPDATE delivery_intent SET opened_zone = $2, opened_part = $3
+              WHERE id = $1 AND child_id = $4 AND state = 'opened'`,
+            [updated[0].id, snap.zone, snap.part, c.childId]);
+        }
+      }
       // Idempotent success for a row already 'opened' — distinguished from
       // a genuine not-found/wrong-state so a client retry (or two tabs
       // racing) never sees a false error for something that already
@@ -3842,8 +3870,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
 
       const persisted = await persistCapturedMessage(pool, result);
+      // `state` is what was actually stored: 'ready' when the capture-time
+      // probe resolved a delivery instant (the worker delivers it when due),
+      // 'pending' when it was left to the sweep.
       return { status: 201, body: {
-        id: persisted.intentId, artifactId: persisted.artifactId, state: 'pending' } };
+        id: persisted.intentId, artifactId: persisted.artifactId, state: persisted.state } };
     },
   });
 
@@ -3985,6 +4016,15 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'GET', path: '/v1/children/:childId/messages/:artifactId/media',
     action: 'message', skipOuterSession: true,
     handler: async (c) => {
+      // G4: a CHILD only gets media that has been delivered to her inbox and
+      // is still in date. Same 404 as a missing artifact, so an id she was
+      // never sent (or one banked for tomorrow) is indistinguishable from one
+      // that does not exist. Adults keep the edge-gated read they always had
+      // (a sender previews her own recording before it goes out).
+      if (c.principal.roleName === 'child' &&
+          !(await artifactDeliveredToChild(pool, c.childId, c.params.artifactId))) {
+        return { status: 404, body: { error: 'artifact_not_found' } };
+      }
       const artifact = await mediaArtifactFor(pool, c.childId, c.params.artifactId);
       if (!artifact) return { status: 404, body: { error: 'artifact_not_found' } };
       const bytes = await storage.get(artifact.storageKey);
@@ -3996,6 +4036,301 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (!bytes) return { status: 404, body: { error: 'media_not_found' } };
       const signedUrl = storage.signedUrl(artifact.storageKey, SIGNED_URL_TTL_SECONDS, Date.now());
       return { body: { bytes: bytes.toString('base64'), kind: artifact.kind, signedUrl } };
+    },
+  });
+
+  // ===========================================================================
+  // DELIVERY CHAIN -- the routes that let a captured message reach the child
+  // and let the sender see that it did. The delivery WORKER itself lives in
+  // tools/scheduler.mjs (`deliver` job); these are its read side and its
+  // configuration inputs. Everything here is polled: the app is offline-first
+  // and the server never gates local use.
+  // ===========================================================================
+
+  // G4 -- a signed, ABSOLUTE media URL for one delivered inbox entry, so a
+  // native player can stream it instead of pulling the whole file base64-
+  // encoded inside JSON. Only an entry that is delivered/opened and in date
+  // yields one; every other case is the same 404 (wrong child, unknown id,
+  // still banked for tonight, expired). The URL is a capability with a short
+  // TTL and carries no session. PUBLIC_BASE_URL (the https origin clients
+  // use) makes it absolute; without it (local dev) the path is returned and
+  // `absolute` is false so the client joins it to the origin it already knows.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/inbox/:messageId/media-url',
+    action: 'message', skipOuterSession: true,
+    handler: async (c) => {
+      // A malformed id is just "no such message": answered before it can
+      // reach Postgres as an invalid uuid (which would be a 500).
+      if (!UUID_KEY_TAIL.test(String(c.params.messageId))) {
+        return { status: 404, body: { error: 'message_not_found' } };
+      }
+      const art = await deliveredArtifactForIntent(pool, c.childId, c.params.messageId);
+      if (!art) return { status: 404, body: { error: 'message_not_found' } };
+      if (!(await storage.exists(art.storageKey))) {
+        return { status: 404, body: { error: 'media_not_found' } };
+      }
+      const path = storage.signedUrl(art.storageKey, SIGNED_URL_TTL_SECONDS, Date.now());
+      const base = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
+      // Named `signedUrl`, like the existing media route's field: a bare `url`
+      // key is on the child-payload sweep's forbidden list (adult plumbing),
+      // and this route is hers.
+      return { body: {
+        signedUrl: base ? `${base}${path}` : path, absolute: Boolean(base),
+        kind: art.kind, ttl: SIGNED_URL_TTL_SECONDS,
+      } };
+    },
+  });
+
+  // The zone and the active day-part at an instant: what a receipt records.
+  const receiptSnapshot = (ctx, at) => {
+    const zone = openReceipt(ctx, at, null).zone;
+    return { zone, part: activeDayPart(ctx, at.setZone(zone))?.kind ?? null };
+  };
+
+  // G7 -- the SENDER's view of what she sent: waiting / delivered / opened,
+  // with the receipt phrase in HER (the child's) frame -- "Watched at 7:42 PM
+  // her time -- at bedtime." (pipeline.ts openReceipt, section 8.2.4). Guardian
+  // surface only: the child gets 403, because receipts are never shown to her
+  // (section 8.2.8). Timestamps and a phrase, never a count, streak or score.
+  // Only the caller's OWN sends; another grown-up's messages are not listed.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/sent', action: 'message',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const iso = (col) => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+      const rows = await inSession(c, (q) => q(
+        `SELECT id, payload_kind, state, ${iso('created_at')} AS sent_at,
+                ${iso('scheduled_at')} AS delivers_at,
+                ${iso('COALESCE(delivered_at, materialized_at)')} AS delivered_at,
+                ${iso('opened_at')} AS opened_at, opened_zone, opened_part
+           FROM delivery_intent
+          WHERE child_id = $1 AND sender_id = $2
+          ORDER BY created_at DESC
+          LIMIT 50`,
+        [c.childId, c.principal.userId]));
+      const needCtx = rows.some((r) => r.state === 'opened' && r.opened_at && !r.opened_zone);
+      const ctx = needCtx ? await childCtxFor(pool, c.childId) : true;
+      const messages = rows.map((r) => {
+        // 'pending' and 'ready' are the same thing to a sender: not there yet.
+        const state = r.state === 'pending' || r.state === 'ready' ? 'waiting' : r.state;
+        let receipt = null;
+        if (state === 'opened' && r.opened_at && ctx) {
+          const at = DateTime.fromISO(r.opened_at, { zone: 'utc' });
+          if (r.opened_zone) {
+            // Fixed when she opened it (migration 0049): later edits of her
+            // schedule or zone timeline do not touch this.
+            receipt = openReceipt({ homeTz: r.opened_zone, tzIntervals: [], dayParts: [] },
+              at, r.opened_part ?? null);
+          } else {
+            // Opened before the snapshot columns: no snapshot exists, recompute as it always did.
+            const snap = receiptSnapshot(ctx, at);
+            receipt = openReceipt(ctx, at, snap.part);
+          }
+        }
+        return {
+          id: r.id, kind: r.payload_kind, state, sentAt: r.sent_at,
+          deliversAt: state === 'waiting' ? r.delivers_at : null,
+          deliveredAt: state === 'delivered' || state === 'opened' ? r.delivered_at : null,
+          openedAt: state === 'opened' ? r.opened_at : null,
+          receipt,
+        };
+      });
+      return { body: { messages } };
+    },
+  });
+
+  // G3 -- day-parts. Until these routes existed nothing could create a
+  // day_part row, so every real child failed capture with daypart_undefined.
+  // `startsLocal`/`endsLocal` are wall-clock HH:MM (bedtime is 20:30 whatever
+  // daylight saving does); a part that ends at or before it starts wraps past
+  // midnight. `daysOfWeek` is 0 = Sunday .. 6 = Saturday. PUT replaces the
+  // child's whole schedule in one transaction; the statement triggers from
+  // migration 0002 then re-time every queued message to the new schedule.
+  const DAY_PART_KINDS = ['wake', 'before_school', 'school', 'after_school', 'activity',
+    'dinner', 'wind_down', 'bedtime', 'asleep', 'free'];
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const MAX_DAY_PARTS = 24;
+  const dayPartRows = (q, childId) => q(
+    `SELECT kind, substring(starts_local::text from 1 for 5) AS starts_local,
+            substring(ends_local::text from 1 for 5) AS ends_local,
+            days_of_week, reachable
+       FROM day_part WHERE child_id = $1
+      ORDER BY starts_local, kind`, [childId]);
+  const dayPartView = (rows) => ({
+    dayParts: rows.map((r) => ({
+      kind: r.kind, startsLocal: r.starts_local, endsLocal: r.ends_local,
+      daysOfWeek: [...r.days_of_week].sort((a, b) => a - b), reachable: r.reachable,
+    })),
+    // Without a bedtime part a normal send is refused (daypart_undefined); the
+    // settings screen uses this to say so before a parent hits the error.
+    hasBedtime: rows.some((r) => r.kind === 'bedtime'),
+  });
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/day-parts', action: 'calendar.view',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      return { body: dayPartView(await inSession(c, (q) => dayPartRows(q, c.childId))) };
+    },
+  });
+
+  api.register({
+    method: 'PUT', path: '/v1/children/:childId/day-parts', action: 'settings',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const list = c.body?.dayParts;
+      // An EMPTY schedule is refused: with no bedtime every queued message
+      // would be reset to pending and then wait, undeliverable, until it
+      // expired -- a silent strand. Replace the schedule; do not clear it.
+      if (!Array.isArray(list) || list.length < 1 || list.length > MAX_DAY_PARTS) {
+        return { status: 400, body: { error: 'day_parts_required' } };
+      }
+      const parts = [];
+      for (const p of list) {
+        if (!p || typeof p !== 'object' || !DAY_PART_KINDS.includes(p.kind)) {
+          return { status: 400, body: { error: 'bad_day_part_kind' } };
+        }
+        if (typeof p.startsLocal !== 'string' || !HHMM.test(p.startsLocal) ||
+            typeof p.endsLocal !== 'string' || !HHMM.test(p.endsLocal)) {
+          return { status: 400, body: { error: 'bad_day_part_time' } };
+        }
+        if (p.startsLocal === p.endsLocal) {
+          return { status: 400, body: { error: 'empty_day_part' } };
+        }
+        const days = p.daysOfWeek === undefined ? [0, 1, 2, 3, 4, 5, 6] : p.daysOfWeek;
+        if (!Array.isArray(days) || days.length < 1 || days.length > 7 ||
+            !days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6) ||
+            new Set(days).size !== days.length) {
+          return { status: 400, body: { error: 'bad_days_of_week' } };
+        }
+        if (typeof p.reachable !== 'boolean') {
+          return { status: 400, body: { error: 'reachable_required' } };
+        }
+        parts.push({ kind: p.kind, s: p.startsLocal, e: p.endsLocal, days, reachable: p.reachable });
+      }
+      try {
+        const rows = await inSession(c, async (q) => {
+          // One writer per child at a time. Under READ COMMITTED two guardians'
+          // concurrent DELETE-then-INSERT would each miss the other's inserts
+          // and merge into a union of both schedules (two bedtimes), and the
+          // overlap constraint cannot catch parts that do not overlap in time.
+          // Transaction-scoped: released on commit or rollback.
+          await q(`SELECT pg_advisory_xact_lock(hashtext('day_part:' || $1::text))`, [c.childId]);
+          await q(`DELETE FROM day_part WHERE child_id = $1`, [c.childId]);
+          for (const p of parts) {
+            await q(
+              `INSERT INTO day_part
+                 (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+               VALUES ($1,$2,$3::time,$4::time,$5::smallint[],$6, daterange('2000-01-01', NULL))`,
+              [c.childId, p.kind, p.s, p.e, p.days, p.reachable]);
+          }
+          return dayPartRows(q, c.childId);
+        });
+        return { body: dayPartView(rows) };
+      } catch (e) {
+        // 23P01: two parts of the same kind overlap in time and weekday
+        // (migration 0042's day_part_no_overlap). Nothing was written.
+        if (e?.code === '23P01') return { status: 409, body: { error: 'day_parts_overlap' } };
+        if (e?.code === '23514' || e?.code === '22P02') {
+          return { status: 400, body: { error: 'bad_day_part' } };
+        }
+        throw e;
+      }
+    },
+  });
+
+  // G3 -- the child's time-zone TIMELINE. POST means "from this moment she is
+  // in <tz>": it closes the interval that was open at that moment and opens a
+  // new one, so history is never rewritten. (Receipts do not read it after the
+  // fact: the zone and day-part are recorded when she opens a message,
+  // migration 0049, so even a back-dated move leaves an opened receipt alone.) The zone name is checked against the IANA database twice
+  // (luxon here, olive_valid_tz() in the table's CHECK).
+  const TZ_HISTORY_DAYS = 30, TZ_FUTURE_DAYS = 365;
+  const tzView = (rows) => ({
+    intervals: rows.map((r) => ({
+      tz: r.tz, from: r.from_at, to: r.to_at, source: r.source,
+    })),
+  });
+  const tzRows = (q, childId) => q(
+    `SELECT tz, source,
+            to_char(lower(valid) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS from_at,
+            to_char(upper(valid) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS to_at
+       FROM child_tz_interval WHERE child_id = $1 ORDER BY lower(valid) NULLS FIRST`, [childId]);
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/tz-intervals', action: 'calendar.view',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      return { body: tzView(await inSession(c, (q) => tzRows(q, c.childId))) };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/tz-intervals', action: 'settings',
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'not_a_child_surface' } };
+      }
+      const tz = c.body?.tz;
+      if (typeof tz !== 'string' || tz.length > 64 || !IANAZone.isValidZone(tz)) {
+        return { status: 400, body: { error: 'bad_time_zone' } };
+      }
+      const source = c.body?.source ?? 'manual';
+      if (source !== 'manual' && source !== 'travel') {
+        return { status: 400, body: { error: 'bad_source' } };
+      }
+      const nowUtc = DateTime.utc();
+      let from = nowUtc;
+      if (c.body?.effectiveFrom !== undefined) {
+        from = typeof c.body.effectiveFrom === 'string'
+          ? DateTime.fromISO(c.body.effectiveFrom, { zone: 'utc' }) : DateTime.invalid('type');
+        if (!from.isValid ||
+            from < nowUtc.minus({ days: TZ_HISTORY_DAYS }) ||
+            from > nowUtc.plus({ days: TZ_FUTURE_DAYS })) {
+          return { status: 400, body: { error: 'bad_effective_from' } };
+        }
+      }
+      const fromJs = from.toJSDate();
+      try {
+        const out = await inSession(c, async (q) => {
+          const open = await q(
+            `SELECT tz FROM child_tz_interval
+              WHERE child_id = $1 AND valid @> $2::timestamptz`, [c.childId, fromJs]);
+          if (open.length && open[0].tz === tz) return { unchanged: true };
+          const later = await q(
+            `SELECT 1 FROM child_tz_interval
+              WHERE child_id = $1 AND lower(valid) >= $2::timestamptz`, [c.childId, fromJs]);
+          if (later.length) return { conflict: true };
+          await q(
+            `UPDATE child_tz_interval
+                SET valid = tstzrange(lower(valid), $2::timestamptz)
+              WHERE child_id = $1 AND valid @> $2::timestamptz`, [c.childId, fromJs]);
+          await q(
+            `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+             VALUES ($1, $2, tstzrange($3::timestamptz, NULL), $4)`,
+            [c.childId, tz, fromJs, source]);
+          return { unchanged: false };
+        });
+        if (out.conflict) return { status: 409, body: { error: 'interval_starts_later' } };
+        return { status: out.unchanged ? 200 : 201, body: {
+          ok: true, tz, effectiveFrom: from.toISO(), unchanged: out.unchanged } };
+      } catch (e) {
+        if (e?.code === '23P01') return { status: 409, body: { error: 'interval_overlap' } };
+        throw e;
+      }
     },
   });
 

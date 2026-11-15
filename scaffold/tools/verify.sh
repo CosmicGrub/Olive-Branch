@@ -451,6 +451,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "care notes route: real tone guard, real TTL (real DB)|server/test/care_notes_route.test.mjs" \
             "letters route: real age-gated open, RLS child-owned (real DB)|server/test/letters_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
+            "delivery chain: send, worker tick, inbox, media, receipt; day-parts + tz routes; hostile cases (real DB, real RLS)|server/test/delivery_chain.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" \
             "db pool: no self-deadlock, limits, broken clients (real RLS)|packages/db/test/pool_concurrency.test.mjs" \
@@ -510,6 +511,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: medications route|server/test/medications_route.test.mjs" \
             "as app_runtime: exchange route|server/test/exchange_route.test.mjs" \
             "as app_runtime: inbox route|server/test/inbox_route.test.mjs" \
+            "as app_runtime: delivery chain|server/test/delivery_chain.test.mjs" \
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do

@@ -434,6 +434,12 @@ stale batch can mis-deliver 180 nights in a row.
 
 Cadence: event-driven invalidation **plus** a nightly sweep as the safety net.
 
+*As shipped (§7.16):* the day-part and time-zone triggers reset a queued row, and
+the delivery worker (every 30 seconds) re-times it, so an edit takes effect
+within one tick rather than at the nightly sweep. The `custody_schedule.changed`
+and `calendar_event.moved` triggers listed above are **not** wired: the engine
+has no custody logic, so a message is not re-timed by a change of exchange time.
+
 ### 4.6 US temporal edge cases — mandatory golden tests
 
 | Case | Example | Rule |
@@ -1754,6 +1760,19 @@ POST   /v1/children/:childId/inbox/:id/opened   receipt, recorded in child-local
                                          (`/v1/children/:childId/inbox/:id/opened`),
                                          not this section's own bare original —
                                          see §7's own scoping note above.
+GET    /v1/children/:childId/inbox/:id/media-url   signed URL for ONE delivered
+                                         message (child or grown-up with the
+                                         `message` action); 404 until delivered
+                                         or after expiry. Real, §7.16.
+GET    /v1/children/:childId/sent       the sender's own sends: waiting /
+                                         delivered / opened plus the receipt
+                                         phrase in her frame. Guardian only; the
+                                         child gets 403. Real, §7.16.
+GET    /v1/children/:childId/day-parts  the schedule that makes a bedtime exist
+PUT    /v1/children/:childId/day-parts  replace it (guardian `settings`). Real, §7.16.
+GET    /v1/children/:childId/tz-intervals   her time-zone timeline
+POST   /v1/children/:childId/tz-intervals   "from now she is in <tz>" (guardian
+                                         `settings`). Real, §7.16.
 
 POST   /v1/batches                      bank N messages across a date window
 GET    /v1/batches/:id                  progress: delivered / remaining / next
@@ -2404,10 +2423,10 @@ from a fresh generation. Dart asserts custody, care and the ledger chain; there
 is no Dart port of the gate or materialiser (the client does no zone maths), so
 the delivery vectors are a contract for any future port.
 
-**Not done in this pass** (each stays in the audits): the delivery worker and
+**Not done in this pass** (each stays in the audits; the items marked "since done" were closed later, see §7.16): the delivery worker (since done) and
 anything that needs a push provider (parked); delivery timestamps and receipts
-(S-D3); a child's reply recipient (S-D4); write paths for day-parts, time-zone
-intervals and custody orders (S-D5); the 6 to 12 month deletion window (S-D16);
+(S-D3, since done); a child's reply recipient (S-D4); write paths for day-parts, time-zone
+intervals (S-D5, since done) and custody orders (still open); the 6 to 12 month deletion window (S-D16);
 take-and-go breadth (S-D17); succession behaviour (S-D18); the polymorphic uuid
 foreign keys and `media_artifact` size, MIME and hash columns (S-D20, the rest of
 it); the game referee (S-D24); the tesseract language data (S-D25); the family
@@ -2471,6 +2490,32 @@ Owner requirement: the server must build in security against those who try to pe
 **The monitoring role.** `health_monitor` is `NOSUPERUSER NOBYPASSRLS` with no table grants; migration 0047 grants it only `SELECT` on `health_check` and `EXECUTE` on `health_counts()` (a function named in a view is permission-checked against the caller, so both are needed; calling it directly returns the same five aggregate columns). Like `backup_reader` (0022) it is a cluster role and cannot be created by the unprivileged migrator: `tools/docker-dev/init-db.sql` and `init-db.prod.sh` create it (prod: `LOGIN` only if `HEALTH_MONITOR_PASSWORD` is set, else `NOLOGIN`), and the migration grants only if it exists. Operators who add it to an existing database run the grants in `scaffold/db/DEPLOYMENT.md`. `tools/health-alert.mjs` uses `HEALTH_DATABASE_URL` (the monitor login) when set and no longer claims `app.role = 'system'`; `tools/healthcheck.mjs` likewise. `rls_allow_list` / `rls_unforced` (0044) and 0040's edge policies are unchanged (no table added; the four tables stay ENABLE + FORCE).
 
 **Tests.** `packages/db/test/health_views_force_rls.test.mjs` (34 assertions, wired in `tools/verify.sh`) builds the production shape (the real unprivileged `app_owner` migrates and owns a fresh database) and asserts, against the superuser's raw counts: the fixture's true values (five non-zero), that the superuser, `health_monitor`, `app_owner` with no role, as a guardian, as a child and as `system` all read exactly those values, that `health_monitor` is denied every base table and row-level view (and raising `app.health_probe` or `app.role` does not help), that the flag is restored and a guardian still sees only her own family, and that `health_alert.test.mjs` passes on that database (superuser seeds, `app_owner` reads) as well as on the verify.sh-style database. `rls_coverage.test.mjs` now reads the catalog check from `health_counts()`.
+
+### 7.16 The delivery chain — as shipped (server lane `delivery`, migration 0049)
+
+**The defect.** A message a grown-up sent was stored `pending` and nothing in the running system ever moved it to `delivered`, so the child's inbox (which lists only `delivered` and `opened` rows) stayed empty. The worker function existed (`claim_due_intents()`, migration 0002) with no caller; no route could create a day-part or a time-zone interval, so a real child's send failed with `daypart_undefined`; the inbox gave the app no media reference; and the media route did not check that a message had been delivered.
+
+**The worker.** `tools/scheduler.mjs` has a `deliver` job and a `deliver-loop` command. A tick runs `expire_stale_intents()`, then the rematerialize sweep, then `claim_due_intents()`; each step is independent, so a failure in one does not stop the next. The loop runs every `DELIVERY_TICK_MS` (default 30 s, floor 5 s) as its own `delivery` service in both Compose files, not behind a profile (`scaffold/docs/scheduler.md`). It touches only the server's own database; push is not sent from it (parked), the app polls.
+
+**Scheduled at send time.** `captureMessage()` already ran `materialize()` to validate a send; its answer (`scheduledAt`, `materializedTz`) now travels on the intent and `persistCapturedMessage()` stores the row `ready` with its delivery instant. Before this, a noon send for an evening bedtime waited `pending` until the 03:00 UTC sweep, found the slot more than two hours past, and rolled to the next day. A row without both fields is still stored `pending` and left to the sweep.
+
+**Receipts (migration 0049).** `delivery_intent.delivered_at` is stamped inside `claim_due_intents()`; `opened_at` when she opens it. Rows delivered before the migration have neither and fall back to `materialized_at`, which is what the inbox label always used. Both are timestamps, never counts. A `CHECK` keeps `opened_at` from preceding `delivered_at`.
+
+**A receipt is fixed when she opens it (also migration 0049).** `opened_zone` (the IANA zone she was in) and `opened_part` (the day-part kind that was active, or none) are written beside `opened_at`, and `GET .../sent` builds the receipt phrase from them. Editing her day-parts or recording a time-zone move, even a back-dated one, therefore cannot re-word an old receipt. A row opened before these columns existed has both `NULL` and is recomputed from the current schedule as before. Both are a zone name and a part name, never a count, and neither is returned on a child surface. A `CHECK` rejects an unknown zone or kind, and a part without a zone.
+
+**Routes.**
+- `GET .../inbox` now also returns `media_id` (the artifact id, never a storage key), omits entries past `expires_at`, and labels "delivered N ago" from `delivered_at`.
+- `GET .../inbox/:messageId/media-url` returns `signedUrl` (absolute when `PUBLIC_BASE_URL` is set, `absolute: false` otherwise), `kind` and `ttl`, only for a delivered, in-date message; every other case is the same 404. A malformed id is a 404, never a 500. The field is `signedUrl` because a bare `url` key is on the child-payload sweep's forbidden list.
+- `GET .../messages/:artifactId/media` for a **child** principal now requires a `delivered`/`opened`, in-date intent for that artifact; before, any artifact id of hers could be pulled early. Adults keep the edge-gated read (a sender previews her own recording).
+- `GET .../sent` (guardian only; the child gets 403; only the caller's own sends): `state` is `waiting`, `delivered`, `opened`, `expired` or `revoked`, with `deliversAt`, `deliveredAt`, `openedAt` and, once opened, `receipt: { localTime, zone, phrase }` from `openReceipt()` in her time zone and day-part ("Watched at 7:42 PM her time — at bedtime."). No counts, streaks or scores.
+- `GET`/`PUT .../day-parts`: wall-clock `HH:MM` parts (a part that ends at or before it starts wraps midnight), `daysOfWeek` 0 = Sunday to 6, `reachable`; PUT replaces the whole schedule in one transaction (serialized per child with a transaction-scoped advisory lock, so two guardians saving at once leave exactly one of the two schedules, never a union), at least 1 and at most 24 parts (an empty schedule is refused as `day_parts_required`: it would reset every queued message to pending with no bedtime to re-time it), and answers 409 `day_parts_overlap` for two overlapping parts of one kind (migration 0042's exclusion constraint) after rolling back. `hasBedtime` in the reply says whether a normal send can be scheduled. Action `settings` (guardian only) to write, `calendar.view` to read; the child gets 403 on both.
+- `GET`/`POST .../tz-intervals`: POST means "from this moment (or `effectiveFrom`, within 30 days back and a year ahead) she is in `<tz>`": it closes the interval that was open then and opens a new one. A back-dated move re-times anything still queued but does not change an opened receipt, which was fixed when she opened it. The zone is checked against the IANA database; `source` is `manual` or `travel` only (`custody` and `device` are not writable here); the same zone again is a no-op; an interval that would start before the latest one is 409 `interval_starts_later`.
+
+Editing a bedtime or moving her zone fires the migration 0002 triggers, which reset her queued messages to `pending`; the next tick re-times them. The tests prove it on a real database: a bedtime edit and a three-zone move each move the delivery time by exactly the expected amount. The delivery worker logs a tick only when it changed something (delivered, expired, re-timed, errored, or hit its scan limit); rows that merely stay pending are re-scanned silently.
+
+**Tests.** `server/test/delivery_chain.test.mjs` (wired in `tools/verify.sh` as the table owner and again as the least-privilege `app_runtime` role) drives the real routes and the real worker against Postgres with no row seeded `delivered`: send, tick, inbox, media, signed URL, open, sender receipt; hostile input for every new route (bad kinds, times, days, zones, sources, dates, ids, SQL in a field, oversize lists, other families, sitters, children, no token); an expired intent; two workers racing 40 rows with no row claimed twice; and the child's own reply not appearing in her own inbox. `tools/test/infra.test.mjs` asserts the `delivery` service in both Compose files. The client path constants are in `client/lib/api_client.dart` so the route-drift test sees them.
+
+**Not done** (each stays open): a guardian-to-child **family** with its edge (`POST /v1/families`, accept-invite creating the edge) — owner decisions on the consent posture and the tenant design, and the identity lane, are pending, so no runtime path creates a `guardianship` row and a real family still cannot send (GAP-REGISTER G-02); a child's reply **recipient** and its guardian-facing reader (S-D4); a write path for custody orders and re-timing on a custody change (the engine has no custody logic); `GET .../batches` and the other sender views of message banking; a guardian "send now" (`immediate`) policy through the API; an idempotency key on `POST .../messages` and `.../media` and the app-level outbox drain; streaming upload and ranged download for large videos; a push for a ready message (a content-free `since` cursor for cheap polling is the planned substitute); `on_event` targets; and the Android screens for the media player, sender receipts and the bedtime and zone settings.
 
 ## §8 UI architecture
 

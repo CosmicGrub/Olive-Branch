@@ -124,7 +124,16 @@ const post = (childId, tok, body) => api.handle(
   check('A success', 'a valid guardian capture returns 201', res.status, 201);
   check('A success', 'response names a real artifactId',
     typeof res.body.artifactId === 'string' && res.body.artifactId.length > 0, 'true');
-  check('A success', 'response state is pending', res.body.state, 'pending');
+  // G6: the capture-time probe resolved a bedtime (this suite seeds one), so
+  // the row is stored READY with its delivery instant instead of waiting for
+  // a nightly sweep.
+  check('A success', 'response state is ready (the probe resolved a bedtime)', res.body.state, 'ready');
+  const stored = (await admin.query(
+    `SELECT state, scheduled_at, materialized_tz, materialized_at FROM delivery_intent WHERE id = $1`,
+    [res.body.id])).rows[0];
+  check('A success', 'the row is ready with scheduled_at, zone and materialized_at all set',
+    `${stored.state}/${stored.scheduled_at !== null}/${stored.materialized_tz}/${stored.materialized_at !== null}`,
+    'ready/true/America/New_York/true');
   const after = await rowCounts();
   check('A success', 'exactly one media_artifact row was written',
     after.artifacts - before.artifacts, 1);

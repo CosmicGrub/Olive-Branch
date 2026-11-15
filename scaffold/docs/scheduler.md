@@ -27,14 +27,50 @@ rather than invented here:
 
 Read `tools/scheduler.mjs`'s own header for the full design writeup —
 locking choice, exact per-job semantics, and what this deliberately does
-**not** do (it does not call `claim_due_intents()`/`expire_stale_intents()`,
-and it does not resolve `on_event` targets — both real, separate, disclosed
-gaps, not silently folded in here). This page is the operator-facing "how do
-I turn it on" half.
+**not** do (it does not push to a device, and it does not resolve `on_event`
+targets — both real, separate, disclosed gaps, not silently folded in here).
+This page is the operator-facing "how do I turn it on" half.
+
+## The delivery worker
+
+The `scheduler` service above runs everything once a day. Delivery needs the
+opposite cadence (one cheap job, often), so it has its own service, `delivery`,
+in **both** Compose files and **not** behind a profile: a plain `up` must
+deliver, or a child's inbox stays empty however many messages are sent.
+
+```
+node tools/scheduler.mjs deliver-loop     # what the `delivery` service runs
+node tools/scheduler.mjs run deliver      # one tick, then exit (cron / manual)
+```
+
+Each tick (default every 30 seconds, `DELIVERY_TICK_MS`, floor 5 seconds):
+
+1. `expire_stale_intents()` closes anything undelivered past its retention window.
+2. The rematerialize sweep gives a delivery time to every `pending` row, which
+   is how an edit to a bedtime or a change of time zone re-times a queued
+   message within one tick (the triggers from migration 0002 reset the row; this
+   step re-times it).
+3. `claim_due_intents()` moves every `ready` row whose time has arrived to
+   `delivered` and stamps `delivered_at`. `FOR UPDATE SKIP LOCKED` plus a
+   compare-and-swap means two workers can never deliver the same row.
+
+A message sent while a bedtime exists is stored `ready` with its delivery time
+at send time, so the worker delivers it the moment it is due rather than
+waiting for the nightly sweep. A quiet tick logs nothing; a tick that delivered,
+expired, re-timed, hit the scan batch limit or failed logs one line
+(`docker compose logs delivery`). Rows that merely stay pending (for example a
+child with no bedtime defined yet) are re-scanned silently each tick and do not
+make a tick "busy".
+A failing step does not stop the next: a stuck rematerialize never blocks
+delivery of rows that are already ready.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DELIVERY_TICK_MS` | `30000` | Pause between ticks. Values under 5000 are raised to 5000. |
 
 ## What it runs
 
-Six named jobs, run in this order (`rematerialize`, `reap-media`,
+Named jobs, run in this order (`rematerialize`, `deliver`, `reap-media`,
 `purge-challenges`, `expiry-digest`, `backup`, then `health-alert` — `JOB_NAMES` in
 `tools/scheduler.mjs`; `health-alert` is last so it sees the backup that just
 ran). This page said "two named jobs" from `reap-media`'s own real addition
@@ -47,6 +83,7 @@ read to understand what that service does:
 | Job | What it does |
 |---|---|
 | `rematerialize` | Sweeps every `delivery_intent` row still `state='pending'`, calls the real `materialize()` against a real `ChildCtx` loaded from Postgres, and writes the result back (`ready` + `scheduled_at`, `expired`, or left `pending` for a config gap that might still get fixed). |
+| `deliver` | The delivery worker's tick: `expire_stale_intents()`, then the rematerialize sweep above, then `claim_due_intents()`, which moves every `ready` intent whose time has come to `delivered` (stamping `delivered_at`) so it appears in the child's inbox. Run on its own, every `DELIVERY_TICK_MS`, by `deliver-loop` (see "The delivery worker" below). It does not push to a device. |
 | `reap-media` | Runs the real COPPA retention reaper (`packages/storage/src/storage.ts`'s `reap()`) against every `media_artifact` row `artifacts_due_for_reaping()` returns — deletes the real blob first, then the row, and writes a `reap_tombstone` on a genuine failure so a stuck row stays discoverable and gets retried, never silently re-attempted forever or silently dropped. |
 | `expiry-digest` | Records, per child, the unpreserved artifacts expiring within 14 days as one `expiry_digest` row per distinct set (ids, kinds, dates; no captions). Records only; sends nothing. Per-child failures are counted and the job reports not-ok. |
 | `purge-challenges` | Deletes `auth_challenge` rows (WebAuthn ceremony nonces) older than their 5-minute TTL plus a 1-hour grace. They were written on every login/registration start and never deleted, and the login-challenge endpoint is unauthenticated. |
@@ -190,18 +227,13 @@ from there instead and skip the `scheduler` Compose service entirely.
 Named here rather than left implicit, matching this repo's own disclosure
 discipline:
 
-- **No delivery worker.** `claim_due_intents()`
-  (`db/migrations/0002_delivery_sweep.sql`) — the function that actually
-  claims a `ready` intent and would hand it to a real push/notification
-  send — has no application-level caller anywhere in this repo, before or
-  after this file. This scheduler makes intents reach `ready`; something
-  else, not built here, still needs to actually deliver them.
-- **No `expire_stale_intents()` wiring.** The same migration's retention-
-  expiry sweep (COPPA §10.1) is real and tested at the SQL level
-  (`db/test/run_concurrency.sh`) but has no application-level caller either.
-  Not folded into this file's `rematerialize` job — that job's own scope is
-  exactly the disclosed gap it was asked to close (materializing `pending`
-  rows), not a second, undeclared one.
+- **No push from the worker.** (Closed in part: the delivery worker now
+  exists, see below, and calls both `claim_due_intents()` and
+  `expire_stale_intents()`.) What it does not do is tell a closed app that a
+  message arrived. No push provider is configured (`DECISIONS.md` parks it), so
+  the app learns of a message by polling its inbox. When FCM credentials exist,
+  the hook goes after the claim step in `runDeliverSweep()`, which already
+  returns the claimed child ids.
 - **No `on_event` resolution.** `childCtxFor()`
   (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants` — no
   caller anywhere in this repo does. An `on_event` intent's `materialize()`

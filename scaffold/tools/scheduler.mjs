@@ -46,12 +46,11 @@
  * own header:
  *   - Does not touch `materialize.ts`'s or `health-alert.mjs`'s own logic.
  *     Both are called exactly as they already exist.
- *   - Does not call `claim_due_intents()` or `expire_stale_intents()`
- *     (`db/migrations/0002_delivery_sweep.sql`) — those are a SEPARATE,
- *     still-open gap (a real delivery/send worker that actually pushes a
- *     `ready` intent to a device, and a retention-expiry sweep), not named by
- *     either of the two disclosed gaps this file was asked to close. Wiring
- *     either in is real, scoped future work, not silently folded in here.
+ *   - (Closed since: the `deliver` job below, run by `deliver-loop`, calls
+ *     `expire_stale_intents()` then the rematerialize sweep then
+ *     `claim_due_intents()`, so a `ready` intent now becomes `delivered` and
+ *     visible in the child's inbox. It does NOT push to a device: the app
+ *     reads by polling, and no push provider is configured.)
  *   - Does not resolve `on_event` targets. `childCtxFor()`
  *     (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants`
  *     (no caller anywhere in this repo does), so an `on_event` intent's
@@ -90,7 +89,9 @@
  *   node tools/scheduler.mjs run purge-challenges # delete expired auth_challenge rows (P-08)
  *   node tools/scheduler.mjs run backup          # dump + encrypt? + prune 7d/4w + sync? (P-04; off unless BACKUP_DIR set)
  *   node tools/scheduler.mjs run health-alert    # one health check (+ stale-backup alarm), then exit
+ *   node tools/scheduler.mjs run deliver         # one delivery tick: expire, rematerialize, claim
  *   node tools/scheduler.mjs run all             # every job above, in that order
+ *   node tools/scheduler.mjs deliver-loop        # the delivery tick every DELIVERY_TICK_MS (default 30 s), forever
  *   node tools/scheduler.mjs loop                # runs `all` on a schedule, forever
  *
  * `loop` is what `docker-compose.dev.yml`'s new, opt-in `scheduler` service
@@ -311,6 +312,60 @@ export async function runRematerializeSweep(pool, opts = {}) {
     scanned: pendingRows.length, materialized, expired, stillPending, skippedRows, errored,
     batchLimitHit: pendingRows.length === batchLimit,
   };
+}
+
+// --------------------------------------------------------------- deliver ----
+export const DEFAULT_DELIVER_BATCH = 200;
+
+/**
+ * The DELIVERY WORKER -- the step that, until this existed, nothing in the
+ * running system performed (G1): a captured message sat `pending` or `ready`
+ * forever and the child's inbox, which shows only `delivered`/`opened` rows,
+ * stayed empty. One tick, in this order:
+ *
+ *   1. expire_stale_intents()  -- anything undelivered past its retention
+ *      window is closed rather than delivered late (COPPA 10.1).
+ *   2. runRematerializeSweep() -- pending rows (never resolved, or reset by a
+ *      zone/day-part change) get their delivery instant, so a bedtime edit
+ *      re-times a queued message within one tick instead of at 03:00 UTC.
+ *   3. claim_due_intents(n)    -- ready rows whose instant has arrived move to
+ *      `delivered` (FOR UPDATE SKIP LOCKED + compare-and-swap, so two workers
+ *      never double-deliver). The child app reads by polling its inbox; this
+ *      is the moment a row becomes visible to her.
+ *
+ * Push is deliberately not here: no provider is configured (DECISIONS.md parks
+ * it) and the app is offline-first -- it learns of a message by polling. When
+ * FCM is wired, the claimed `child_id`s returned below are exactly what a
+ * `message_ready` notification needs; the hook belongs after step 3.
+ *
+ * Every step is independent: a failure in one is reported and does not stop
+ * the next, because a stuck rematerialize must never block delivery of rows
+ * that are already ready.
+ */
+export async function runDeliverSweep(pool, opts = {}) {
+  const now = opts.now ?? DateTime.utc();
+  const limit = opts.limit ?? DEFAULT_DELIVER_BATCH;
+  const out = { expired: 0, rematerialized: null, delivered: 0, ids: [], children: [], errors: [] };
+
+  try {
+    const r = await withSystemSession(pool, (q) => q(`SELECT expire_stale_intents() AS n`));
+    out.expired = r[0]?.n ?? 0;
+  } catch (e) { out.errors.push(`expire: ${String(e?.message ?? e).slice(0, 200)}`); }
+
+  try {
+    out.rematerialized = await runRematerializeSweep(pool, { now, batchLimit: opts.rematerializeLimit });
+    if (out.rematerialized.errored > 0) out.errors.push(`rematerialize: ${out.rematerialized.errored} row(s) errored`);
+  } catch (e) { out.errors.push(`rematerialize: ${String(e?.message ?? e).slice(0, 200)}`); }
+
+  try {
+    const claimed = await withSystemSession(pool, (q) => q(
+      `SELECT id, child_id FROM claim_due_intents($1)`, [limit]));
+    out.delivered = claimed.length;
+    out.ids = claimed.map((r) => r.id);
+    out.children = [...new Set(claimed.map((r) => r.child_id))];
+  } catch (e) { out.errors.push(`claim: ${String(e?.message ?? e).slice(0, 200)}`); }
+
+  return out;
 }
 
 // ------------------------------------------------------ sweep-orphan-media -
@@ -650,7 +705,7 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'deliver', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -666,14 +721,17 @@ const defaultMediaStorage = new FilesystemStorage(MEDIA_STORAGE_ROOT);
  * caller running several jobs in sequence can keep going and still report an
  * honest overall exit code at the end.
  */
-export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultMediaStorage) {
+export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultMediaStorage, opts = {}) {
   const startedAt = DateTime.utc();
-  logLine({ event: 'start', job: jobName, at: startedAt.toISO() });
+  // `quiet` is for the delivery loop, which ticks every ~30 s: a start line per
+  // tick would bury every other line in `docker logs`. Failures still log.
+  if (!opts.quiet) logLine({ event: 'start', job: jobName, at: startedAt.toISO() });
 
   let lockResult;
   try {
     lockResult = await withJobLock(pool, jobName, async () => {
       if (jobName === 'rematerialize') return runRematerializeSweep(pool, {});
+      if (jobName === 'deliver') return runDeliverSweep(pool, {});
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
@@ -690,7 +748,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
   }
 
   if (!lockResult.locked) {
-    logLine({ event: 'skip_already_running', job: jobName, at: DateTime.utc().toISO() });
+    if (!opts.quiet) logLine({ event: 'skip_already_running', job: jobName, at: DateTime.utc().toISO() });
     // A skip is expected, benign behavior under real contention — not a
     // failure. See db/test suite below, section B, for the proof that
     // exactly one of two concurrent invocations does the real work while
@@ -711,6 +769,30 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     // A sweep that isolated one or more bad rows still did everything it
     // could, but it is not "ok": the exit code must say a row needs a human.
     return { ok: r.errored === 0, skipped: false };
+  }
+
+  if (jobName === 'deliver') {
+    const r = lockResult.result;
+    const ok = r.errors.length === 0;
+    // A quiet tick is the normal state of a deployment between messages and
+    // runs every ~30 s, so it is not logged -- only ticks that did something,
+    // or failed, are. "Did something" is a CHANGE (delivered, expired, re-timed,
+    // errored), never "looked at": rows that stay pending (no bedtime defined
+    // yet, an on-event row whose event has not happened) are re-scanned every
+    // tick and would otherwise log every tick until they expire. A scan that
+    // hit its batch limit is logged: a backlog that large is worth a line.
+    const rm = r.rematerialized ?? {};
+    const busy = r.delivered > 0 || r.expired > 0 || (rm.materialized ?? 0) > 0 ||
+      (rm.expired ?? 0) > 0 || (rm.errored ?? 0) > 0 || rm.batchLimitHit === true;
+    if (busy || !ok) {
+      (ok ? logLine : errLine)({
+        event: 'end', job: jobName, status: ok ? 'ok' : 'failed', duration_ms: durationMs,
+        delivered: r.delivered, children: r.children.length, expired: r.expired,
+        scanned: r.rematerialized?.scanned ?? 0, materialized: r.rematerialized?.materialized ?? 0,
+        ...(ok ? {} : { error: r.errors.join('; ') }), at: DateTime.utc().toISO(),
+      });
+    }
+    return { ok, skipped: false };
   }
 
   if (jobName === 'reap-media') {
@@ -882,10 +964,47 @@ export async function loop(pool, databaseUrl) {
   logLine({ event: 'loop_stop' });
 }
 
+// ----------------------------------------------------------- deliver loop --
+export const DEFAULT_DELIVER_TICK_MS = 30_000;
+export const MIN_DELIVER_TICK_MS = 5_000;
+
+/**
+ * The delivery worker's own loop, separate from `loop` above on purpose.
+ * `loop` runs EVERY job (backup, health-alert, orphan sweeps...) once a day,
+ * and its SCHEDULER_INTERVAL_MS override would run all of them on every tick.
+ * Delivery needs the opposite: one cheap job, often. `DELIVERY_TICK_MS`
+ * (default 30 s, floor 5 s) sets the cadence; a message becomes visible to
+ * the child within one tick of its bedtime.
+ *
+ * A tick that throws is logged and the loop carries on -- a worker that dies
+ * on one bad tick is a worker that silently stops delivering.
+ */
+export async function deliverLoop(pool, databaseUrl, opts = {}) {
+  const raw = Number(opts.tickMs ?? process.env.DELIVERY_TICK_MS ?? DEFAULT_DELIVER_TICK_MS);
+  const tickMs = Number.isFinite(raw) ? Math.max(MIN_DELIVER_TICK_MS, raw) : DEFAULT_DELIVER_TICK_MS;
+  let stopping = false;
+  const stop = () => { stopping = true; };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  logLine({ event: 'deliver_loop_start', tick_ms: tickMs });
+  while (!stopping) {
+    try {
+      await runNamedJob(pool, databaseUrl, 'deliver', undefined, { quiet: true });
+    } catch (e) {
+      errLine({ event: 'deliver_tick_error', error: String(e?.message ?? e).slice(0, 300) });
+    }
+    await interruptibleSleep(tickMs, () => stopping);
+  }
+  process.off('SIGTERM', stop);
+  process.off('SIGINT', stop);
+  logLine({ event: 'deliver_loop_stop' });
+}
+
 // -------------------------------------------------------------------- CLI -
 function usage() {
   console.error(`usage: node tools/scheduler.mjs run <${JOB_NAMES.join('|')}|all>`);
   console.error('       node tools/scheduler.mjs loop');
+  console.error('       node tools/scheduler.mjs deliver-loop');
 }
 
 async function main() {
@@ -910,6 +1029,10 @@ async function main() {
     process.exit(ok ? 0 : 1);
   } else if (cmd === 'loop') {
     await loop(pool, DATABASE_URL);
+    await pool.end();
+    process.exit(0);
+  } else if (cmd === 'deliver-loop') {
+    await deliverLoop(pool, DATABASE_URL);
     await pool.end();
     process.exit(0);
   } else {
