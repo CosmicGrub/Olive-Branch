@@ -23,6 +23,18 @@ export function requestIdFor(req) {
   return typeof inbound === 'string' && SAFE_ID.test(inbound) ? inbound : randomUUID();
 }
 
+/**
+ * Whether one finished request gets an access-log line. The two orchestrator probes
+ * (/healthz and /readyz) fire every few seconds for the life of the process, so unless
+ * the operator asks for them (ACCESS_LOG_HEALTHZ=1) they are counted in the metrics but
+ * not logged, or they would bury the real traffic (~17k lines a day per server).
+ */
+export function shouldLogAccess({ route, accessLog = true, logProbes = false }) {
+  if (!accessLog) return false;
+  if (route === '/healthz' || route === '/readyz') return logProbes;
+  return true;
+}
+
 /** The one-line JSON access-log record (returned as a string, caller prints it). */
 export function accessLogLine({ id, method, route, status, ms, now = Date.now() }) {
   return JSON.stringify({

@@ -5,7 +5,7 @@ Research and decisions, snapshot 2026-11-14. Sources are third-party where noted
 ## Chosen direction (now)
 
 - **Server:** the dev stack runs in Docker on the owner's PC (project `olive-fresh`, loopback port with `adb reverse` to the test devices). This is the default until the owner says otherwise.
-- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. No push yet to ring a closed app.
+- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. The server can now send the ring push (FCM sender, delivery wake-up, call_incoming and call_cancelled, with call_log written first and an honest ringState), but it has only run against an HTTP stand-in for Google: it needs the owner's Firebase project, and a closed Android app still cannot ring until the client has the native full-screen-call UI (gap G4, not built; see OPERATIONS-RUNBOOK "Server lane").
 - **Scrapped for much later:** Oracle Always Free, any VPS, the Cloudflare tunnel, and self-hosted LiveKit hosting. Their partial work is kept on branches (`feat/vps-deploy-kit`, `feat/live-server-bake`).
 
 ## Hosting options researched
@@ -40,6 +40,6 @@ Same-room calls over Wi-Fi (peer-to-peer on the local network, no STUN or TURN) 
 ## Multi-family readiness (5 to 10 families at first)
 
 - Capacity is small (roughly 40 to 60 devices); one small server is plenty. The risks are isolation between families, onboarding without the owner present, and operations.
-- Priorities: finish S-B11 and the family tenant isolation (S-D26); add invite-only sign-up with a family cap, a waitlist and a kill switch; run the 10-family simulation (PR #179) and keep its fast subset in CI; backups with a tested restore drill; monitoring with no per-family data; a minimum-app-version gate; consent form and in-app acceptance record for the closed beta.
+- Priorities: finish S-B11 and the family tenant isolation (S-D26); invite-only sign-up with a family cap and a kill switch now exists (migration 0050, `tools/provision-signup.mjs`; the waitlist does not); run the 10-family simulation (PR #179) and keep its fast subset in CI; backups with a tested restore drill; monitoring with no per-family data; a minimum-app-version gate; consent form and in-app acceptance record for the closed beta.
 - A beta path that fits the store rules: waves of two or three families; the 12-tester Google rule is met by real families.
 - Calls stay inside each family; cross-family contact (a grandparent or sitter) happens only through an explicit guardian invite.

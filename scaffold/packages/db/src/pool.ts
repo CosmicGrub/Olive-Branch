@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { DateTime } from 'luxon';
 import type { VerifiedPrincipal, Credential } from '../../auth/src/auth.ts';
 import { newChallenge, verifyPin } from '../../auth/src/auth.ts';
@@ -853,7 +853,7 @@ export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promi
 // ----------------------------------------------------------- security events --
 export type SecurityEventKind =
   | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
-  | 'device_paired' | 'export_taken' | 'invite_created';
+  | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -873,6 +873,7 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   'export_taken:raw': 'A raw export of the family records was taken',
   'export_taken:certified': 'A certified export of the family records was taken',
   invite_created: 'A guardian invite was created',
+  guardian_added: 'A grown-up was given access to a child',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -1365,15 +1366,98 @@ export async function recordCallStart(pool: pg.Pool, input: {
  */
 export async function recordCallEnd(
   pool: pg.Pool, childId: string, sessionId: string,
+  /** Who is hanging up. Decides the reason when the call was never answered:
+   *  the caller ending it is 'cancelled', the child's device ending it is
+   *  'declined'. A call that WAS answered (answered_at set by the child's join)
+   *  is always 'answered'. Defaults to the caller. */
+  endedBy: 'caller' | 'callee' = 'caller',
+): Promise<{ ended: boolean; reason: 'answered' | 'cancelled' | 'declined' | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log
+          SET ended_at = now(),
+              ended_reason = CASE WHEN answered_at IS NOT NULL THEN 'answered'
+                                  WHEN $3 = 'callee' THEN 'declined'
+                                  ELSE 'cancelled' END
+        WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
+        RETURNING id, ended_reason`,
+      [sessionId, childId, endedBy],
+    );
+    return rows.length > 0
+      ? { ended: true, reason: rows[0].ended_reason } : { ended: false, reason: null };
+  });
+}
+
+/**
+ * Records, after the fact, whether the callee's device was actually rung. The
+ * call_log row is written BEFORE the ring (a ring for a call nobody can join
+ * is worse than no call), so `rang` is filled in once the push result is known.
+ */
+export async function recordCallRang(
+  pool: pg.Pool, childId: string, sessionId: string, rang: boolean,
+): Promise<void> {
+  await withSystemSession(pool, async (q) => {
+    await q(`UPDATE call_log SET rang = $3 WHERE id = $1 AND child_id = $2`,
+      [sessionId, childId, rang]);
+  });
+}
+
+/**
+ * Stamps `answered_at` the first time the CHILD (the callee) mints a join
+ * token for a live call -- the one moment the server genuinely sees an answer.
+ * Idempotent (COALESCE keeps the first instant). Returns whether the row
+ * exists, is this child's and is still live.
+ */
+export async function markCallAnswered(
+  pool: pg.Pool, childId: string, sessionId: string,
 ): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `UPDATE call_log SET ended_at = now()
+      `UPDATE call_log SET answered_at = COALESCE(answered_at, now())
         WHERE id = $1 AND child_id = $2 AND ended_at IS NULL
         RETURNING id`,
       [sessionId, childId],
     );
     return rows.length > 0;
+  });
+}
+
+/** Free text that ends up on a lock screen or in a JWT: no control chars, collapsed, capped. */
+export function cleanDisplayName(raw: unknown, max = 40): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, max).trim();
+  return s.length ? s : null;
+}
+
+/** Default longest a call session may stay joinable: 4 hours. CALL_MAX_AGE_MINUTES overrides. */
+export const DEFAULT_CALL_MAX_AGE_MINUTES = 240;
+export function callMaxAgeMinutes(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.CALL_MAX_AGE_MINUTES);
+  return Number.isFinite(n) && n >= 1 && n <= 24 * 60 ? Math.floor(n) : DEFAULT_CALL_MAX_AGE_MINUTES;
+}
+
+/**
+ * Ends every call still live after `maxAgeMinutes` (a session whose clients
+ * crashed never calls /end, and a joinable room stays joinable forever
+ * otherwise). Reason 'stale'. A single UPDATE, so it is atomic against a
+ * concurrent /end: whichever commits first wins and the other updates zero
+ * rows. Returns how many calls were ended.
+ */
+export async function endStaleCalls(
+  pool: pg.Pool, maxAgeMinutes: number = callMaxAgeMinutes(),
+): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE call_log SET ended_at = now(), ended_reason = 'stale'
+        WHERE ended_at IS NULL
+          AND started_at < now() - make_interval(mins => $1::int)
+        RETURNING id`,
+      [maxAgeMinutes],
+    );
+    return rows.length;
   });
 }
 
@@ -1400,13 +1484,16 @@ export async function callSessionFor(
 } | null> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at
+      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at,
+              (started_at < now() - make_interval(mins => $3::int)) AS too_old
          FROM call_log WHERE id = $1 AND child_id = $2`,
-      [sessionId, childId],
+      [sessionId, childId, callMaxAgeMinutes()],
     );
     if (!rows.length) return null;
     const row = rows[0];
-    if (row.ended_at) return null;
+    // An ended call, or one older than the maximum session age (a crashed
+    // client never ends its call), is no longer joinable.
+    if (row.ended_at || row.too_old) return null;
     return {
       id: row.id, childId: row.child_id, roomName: row.room_name, startedBy: row.started_by,
       authorizedUserIds: row.participant_ids, ladderStep: row.ladder_step,
@@ -1551,6 +1638,14 @@ export async function deactivateAccount(
     // unrestricted DELETE to 'system', the role this whole call runs as.
     const deviceTokens = await q(
       `DELETE FROM device_token WHERE owner_user_id = $1 RETURNING id`, [userId]);
+
+    // 0050: a deactivated grown-up's enrolled devices stop working NOW. The
+    // device-bound session is checked against revoked_at on every request
+    // (api.ts), so this ends a live session at once instead of letting it
+    // run out its remaining hour.
+    await q(
+      `UPDATE paired_device SET revoked_at = now()
+        WHERE role = 'guardian' AND target_id = $1 AND revoked_at IS NULL`, [userId]);
 
     // The row itself is NEVER deleted. RLS (0011_account_deletion.sql) has
     // no DELETE policy on app_user at all, so a stray "DELETE FROM app_user"
@@ -4351,7 +4446,7 @@ export async function acceptGuardianInvite(
     const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
     if (!rows.length) return { ok: false, reason: 'not_found' };
     const row = rows[0];
-    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.revoked_at || row.declined_at) return { ok: false, reason: 'revoked' };
     if (row.accepted_at) return { ok: false, reason: 'already_accepted' };
     if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
 
@@ -4440,8 +4535,9 @@ export type BootstrapInviteError =
  */
 export async function bootstrapGuardianInvite(
   pool: pg.Pool, inviteId: string, displayName: string, now: Date,
+  opts: { enrolDeviceLabel?: string } = {},
 ): Promise<
-  | { ok: true; userId: string; childId: string }
+  | { ok: true; userId: string; childId: string; deviceId?: string; deviceCredential?: string }
   | { ok: false; reason: BootstrapInviteError }
 > {
   return withSystemSession(pool, async (q) => {
@@ -4457,7 +4553,7 @@ export async function bootstrapGuardianInvite(
     // itself refuses to accept a revoked one) is named the more specific,
     // more security-relevant 'revoked' rather than the merely incidental
     // 'not_accepted' it would also technically satisfy.
-    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.revoked_at || row.declined_at) return { ok: false, reason: 'revoked' };
     if (!row.accepted_at) return { ok: false, reason: 'not_accepted' };
     // Defense in depth, matching webauthnLoginVerify's own belt-and-
     // suspenders posture (server/index.mjs): acceptGuardianInvite() already
@@ -4510,10 +4606,18 @@ export async function bootstrapGuardianInvite(
     }
 
     await q(
-      `UPDATE guardian_invite SET bootstrapped_at = $2, bootstrap_user_id = $3 WHERE id = $1`,
+      `UPDATE guardian_invite
+          SET bootstrapped_at = $2, bootstrap_user_id = $3,
+              claimant_user_id = $3, claimed_at = $2
+        WHERE id = $1`,
       [inviteId, now.toISOString(), userId],
     );
-    return { ok: true, userId, childId: row.child_id };
+    // 0050: opt-in device enrolment in the SAME transaction, so the new
+    // grown-up leaves with a long-lived credential for POST
+    // /v1/auth/session/refresh instead of a one-hour token and no way back.
+    const device = opts.enrolDeviceLabel !== undefined
+      ? await enrolGuardianDevice(q, userId, opts.enrolDeviceLabel, now) : undefined;
+    return { ok: true, userId, childId: row.child_id, ...device };
   });
 }
 
@@ -4931,6 +5035,507 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
 }
 
 // ===========================================================================
+// IDENTITY LANE — db/migrations/0050_identity_signup.sql.
+//
+// The first account, the first child and a real second grown-up. Until this
+// block the only ways to get an app_user, a child or a guardianship edge were
+// server/seed-dev.mjs and the family-sim harness (raw SQL). Every function
+// here runs as `system`: the caller either has no session yet (sign-up,
+// invite claim by an unauthenticated device) or is creating the very edge
+// that RLS would otherwise need to already exist (a child's first guardian).
+// The ROUTE is the first lock (PIN step-up, live-edge checks); the table
+// constraints and RLS are the second.
+// ===========================================================================
+
+/** How long an operator-issued sign-up allowance stays redeemable. */
+export const SIGNUP_ALLOWANCE_TTL_DAYS = 14;
+/** One account may not found more children than this (abuse bound, not a product limit). */
+export const MAX_CHILDREN_PER_ACCOUNT = 12;
+
+/** 32 CSPRNG bytes, base64url: the token an operator hands a family. Shown once. */
+export function newSignupAllowanceToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** SHA-256 hex of an allowance token. Same reasoning as deviceCredentialDigest(). */
+export function signupAllowanceDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+export interface SignupPolicy { enabled: boolean; maxAccounts: number | null; redeemed: number }
+
+export async function signupPolicyFor(pool: pg.Pool): Promise<SignupPolicy> {
+  return withSystemSession(pool, async (q) => {
+    const [p] = await q(`SELECT enabled, max_accounts FROM signup_policy WHERE singleton`);
+    const [c] = await q(`SELECT count(*)::int AS n FROM signup_allowance WHERE redeemed_at IS NOT NULL`);
+    return { enabled: p.enabled, maxAccounts: p.max_accounts, redeemed: c.n };
+  });
+}
+
+/** Operator-only (tools/provision-signup.mjs): the kill switch and the account cap. */
+export async function setSignupPolicy(
+  pool: pg.Pool, patch: { enabled?: boolean; maxAccounts?: number | null },
+): Promise<SignupPolicy> {
+  await withSystemSession(pool, async (q) => {
+    if (patch.enabled !== undefined) {
+      await q(`UPDATE signup_policy SET enabled = $1 WHERE singleton`, [patch.enabled]);
+    }
+    if (patch.maxAccounts !== undefined) {
+      await q(`UPDATE signup_policy SET max_accounts = $1 WHERE singleton`, [patch.maxAccounts]);
+    }
+  });
+  return signupPolicyFor(pool);
+}
+
+/**
+ * Operator-only. Mints one single-use allowance and returns the plaintext
+ * token ONCE; only its SHA-256 is stored, so the database alone cannot sign
+ * anybody up.
+ */
+export async function issueSignupAllowance(
+  pool: pg.Pool, opts: { label?: string; ttlDays?: number; now?: Date } = {},
+): Promise<{ id: string; token: string; expiresAt: string }> {
+  const label = (opts.label ?? '').trim();
+  if (label.length > 80) throw new Error('issueSignupAllowance: label too long');
+  if (label.includes('@')) throw new Error('issueSignupAllowance: label must not contain an email');
+  const ttlDays = opts.ttlDays ?? SIGNUP_ALLOWANCE_TTL_DAYS;
+  if (!(ttlDays > 0 && ttlDays <= 90)) throw new Error('issueSignupAllowance: ttlDays out of range');
+  const token = newSignupAllowanceToken();
+  const now = opts.now ?? new Date();
+  const expires = new Date(now.getTime() + ttlDays * 86_400_000);
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `INSERT INTO signup_allowance (token_hash, label, created_at, expires_at)
+       VALUES ($1, $2, $3, $4) RETURNING id, expires_at`,
+      [signupAllowanceDigest(token), label, now.toISOString(), expires.toISOString()]);
+    return { id: rows[0].id, token, expiresAt: new Date(rows[0].expires_at).toISOString() };
+  });
+}
+
+/**
+ * Enrols the calling device at account creation: a paired_device row (role
+ * `guardian`, paired_via NULL) with the same long-lived credential a numeric
+ * pairing mints, so POST /v1/auth/session/refresh keeps it signed in. Must run
+ * as `system`, inside the transaction that created the account.
+ */
+async function enrolGuardianDevice(
+  q: Query, userId: string, label: string, now: Date,
+): Promise<{ deviceId: string; deviceCredential: string }> {
+  const deviceCredential = newDeviceCredential();
+  const rows = await q(
+    `INSERT INTO paired_device (role, target_id, label, paired_via, paired_at, credential_hash)
+     VALUES ('guardian', $1, $2, NULL, $3, $4) RETURNING id`,
+    [userId, label.slice(0, 60) || 'This device', now.toISOString(),
+      deviceCredentialDigest(deviceCredential)]);
+  return { deviceId: rows[0].id, deviceCredential };
+}
+
+export type SignupError =
+  | 'signup_disabled' | 'signup_cap_reached' | 'invalid_allowance';
+
+type SignupVerdict = { ok: true } | { ok: false; reason: SignupError };
+
+/**
+ * The one decision both the cheap pre-check and the real sign-up share, so
+ * they cannot drift apart. ORDER MATTERS: the allowance is judged FIRST, so a
+ * caller who holds no valid token always gets the same `invalid_allowance`
+ * and learns nothing about the kill switch or the account cap. Only a holder
+ * of a live token is told the door is shut. `lockPolicy` takes the policy row
+ * FOR UPDATE (the real sign-up), so racing sign-ups cannot both slip under the
+ * cap; the pre-check reads without a lock.
+ */
+async function judgeSignup(
+  q: Query, token: string, now: Date, lockPolicy: boolean,
+): Promise<{ verdict: SignupVerdict; allowanceId?: string }> {
+  const [policy] = await q(
+    `SELECT enabled, max_accounts FROM signup_policy WHERE singleton${lockPolicy ? ' FOR UPDATE' : ''}`);
+  const allowance = await q(
+    `SELECT id, expires_at, redeemed_at FROM signup_allowance
+      WHERE token_hash = $1${lockPolicy ? ' FOR UPDATE' : ''}`,
+    [signupAllowanceDigest(token)]);
+  const a = allowance[0];
+  if (!a || a.redeemed_at || new Date(a.expires_at) <= now) {
+    return { verdict: { ok: false, reason: 'invalid_allowance' } };
+  }
+  if (!policy.enabled) return { verdict: { ok: false, reason: 'signup_disabled' } };
+  if (policy.max_accounts !== null) {
+    const [c] = await q(
+      `SELECT count(*)::int AS n FROM signup_allowance WHERE redeemed_at IS NOT NULL`);
+    if (c.n >= policy.max_accounts) return { verdict: { ok: false, reason: 'signup_cap_reached' } };
+  }
+  return { verdict: { ok: true }, allowanceId: a.id };
+}
+
+/**
+ * Read-only: would POST /v1/auth/signup have a chance with this token right
+ * now? The route calls it BEFORE it hashes the PIN. scrypt is deliberately
+ * slow and synchronous (it blocks the single Node event loop), and the route
+ * is unauthenticated, so without this gate any caller with a junk 20-char
+ * token could make the server burn a hash per request. Advisory only:
+ * signUpWithAllowance() decides again, under locks, and is the authority.
+ */
+export async function precheckSignup(
+  pool: pg.Pool, token: string, now: Date,
+): Promise<SignupVerdict> {
+  return withSystemSession(pool, async (q) => (await judgeSignup(q, token, now, false)).verdict);
+}
+
+/**
+ * POST /v1/auth/signup's real work. One transaction: allowance and policy
+ * gate, allowance redemption, app_user, first PIN, device enrolment.
+ *
+ *  - The kill switch and the cap are read FOR UPDATE on the single
+ *    signup_policy row, so two racing sign-ups cannot both slip under the cap.
+ *  - An unknown, expired and already-redeemed allowance are ONE outcome
+ *    (invalid_allowance): an unauthenticated caller learns nothing about
+ *    which tokens exist or used to, and (judgeSignup) nothing about the kill
+ *    switch or the cap either: those are only reported for a live token.
+ *  - The allowance row is locked FOR UPDATE before it is read, so a token
+ *    cannot be redeemed twice by concurrent calls (the redeemed_at write is
+ *    the compare-and-swap).
+ */
+export async function signUpWithAllowance(
+  pool: pg.Pool,
+  input: { token: string; displayName: string; homeTz: string; pinHash: string;
+           deviceLabel: string; now: Date },
+): Promise<
+  | { ok: true; userId: string; deviceId: string; deviceCredential: string }
+  | { ok: false; reason: SignupError }
+> {
+  // The new account's id is chosen up front and set as the session's actor:
+  // pin_credential's owner-only policy (0008) admits a write only when
+  // user_id = current_actor(), for the system role too (deactivateAccount()
+  // does the same). Everything else here is system-scoped as usual.
+  const userId = randomUUID();
+  return withSession(pool, { roleName: 'system', userId, childId: null }, async (q) => {
+    const { verdict, allowanceId } = await judgeSignup(q, input.token, input.now, true);
+    if (!verdict.ok) return verdict;
+    await q(
+      `INSERT INTO app_user (id, display_name, home_tz) VALUES ($1, $2, $3)`,
+      [userId, input.displayName, input.homeTz]);
+    await q(
+      `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+       VALUES ($1, $2, 0, NULL, now())`,
+      [userId, input.pinHash]);
+    const redeemed = await q(
+      `UPDATE signup_allowance SET redeemed_at = $2, redeemed_by = $3
+        WHERE id = $1 AND redeemed_at IS NULL RETURNING id`,
+      [allowanceId, input.now.toISOString(), userId]);
+    if (redeemed.length !== 1) throw new Error('signUpWithAllowance: allowance CAS lost');
+    const device = await enrolGuardianDevice(q, userId, input.deviceLabel, input.now);
+    return { ok: true, userId, ...device };
+  });
+}
+
+/**
+ * The day a brand-new child starts with, until a grown-up edits it (PUT
+ * /v1/children/:childId/day-parts replaces the whole schedule). ONE definition,
+ * used by every path that creates a child: without ANY day_part row
+ * materialize() answers `daypart_undefined` and a banked message for that child
+ * could never be scheduled.
+ *
+ * Wall-clock HH:MM in the child's own zone, every day, a full non-overlapping
+ * day (the night wraps midnight, which the day-part routes and the engine both
+ * support): she is reachable in the morning and through the day, `bedtime` is
+ * 19:30 to 20:30 (the part the messages route targets by default), and the night
+ * is unreachable so a push does not wake her. A placeholder that asserts no
+ * schedule beyond "evening is bedtime, overnight is quiet".
+ */
+export const DEFAULT_DAY_PARTS: ReadonlyArray<{
+  kind: string; startsLocal: string; endsLocal: string; reachable: boolean;
+}> = [
+  { kind: 'wake',    startsLocal: '06:30', endsLocal: '08:00', reachable: true },
+  { kind: 'free',    startsLocal: '08:00', endsLocal: '19:30', reachable: true },
+  { kind: 'bedtime', startsLocal: '19:30', endsLocal: '20:30', reachable: true },
+  { kind: 'asleep',  startsLocal: '20:30', endsLocal: '06:30', reachable: false },
+];
+
+/** Inside the caller's transaction: writes DEFAULT_DAY_PARTS for a brand-new child. */
+async function insertDefaultDayParts(q: Query, childId: string): Promise<void> {
+  // The same per-child writer lock the day-parts PUT route takes, so the two can never interleave.
+  await q(`SELECT pg_advisory_xact_lock(hashtext('day_part:' || $1::text))`, [childId]);
+  for (const p of DEFAULT_DAY_PARTS) {
+    await q(
+      `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+       VALUES ($1, $2, $3::time, $4::time, '{0,1,2,3,4,5,6}', $5, daterange('2000-01-01', NULL))`,
+      [childId, p.kind, p.startsLocal, p.endsLocal, p.reachable]);
+  }
+}
+
+export interface OwnChild {
+  id: string; displayName: string; birthDate: string; homeTz: string; role: string;
+}
+
+/** GET /v1/me/children — the children the caller holds a LIVE, unrestricted edge to. */
+export async function childrenOf(pool: pg.Pool, userId: string): Promise<OwnChild[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT c.id, c.display_name, c.birth_date::text AS birth_date, c.home_tz, g.role
+         FROM effective_guardianship g JOIN child c ON c.id = g.child_id
+        WHERE g.user_id = $1 AND g.restricted = false AND c.deceased_at IS NULL
+        ORDER BY c.display_name, c.id`,
+      [userId]);
+    return rows.map((r: any) => ({
+      id: r.id, displayName: r.display_name, birthDate: r.birth_date,
+      homeTz: r.home_tz, role: r.role,
+    }));
+  });
+}
+
+export type CreateChildError = 'account_not_found' | 'too_many_children';
+
+/**
+ * POST /v1/children's real work: the child, the creator's guardianship edge,
+ * the child's first timezone interval and a conservative default day-part
+ * plan (asleep overnight, reachable otherwise) in ONE transaction, so there is
+ * never a child with no guardian or an edge to a half-built child.
+ *
+ * The default day-part plan exists because materialize() resolves
+ * `at_daypart` / `when_reachable` from day_part rows and leaves an intent
+ * `pending` forever (`daypart_undefined`) for a child with none. The messages
+ * route targets the `bedtime` part by default (a goodnight video), so without
+ * a `bedtime` row NOTHING a guardian sends would ever deliver. A guardian
+ * replaces it through PUT /v1/children/:childId/day-parts (the delivery lane).
+ * See DEFAULT_DAY_PARTS: a placeholder that asserts no schedule beyond
+ * "overnight is quiet, evening is bedtime".
+ */
+export async function createChildForGuardian(
+  pool: pg.Pool, userId: string,
+  input: { displayName: string; birthDate: string; homeTz: string },
+): Promise<{ ok: true; child: OwnChild } | { ok: false; reason: CreateChildError }> {
+  return withSystemSession(pool, async (q) => {
+    const user = await q(
+      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [userId]);
+    if (!user.length) return { ok: false, reason: 'account_not_found' };
+    const [n] = await q(
+      `SELECT count(*)::int AS n FROM guardianship WHERE user_id = $1 AND role = 'guardian'`,
+      [userId]);
+    if (n.n >= MAX_CHILDREN_PER_ACCOUNT) return { ok: false, reason: 'too_many_children' };
+
+    const child = await q(
+      `INSERT INTO child (display_name, birth_date, home_tz)
+       VALUES ($1, $2::date, $3) RETURNING id, display_name, birth_date::text AS birth_date, home_tz`,
+      [input.displayName, input.birthDate, input.homeTz]);
+    const c = child[0];
+    // Lower bound a minute in the past: the edge is judged against the app
+    // server's clock in can(), the row against the database's.
+    await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 minute', NULL))`,
+      [c.id, userId]);
+    await q(
+      `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+       VALUES ($1, $2, tstzrange(now() - interval '1 year', NULL), 'manual')`,
+      [c.id, input.homeTz]);
+    await insertDefaultDayParts(q, c.id);
+    return { ok: true, child: {
+      id: c.id, displayName: c.display_name, birthDate: c.birth_date, homeTz: c.home_tz,
+      role: 'guardian',
+    } };
+  });
+}
+
+// ----------------------------------------------- invite: claim / confirm --
+
+export type ClaimInviteError =
+  | 'not_found' | 'revoked' | 'declined' | 'not_accepted' | 'expired'
+  | 'already_claimed' | 'already_confirmed' | 'already_a_member';
+
+/**
+ * POST /v1/guardian-invites/:inviteId/claim — an EXISTING account presents an
+ * accepted invite (the "second invite to an already-registered email" dead
+ * end). The invite id alone is never enough: the caller's own session must
+ * belong to the account whose email IS the invited email, so holding a leaked
+ * invite id lets nobody else attach. A mismatch is reported as not_found.
+ * Grants nothing; the inviter's confirm step creates the edge.
+ */
+export async function claimGuardianInvite(
+  pool: pg.Pool, inviteId: string, userId: string, now: Date,
+): Promise<{ ok: true; invite: GuardianInvite } | { ok: false; reason: ClaimInviteError }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM guardian_invite WHERE id = $1 FOR UPDATE`, [inviteId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    const user = await q(
+      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL AND email = $2`,
+      [userId, row.invited_email]);
+    if (!user.length) return { ok: false, reason: 'not_found' };
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.declined_at) return { ok: false, reason: 'declined' };
+    if (row.confirmed_at) return { ok: false, reason: 'already_confirmed' };
+    if (!row.accepted_at) return { ok: false, reason: 'not_accepted' };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
+    if (row.claimant_user_id && row.claimant_user_id !== userId) {
+      return { ok: false, reason: 'already_claimed' };
+    }
+    const member = await q(
+      `SELECT 1 FROM guardianship WHERE child_id = $1 AND user_id = $2`, [row.child_id, userId]);
+    if (member.length) return { ok: false, reason: 'already_a_member' };
+    const updated = await q(
+      `UPDATE guardian_invite
+          SET claimant_user_id = $2, claimed_at = COALESCE(claimed_at, $3)
+        WHERE id = $1 RETURNING *`,
+      [inviteId, userId, now.toISOString()]);
+    return { ok: true, invite: rowToInvite(updated[0]) };
+  });
+}
+
+export type ConfirmInviteError =
+  | 'not_found' | 'revoked' | 'declined' | 'not_claimed' | 'expired'
+  | 'already_confirmed' | 'inviter_not_guardian' | 'claimant_unavailable' | 'edge_exists'
+  | 'family_full';
+
+/**
+ * Caps adopted in docs/planning/DECISIONS.md (G-37): at most 4 parents and 8
+ * carers per child. A "parent" is the role family of someone who raises the
+ * child (guardian, step_parent, foster_parent); every other role is a carer.
+ * Enforced where an edge is CREATED (confirmGuardianInvite, the only route that
+ * makes an invited adult's edge), under a lock on the child row so two invites
+ * confirmed at the same moment cannot both pass.
+ */
+export const MAX_PARENT_EDGES_PER_CHILD = 4;
+export const MAX_CARER_EDGES_PER_CHILD = 8;
+const PARENT_ROLES: readonly string[] = ['guardian', 'step_parent', 'foster_parent'];
+export const isParentRole = (role: string): boolean => PARENT_ROLES.includes(role);
+
+/**
+ * Counts the LIVE edges to one child by class, for the cap check. Runs inside
+ * the caller's transaction (its `q`), after the caller has locked the child
+ * row, so the answer cannot go stale before the INSERT that follows it.
+ */
+async function liveEdgeCounts(q: Query, childId: string): Promise<{ parents: number; carers: number }> {
+  const rows = await q(
+    `SELECT role, count(*)::int AS n FROM guardianship
+      WHERE child_id = $1 AND closed_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())
+      GROUP BY role`, [childId]);
+  let parents = 0, carers = 0;
+  for (const r of rows as any[]) {
+    if (isParentRole(r.role)) parents += r.n; else carers += r.n;
+  }
+  return { parents, carers };
+}
+
+/**
+ * POST /v1/guardian-invites/:inviteId/confirm — THE step that creates a
+ * guardianship edge for an invited adult. Only the inviter can cause it (any
+ * other caller is indistinguishable from "no such invite"), only for an
+ * invite someone has actually presented (claimed), and only while the inviter
+ * still holds a live guardian edge to the child themself. The edge carries
+ * exactly the invite's role and scope. Edge insert and invite consumption are
+ * one transaction: there is no state with one and not the other.
+ */
+export async function confirmGuardianInvite(
+  pool: pg.Pool, inviteId: string, inviterId: string, now: Date,
+): Promise<
+  | { ok: true; childId: string; userId: string; role: string }
+  | { ok: false; reason: ConfirmInviteError }
+> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT * FROM guardian_invite WHERE id = $1 AND invited_by = $2 FOR UPDATE`,
+      [inviteId, inviterId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const row = rows[0];
+    if (row.confirmed_at) return { ok: false, reason: 'already_confirmed' };
+    if (row.revoked_at) return { ok: false, reason: 'revoked' };
+    if (row.declined_at) return { ok: false, reason: 'declined' };
+    if (!row.claimant_user_id || !row.claimed_at) return { ok: false, reason: 'not_claimed' };
+    if (new Date(row.expires_at) <= now) return { ok: false, reason: 'expired' };
+
+    const inviter = await q(
+      `SELECT 1 FROM effective_guardianship
+        WHERE child_id = $1 AND user_id = $2 AND role = 'guardian' AND restricted = false`,
+      [row.child_id, inviterId]);
+    if (!inviter.length) return { ok: false, reason: 'inviter_not_guardian' };
+    const claimant = await q(
+      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL`, [row.claimant_user_id]);
+    if (!claimant.length) return { ok: false, reason: 'claimant_unavailable' };
+
+    // Lock the child row, THEN count: two confirmations for the same child at the same
+    // instant serialise here, so the G-37 cap cannot be passed by both (each already holds
+    // FOR UPDATE on its OWN invite row only).
+    await q(`SELECT 1 FROM child WHERE id = $1 FOR UPDATE`, [row.child_id]);
+    const live = await liveEdgeCounts(q, row.child_id);
+    if (isParentRole(row.role) ? live.parents >= MAX_PARENT_EDGES_PER_CHILD
+                               : live.carers >= MAX_CARER_EDGES_PER_CHILD) {
+      return { ok: false, reason: 'family_full' };
+    }
+
+    const inserted = await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, $3, $4::jsonb, tstzrange(now() - interval '1 minute', NULL))
+       ON CONFLICT (child_id, user_id) DO NOTHING RETURNING id`,
+      [row.child_id, row.claimant_user_id, row.role, JSON.stringify(row.scope ?? {})]);
+    if (!inserted.length) return { ok: false, reason: 'edge_exists' };
+    await q(
+      `UPDATE guardian_invite SET confirmed_at = $2, confirmed_by = $3 WHERE id = $1`,
+      [inviteId, now.toISOString(), inviterId]);
+    await insertSecurityEvent(q, inviterId, 'guardian_added', { childId: row.child_id });
+    return { ok: true, childId: row.child_id, userId: row.claimant_user_id, role: row.role };
+  });
+}
+
+export type DeclineInviteError = 'not_found' | 'already_confirmed';
+
+/** POST .../decline — the inviter turns away whoever presented the invite. Never needs a PIN: it only removes. */
+export async function declineGuardianInvite(
+  pool: pg.Pool, inviteId: string, inviterId: string, now: Date,
+): Promise<{ ok: true } | { ok: false; reason: DeclineInviteError }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT confirmed_at, declined_at FROM guardian_invite
+        WHERE id = $1 AND invited_by = $2 FOR UPDATE`, [inviteId, inviterId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    if (rows[0].confirmed_at) return { ok: false, reason: 'already_confirmed' };
+    if (!rows[0].declined_at) {
+      await q(`UPDATE guardian_invite SET declined_at = $2 WHERE id = $1`,
+        [inviteId, now.toISOString()]);
+    }
+    return { ok: true };
+  });
+}
+
+export type InviteStatus =
+  | 'sent' | 'accepted' | 'waiting_for_you' | 'confirmed' | 'declined' | 'revoked' | 'expired';
+
+export interface InviteListing {
+  id: string; role: string; label: string; invitedEmail: string; status: InviteStatus;
+  createdAt: string; expiresAt: string;
+  /** Only once someone has presented the invite: the name they gave. Never an id or email. */
+  claimantName: string | null;
+}
+
+/** GET /v1/children/:childId/guardian-invites — the CALLER's own invites for this child, with their state. */
+export async function guardianInvitesFor(
+  pool: pg.Pool, childId: string, inviterId: string, now: Date,
+): Promise<InviteListing[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT i.*, u.display_name AS claimant_name
+         FROM guardian_invite i LEFT JOIN app_user u ON u.id = i.claimant_user_id
+        WHERE i.child_id = $1 AND i.invited_by = $2
+        ORDER BY i.created_at DESC, i.id`,
+      [childId, inviterId]);
+    return rows.map((r: any): InviteListing => {
+      const status: InviteStatus =
+        r.confirmed_at ? 'confirmed'
+        : r.declined_at ? 'declined'
+        : r.revoked_at ? 'revoked'
+        : new Date(r.expires_at) <= now ? 'expired'
+        : r.claimant_user_id ? 'waiting_for_you'
+        : r.accepted_at ? 'accepted' : 'sent';
+      return {
+        id: r.id, role: r.role, label: r.label, invitedEmail: r.invited_email, status,
+        createdAt: new Date(r.created_at).toISOString(),
+        expiresAt: new Date(r.expires_at).toISOString(),
+        claimantName: r.claimant_user_id ? r.claimant_name : null,
+      };
+    });
+  });
+}
+
+// ===========================================================================
 // GUARDIAN ACTIVITY OVERRIDE — docs/superpowers/specs/2026-09-13-parental-
 // controls-pacing-design.md ("sub-project 2: visibility & pacing").
 // db/migrations/0033_guardian_activity_override.sql.
@@ -5270,6 +5875,25 @@ export async function houseRulesFor(
       mine: all.filter((r) => r.authorGuardianId === guardianId),
       others: all.filter((r) => r.authorGuardianId !== guardianId),
     };
+  });
+}
+
+// ============================================================ delivery backlog ==
+// Read-only view of the delivery queue for /readyz (how much is waiting, how old the
+// oldest due row is). The worker itself is tools/scheduler.mjs runDeliverSweep: ONE
+// implementation (the delivery lane's), which this file does not duplicate.
+
+/** Counts for the log line and /readyz: how much is waiting, and how old the oldest is. */
+export async function deliveryBacklog(pool: pg.Pool): Promise<{
+  pending: number; ready: number; oldestReadyAgeSec: number | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT count(*) FILTER (WHERE state = 'pending')::int AS pending,
+              count(*) FILTER (WHERE state = 'ready')::int AS ready,
+              EXTRACT(EPOCH FROM (now() - min(scheduled_at) FILTER (WHERE state = 'ready' AND scheduled_at <= now())))::int AS oldest
+         FROM delivery_intent WHERE state IN ('pending','ready')`);
+    const r = rows[0];
+    return { pending: r.pending ?? 0, ready: r.ready ?? 0, oldestReadyAgeSec: r.oldest ?? null };
   });
 }
 

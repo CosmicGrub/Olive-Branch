@@ -35,6 +35,10 @@ scaffold/.env
 # (DB passwords, SESSION_SECRET) never belong in git.
 scaffold/.env.prod
 
+# Push credential (FCM service-account JSON) mounted read-only into the server
+# and scheduler containers at /run/olive-secrets. Never commit it.
+scaffold/secrets/
+
 # tools/backup-db.sh's default output directory and
 # docker-compose.prod.yml's `backup` service default volume target — real
 # Postgres dumps of a family's data, never committed.

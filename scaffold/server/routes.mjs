@@ -32,7 +32,8 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
-         recordCallStart, recordCallEnd, callSessionFor,
+         recordCallStart, recordCallEnd, callSessionFor, recordCallRang, markCallAnswered,
+         cleanDisplayName,
          appendHandoverNote, handoverNotesFor,
          expensesFor, proposeExpense, resolveExpense,
          medicationsFor, dosesForDate, recordDose, medicalRecordFor, setMedicalRecord,
@@ -54,7 +55,10 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload,
          artifactDeliveredToChild, deliveredArtifactForIntent,
-         webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
+         webauthnCredentialById, updateWebauthnSignCount,
+         signUpWithAllowance, precheckSignup, childrenOf, createChildForGuardian,
+         claimGuardianInvite, confirmGuardianInvite, declineGuardianInvite,
+         guardianInvitesFor } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
 import { gate } from '../packages/delivery-engine/src/gate.mjs';
@@ -72,8 +76,10 @@ import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/s
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
 import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { cleanName as cleanIdentityName, cleanTz, cleanBirthDate } from './identity_input.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
+import { resolveWebauthn, originAllowed } from './webauthn_config.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -151,8 +157,15 @@ export const defaultMediaStorage = new FilesystemStorage(
  * cannot go through api.register(), see that file's own header) use the
  * exact same string rather than a second, driftable copy.
  */
-export const RP_ID = 'olivebranch.local';
-export const RP_ORIGIN = `https://${RP_ID}`;
+// Identity lane: no longer a constant. server/webauthn_config.mjs reads
+// WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN / WEBAUTHN_ANDROID_ORIGINS from the
+// environment (unset = the historical dev default, so every existing test and
+// dev stack is unchanged) and server/index.mjs refuses to boot on a malformed
+// value. Android Credential Manager's `android:apk-key-hash:...` origin is
+// accepted alongside the https origin.
+export const WEBAUTHN_CFG = resolveWebauthn(process.env);
+export const RP_ID = WEBAUTHN_CFG.rpId;
+export const RP_ORIGIN = WEBAUTHN_CFG.rpOrigin;
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -433,11 +446,46 @@ function mediaQuotaFromEnv(env = process.env) {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_MEDIA_CHILD_QUOTA_BYTES;
 }
 
+/**
+ * True when a URL's host only resolves inside a home network: a private /
+ * loopback / link-local IPv4, an IPv6 loopback or ULA, a `.local`/`.lan`/
+ * `.home.arpa`/`.internal` name, or a single-label name. Used only to tell the
+ * app "calls work on the same Wi-Fi only"; never returned to a client.
+ */
+export function isLanOnlyHost(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  host = host.replace(/^\[|\]$/g, '');
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  if (host.includes(':')) return host === '::1' || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe80:/.test(host);
+  return !host.includes('.') || /\.(local|lan|internal|home\.arpa)$/.test(host);
+}
+
+/**
+ * Collapses notifyDevices()'s per-device results to ONE honest word the guardian
+ * UI can show. Built only from the `code` field (the safe one): never `message`,
+ * which can embed a third party's raw response text.
+ */
+export function ringStateFrom(results) {
+  if (!Array.isArray(results) || results.length === 0) return 'no_devices';
+  if (results.some((r) => r.ok)) return 'rang';
+  if (results.every((r) => r.code === 'gated_quiet_hours')) return 'quiet_hours';
+  if (results.every((r) => r.code === 'no_push_capability')) return 'no_push_capability';
+  return 'send_failed';
+}
+
 export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = {}) {
   // S-B1: global miss budget for device-pairing redeem (see rate_limit.mjs MissBudget).
   const pairingMissBudget = opts.pairingMissBudget ?? createPairingMissBudget();
   // S-B6: per-principal cap on concurrent media/homework body decodes.
   const uploadLimiter = opts.uploadLimiter ?? createUploadLimiter();
+  // G1: called after a message is banked so anything already due is delivered at once.
+  const afterMessageBanked = opts.afterMessageBanked ?? (() => {});
   const mediaQuotaBytes = opts.mediaChildQuotaBytes ?? mediaQuotaFromEnv();
   /** Best-effort security-event write: the audited action already happened, the trail must not fail it. */
   const audit = async (userId, kind, o) => {
@@ -554,9 +602,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // GUARDIAN INVITATION — real create/read/accept-decision/revoke. §11, §8.5.
   // Closes half of invitation_screen.dart's own named gap: "the API surface
   // names POST /v1/children/:id/guardianships, but no such route exists."
-  // Does NOT create a `guardianship` row — see 0014_guardian_invite.sql's own
-  // header for why that would fabricate an account-creation security step
-  // this codebase has never built.
+  // Does NOT create a `guardianship` row. Neither does accept or bootstrap: the
+  // edge is made only by the inviter's own confirm step (POST
+  // /v1/guardian-invites/:inviteId/confirm, identity lane, migration 0050).
   // ===========================================================================
 
   api.register({
@@ -676,9 +724,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // did a brand-new guardian ever acquire one. This route closes exactly
   // that and nothing more — it does NOT touch WebAuthn registration itself
   // (POST .../webauthn/register/challenge and .../verify above are
-  // completely unchanged) and does NOT create a guardianship row (see
-  // 0014/0020_guardian_invite_bootstrap.sql's own headers for why that
-  // stays a real, separate, still-open gap).
+  // completely unchanged) and does NOT create a guardianship row: the edge
+  // comes only from the inviter's confirm step (identity lane, migration 0050),
+  // which also re-checks that the inviter still holds a live guardian edge.
   //
   // noSessionRequired, same reason as GET/accept above: the caller has no
   // app_user row yet, so there is nothing for them to hold a session token
@@ -694,21 +742,229 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (typeof displayName !== 'string' || !displayName.trim()) {
         return { status: 400, body: { error: 'display_name_required' } };
       }
+      // 0050: `enrol` (true, or {label}) also enrols this device in the same
+      // transaction and returns a deviceId + deviceCredential, so the new
+      // grown-up can keep a session past the one hour via
+      // POST /v1/auth/session/refresh. Omitted = the pre-0050 shape exactly.
+      const enrol = c.body?.enrol;
+      const enrolLabel = enrol === true ? 'This device'
+        : (enrol && typeof enrol === 'object' && typeof enrol.label === 'string')
+          ? (enrol.label.trim() || 'This device') : undefined;
       const result = await bootstrapGuardianInvite(
-        pool, c.params.inviteId, displayName.trim(), new Date());
+        pool, c.params.inviteId, displayName.trim(), new Date(),
+        enrolLabel === undefined ? {} : { enrolDeviceLabel: enrolLabel });
       if (!result.ok) {
         const status = result.reason === 'not_found' ? 404
           : result.reason === 'expired' ? 410 : 409;
         return { status, body: { error: result.reason } };
       }
-      // Mints exactly what guardian_setup.dart's real passkey registration
-      // needs and nothing else: an ordinary guardian session with NO
-      // guardianship edge to any child (none was created — see above), so
-      // every OTHER route that checks edgesFor() still refuses this
-      // session exactly as it would refuse any guardian with zero edges.
+      // Mints an ordinary guardian session with NO guardianship edge yet: every
+      // route that checks edgesFor() still refuses it until the inviter confirms
+      // (POST /v1/guardian-invites/:inviteId/confirm). Account first, access second.
       const token = api.issueSessionToken(
-        { userId: result.userId, roleName: 'guardian', childId: null, escalated: false });
-      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId } };
+        { userId: result.userId, roleName: 'guardian', childId: null, escalated: false,
+          ...(result.deviceId ? { deviceId: result.deviceId } : {}) });
+      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId,
+        ...(result.deviceId ? { expiresAt: api.sessionExpiresAt(), deviceId: result.deviceId,
+                                deviceCredential: result.deviceCredential } : {}) } };
+    },
+  });
+
+  // ===========================================================================
+  // IDENTITY LANE — db/migrations/0050_identity_signup.sql.
+  // A first account, a first child, a second grown-up who actually gets
+  // access. Until these routes existed the only way to any of the three was
+  // raw SQL (server/seed-dev.mjs), so a fresh production server (DEV_LOGIN is
+  // refused there) had no first user at all.
+  // ===========================================================================
+
+  // Does this principal hold a LIVE, unrestricted guardian edge to this child?
+  // (The same check every guardian-only identity route in this file runs
+  // inline; one helper here so the new routes cannot drift apart.)
+  const holdsLiveGuardianEdge = async (userId, childId) => {
+    const now = new Date();
+    const edges = await edgesFor(pool, userId);
+    return edges.some((e) =>
+      e.childId === childId && e.role === 'guardian' && !e.restricted &&
+      !e.closedAt && (!e.expiresAt || new Date(e.expiresAt) > now));
+  };
+  const isDbInputError = (e) => /^(22|23)/.test(String(e?.code ?? ''));
+  const cleanName = cleanIdentityName; // NFC, collapsed, code-point length, no control characters
+
+  // POST /v1/auth/signup — NO SESSION REQUIRED: this is how the first session
+  // comes into being. Invite-only: the body must carry an operator-issued,
+  // single-use allowance token (tools/provision-signup.mjs), shown to the
+  // operator once and stored only as a SHA-256. Creates the account, its
+  // first PIN and an enrolled device in one transaction and returns a session
+  // plus the device credential POST /v1/auth/session/refresh trades for
+  // fresh sessions. Per-IP limited by index.mjs (the /v1/auth/ prefix).
+  api.register({
+    method: 'POST', path: '/v1/auth/signup', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      const token = typeof b.allowanceToken === 'string' ? b.allowanceToken.trim() : '';
+      if (token.length < 20 || token.length > 128) {
+        return { status: 400, body: { error: 'allowance_token_required' } };
+      }
+      const displayName = cleanName(b.displayName, 60);
+      if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
+      const signupTz = cleanTz(b.homeTz);
+      if (!signupTz) return { status: 400, body: { error: 'invalid_home_tz' } };
+      if (typeof b.pin !== 'string') return { status: 400, body: { error: 'pin_required' } };
+      // Judge the allowance and the policy BEFORE hashing the PIN: scrypt is
+      // synchronous and blocks the one event loop (~tens of ms), and this route
+      // is unauthenticated. A caller without a live token gets the same answer
+      // as a failed sign-up and costs one indexed lookup, not a hash. Judged
+      // allowance-first, so a tokenless caller also cannot read the kill
+      // switch or the cap. signUpWithAllowance() re-decides under locks.
+      const pre = await precheckSignup(pool, token, new Date());
+      if (!pre.ok) return { status: 403, body: { error: pre.reason } };
+      let pinHash;
+      try { pinHash = hashPin(b.pin); }
+      catch { return { status: 400, body: { error: 'invalid_pin_format' } }; }
+      const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim() : '';
+
+      let result;
+      try {
+        result = await signUpWithAllowance(pool, {
+          token, displayName, homeTz: signupTz, pinHash, deviceLabel, now: new Date() });
+      } catch (e) {
+        if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
+        throw e;
+      }
+      if (!result.ok) return { status: 403, body: { error: result.reason } };
+      const sessionToken = api.issueSessionToken({
+        userId: result.userId, roleName: 'guardian', childId: null, escalated: false,
+        deviceId: result.deviceId });
+      return { status: 201, body: {
+        token: sessionToken, expiresAt: api.sessionExpiresAt(), userId: result.userId,
+        deviceId: result.deviceId, deviceCredential: result.deviceCredential } };
+    },
+  });
+
+  // GET /v1/me/children — how a guardian client learns its children's ids.
+  api.register({
+    method: 'GET', path: '/v1/me/children', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      return { status: 200, body: { children: await childrenOf(pool, c.principal.userId) } };
+    },
+  });
+
+  // POST /v1/children — a guardian creates a child; the same transaction gives
+  // THEM the guardianship edge. Handing out a child record is a step-up
+  // action (own PIN), like inviting or pairing.
+  api.register({
+    method: 'POST', path: '/v1/children', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const b = c.body ?? {};
+      const displayName = cleanName(b.displayName, 40);
+      if (!displayName) return { status: 400, body: { error: 'display_name_required' } };
+      const birthDate = cleanBirthDate(b.birthDate);
+      if (!birthDate) return { status: 400, body: { error: 'invalid_birth_date' } };
+      const childTz = cleanTz(b.homeTz);
+      if (!childTz) return { status: 400, body: { error: 'invalid_home_tz' } };
+      const pinCheck = await requireOwnPin(c.principal.userId, b.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+
+      let result;
+      try {
+        result = await createChildForGuardian(pool, c.principal.userId, {
+          displayName, birthDate, homeTz: childTz });
+      } catch (e) {
+        if (isDbInputError(e)) return { status: 400, body: { error: 'invalid_input' } };
+        throw e;
+      }
+      if (!result.ok) {
+        return { status: result.reason === 'too_many_children' ? 409 : 403,
+                 body: { error: result.reason } };
+      }
+      return { status: 201, body: { child: result.child } };
+    },
+  });
+
+  // GET .../guardian-invites — the caller's OWN invites for this child, so the
+  // inviter can see who is waiting for their yes. Never another guardian's.
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/guardian-invites',
+    action: null, identityScopedByHandler: true,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if (!(await holdsLiveGuardianEdge(c.principal.userId, c.childId))) {
+        return { status: 403, body: { error: 'not_a_guardian_of_child' } };
+      }
+      return { status: 200, body: {
+        invites: await guardianInvitesFor(pool, c.childId, c.principal.userId, new Date()) } };
+    },
+  });
+
+  // POST .../claim — an EXISTING account presents an accepted invite whose
+  // email is theirs. Grants nothing; the inviter's confirm does.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/claim', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const r = await claimGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        const status = r.reason === 'not_found' ? 404
+          : (r.reason === 'expired' || r.reason === 'revoked' || r.reason === 'declined') ? 410 : 409;
+        return { status, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true, status: 'waiting_for_confirmation' } };
+    },
+  });
+
+  // POST .../confirm — the only step that creates a guardianship edge for an
+  // invited adult. Inviter only, with their own PIN.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/confirm', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await confirmGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        const status = r.reason === 'not_found' ? 404
+          : r.reason === 'inviter_not_guardian' ? 403
+          : (r.reason === 'expired' || r.reason === 'revoked' || r.reason === 'declined') ? 410
+          : 409;
+        return { status, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true, role: r.role } };
+    },
+  });
+
+  // POST .../decline — the inviter turns away whoever presented the invite.
+  // No PIN: it only ever removes access that was never granted.
+  api.register({
+    method: 'POST', path: '/v1/guardian-invites/:inviteId/decline', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const r = await declineGuardianInvite(pool, c.params.inviteId, c.principal.userId, new Date());
+      if (!r.ok) {
+        return { status: r.reason === 'not_found' ? 404 : 409, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true } };
     },
   });
 
@@ -1298,8 +1554,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
 
       // Jitsi: refuse BEFORE ringing anyone if the provider cannot mint.
       const callCfg = resolveCallConfig(opts.callEnv ?? process.env);
-      if (callCfg.provider === 'jitsi' && callCfg.unavailable.length) {
-        console.error(`[call] jitsi unavailable, missing: ${callCfg.unavailable.join(', ')}`);
+      if (callCfg.unavailable.length) {
+        console.error(`[call] ${callCfg.provider} unavailable, missing: ${callCfg.unavailable.join(', ')}`);
         return callUnavailable(callCfg);
       }
 
@@ -1367,65 +1623,91 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       );
       if (!minted.ok) return { status: 403, body: { error: minted.reason } };
 
-      // Ring the child's own device(s) — the actual gap this route closes.
-      // A send failure here is reported, not thrown: the caller can still
-      // join and wait (the same "call, then hope she notices" posture this
-      // whole codebase had before this route existed), just without the
-      // one improvement this route adds on top of that.
-      const pushResults = await notifyDevices(pool, { childId: c.childId }, {
-        kind: 'call_incoming',
-        ref: session.id,
-        callRoomHandle: session.roomName,
-      });
-      const rang = pushResults.some((r) => r.ok);
+      // Real display names, resolved under the caller's own RLS session -- never
+      // taken from the request body, never a hardcoded constant. cleanDisplayName
+      // strips control/bidi characters and markup and caps the length: the value
+      // lands in the Jitsi JWT's context.user.name and in the call UI.
+      const guardianName = cleanDisplayName(
+        (await inSession(c, (q) => q(
+          `SELECT display_name FROM app_user WHERE id = $1`, [c.principal.userId])))[0]?.display_name,
+      ) ?? 'Grown-up';
 
-      // The real backing for security.ts's own RESIDUAL_RISKS claim that
-      // call metadata is retained — found by the same 2026-08-23 audit to
-      // have zero implementation anywhere before this. A write failure here
-      // must never fail the call itself (the same posture notifyDevices()
-      // above already has) — logged, not thrown, so a real database hiccup
-      // degrades to "this one call goes unlogged" rather than "no one can
-      // call at all".
+      // Persist the call FIRST. A ring for a call nobody can join (the callee's
+      // join reads call_log and would 404) is worse than no call, so a failed
+      // write is a 503 and nothing is rung and no grant is minted. `rang` is
+      // filled in below once the push result is known.
       try {
         await recordCallStart(pool, {
           id: session.id, childId: c.childId, startedBy: c.principal.userId,
-          // Widened from [c.principal.userId] to the real, full
-          // session.authorizedUserIds — MASTERFILE §16.2 #6 REVERSED AGAIN's
-          // own join route below needs this to re-mint a real token for the
-          // child (or a real second guardian) later, and 0018_call_log.sql's
-          // own header comment already anticipated exactly this: "a future
-          // second-guardian-join route... should be able to append to this
-          // same column without a further migration." Narrowing this to just
-          // the caller was never a deliberate choice, just unfinished.
+          // The real, full session.authorizedUserIds -- the join route below
+          // re-mints the child's (or a second guardian's) token from this list.
           participantIds: session.authorizedUserIds, roomName: session.roomName,
-          ladderStep: realLadderStep, recorded: minted.token.recorded, rang,
+          ladderStep: realLadderStep, recorded: minted.token.recorded, rang: false,
         });
       } catch (e) {
         console.error(`[call_log] failed to record call start for session ${session.id}:`, e);
+        return { status: 503, body: { error: 'call_unavailable' } };
       }
 
-      // Loud, not silent: an unconfigured provider must never look like a
-      // successful call start. minted.ok already proved this caller is
-      // genuinely authorized — this is a deployment-config failure, not an
-      // authorization one, so 5xx (our fault), not 403 (their fault).
-      if (callCfg.unavailable.length) {
-        console.error(`[call] ${callCfg.unavailable.join('/')} not set — cannot mint a real call token for session ${session.id}`);
-        return callUnavailable(callCfg);
+      // Ring the child's own device(s). A send failure is reported, not thrown:
+      // the caller can still join and wait, just without the ring.
+      let pushResults = [];
+      try {
+        pushResults = await notifyDevices(pool, { childId: c.childId }, {
+          kind: 'call_incoming',
+          ref: session.id,
+          callRoomHandle: session.roomName,
+        });
+      } catch (e) {
+        console.error(`[call] ring failed for session ${session.id}:`, e?.message ?? e);
       }
+      const rang = pushResults.some((r) => r.ok);
+      try { await recordCallRang(pool, c.childId, session.id, rang); }
+      catch (e) { console.error(`[call_log] failed to record rang for session ${session.id}:`, e); }
+
       const grant = await buildCallGrant(callCfg, minted,
-        { displayName: 'Dad', isChild: false, observerOnly: realObserverOnly });
+        { displayName: guardianName, isChild: false, observerOnly: realObserverOnly });
 
       return {
         status: 201,
         body: {
           ...grant,
           rang,
+          // WHY it did or did not ring, from notify.ts's per-device result codes
+          // (the safe field; `message` is never returned). One of: rang,
+          // quiet_hours, no_devices, no_push_capability, send_failed.
+          ringState: ringStateFrom(pushResults),
           // Lets CallScreen's own hang-up path call the new end-call route
           // below on the exact session this response minted, without the
           // client needing to invent or track its own identifier.
           sessionId: session.id,
         },
       };
+    },
+  });
+
+  // ===========================================================================
+  // GET .../calls/availability -- can a call be placed at all, and from where.
+  // Calls are switched on by the operator (tools/jitsi-selfhost/calls-on.sh) and
+  // the first signal the app used to get was a 503 AFTER the guardian tapped
+  // Call. This lets the UI disable or explain the button up front. Only booleans
+  // and the provider NAME leave the process: never a secret, an app id, the
+  // server URL or a host name (the URL is a LAN address on a typical deployment).
+  // ===========================================================================
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/calls/availability', action: 'call',
+    skipOuterSession: true,
+    handler: async () => {
+      const cfg = resolveCallConfig(opts.callEnv ?? process.env);
+      const available = cfg.problems.length === 0 && cfg.unavailable.length === 0;
+      return { status: 200, body: {
+        provider: cfg.provider,
+        available,
+        // A private/LAN or single-label host only works on the same network as the
+        // server; the app says so instead of letting a remote call just fail.
+        sameNetworkOnly: available && cfg.provider === 'jitsi'
+          ? isLanOnlyHost(cfg.jitsi.serverURL) : false,
+      } };
     },
   });
 
@@ -1458,12 +1740,22 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
     skipOuterSession: true,
     handler: async (c) => {
-      const ended = await recordCallEnd(pool, c.childId, c.params.sessionId);
-      // Idempotent by design (recordCallEnd()'s own doc comment): both
-      // parties hanging up simultaneously, or a client retry, produces two
-      // calls to this route for one session — the second is a real, honest
-      // 200 with ended:false, never an error.
-      return { status: 200, body: { ended } };
+      const endedBy = c.principal.roleName === 'child' ? 'callee' : 'caller';
+      const { ended, reason } = await recordCallEnd(pool, c.childId, c.params.sessionId, endedBy);
+      // A call that ended UNANSWERED may still be ringing on the child's device(s):
+      // tell them to stop. Content-free and silent (data-only), and sent as
+      // 'emergency' priority so the quiet-hours gate cannot strand a ring that
+      // started a minute before bedtime. Best-effort: a failed push never fails the end.
+      if (ended && reason !== 'answered') {
+        try {
+          await notifyDevices(pool, { childId: c.childId }, {
+            kind: 'call_cancelled', ref: c.params.sessionId, priority: 'emergency',
+          });
+        } catch (e) {
+          console.error(`[call] cancel push failed for session ${c.params.sessionId}:`, e?.message ?? e);
+        }
+      }
+      return { status: 200, body: { ended, reason } };
     },
   });
 
@@ -1528,8 +1820,21 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // never be handed to an observer-only guardian, so read the real edge.
       const joinObserverOnly = isChild ? false
         : (edges.find((e) => e.childId === c.childId)?.observerOnly ?? true);
+      // Real names (resolved under the caller's own RLS session, sanitised), not
+      // the constants this used to hardcode.
+      const joinName = await inSession(c, async (q) => isChild
+        ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.childId]))[0]?.display_name
+        : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [userId]))[0]?.display_name);
       const grant = await buildCallGrant(callCfg, minted,
-        { displayName: isChild ? 'Ivy' : 'Dad', isChild, observerOnly: joinObserverOnly });
+        { displayName: cleanDisplayName(joinName) ?? (isChild ? 'Child' : 'Grown-up'),
+          isChild, observerOnly: joinObserverOnly });
+
+      // The child minting a join token IS the answer: the one moment the server
+      // genuinely sees it. Best-effort stamp for the call log.
+      if (isChild) {
+        try { await markCallAnswered(pool, c.childId, session.id); }
+        catch (e) { console.error(`[call_log] failed to stamp answer for session ${session.id}:`, e); }
+      }
 
       return { status: 200, body: grant };
     },
@@ -2279,6 +2584,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       credential,
       expectedChallenge: clientData.challenge ?? '',
       expectedOrigin: RP_ORIGIN,
+      extraOrigins: WEBAUTHN_CFG.androidOrigins,
       expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
       // The 5-minute TTL and single use are enforced once, atomically, inside
       // consumeChallenge() (see server/index.mjs's login verify for the same note).
@@ -2371,7 +2677,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (clientData.type !== 'webauthn.create') {
         return { status: 400, body: { error: 'type_mismatch' } };
       }
-      if (clientData.origin !== RP_ORIGIN) {
+      if (!originAllowed(WEBAUTHN_CFG, clientData.origin)) {
         return { status: 400, body: { error: 'origin_mismatch' } };
       }
       // Atomic single-use consume — see pool.ts's consumeChallenge() for why
@@ -3870,6 +4176,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
 
       const persisted = await persistCapturedMessage(pool, result);
+      // Best effort and never awaited: delivery is the worker's job, this only nudges the
+      // in-process host (if there is one) so a message that is already due need not wait a tick.
+      try { afterMessageBanked(); } catch { /* a nudge must never fail the send */ }
       // `state` is what was actually stored: 'ready' when the capture-time
       // probe resolved a delivery instant (the worker delivers it when due),
       // 'pending' when it was left to the sweep.

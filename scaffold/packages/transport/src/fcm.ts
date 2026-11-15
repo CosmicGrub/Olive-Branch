@@ -19,7 +19,8 @@
  * packages/transport/test/fcm.test.mjs is the suite that proves all three —
  * none of it has ever touched a real Google endpoint.
  */
-import { createSign } from 'node:crypto';
+import { createSign, createPrivateKey } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { PushPayload } from './push.ts';
 
 // ------------------------------------------------------------- transport ---
@@ -53,26 +54,86 @@ export interface FcmServiceAccount {
  * FCM_SERVICE_ACCOUNT_JSON is set (or a process that never sets it, e.g. an
  * apns-only deploy) must not crash the whole server on module load.
  */
-function readServiceAccount(): FcmServiceAccount {
-  const raw = process.env.FCM_SERVICE_ACCOUNT_JSON;
+function readServiceAccount(env: Record<string, string | undefined> = process.env): FcmServiceAccount {
+  // FCM_SERVICE_ACCOUNT_FILE (a Docker secret or a mounted path OUTSIDE the
+  // repo) wins over the inline FCM_SERVICE_ACCOUNT_JSON: a private key in an
+  // environment variable shows up in `docker inspect` and `/proc`, a file does
+  // not. The inline variable is still accepted, unchanged.
+  const file = env.FCM_SERVICE_ACCOUNT_FILE;
+  let raw: string | undefined;
+  let label = 'FCM_SERVICE_ACCOUNT_JSON';
+  if (file) {
+    label = 'FCM_SERVICE_ACCOUNT_FILE';
+    try { raw = readFileSync(file, 'utf8'); }
+    catch {
+      // never echo the path or the OS message: a path is an operator detail
+      throw fcmError('fcm_config_invalid', 'FCM_SERVICE_ACCOUNT_FILE could not be read.');
+    }
+  } else {
+    raw = env.FCM_SERVICE_ACCOUNT_JSON;
+  }
+  if (file && !raw?.trim()) {
+    throw fcmError('fcm_config_invalid', 'FCM_SERVICE_ACCOUNT_FILE is empty.');
+  }
   if (!raw) {
     throw fcmError('fcm_config_missing',
       'FCM_SERVICE_ACCOUNT_JSON environment variable is not set — cannot send FCM push. '
       + 'This is a real Firebase service-account JSON (Project Settings → Service '
-      + 'Accounts → Generate new private key), never a placeholder.');
+      + 'Accounts → Generate new private key), never a placeholder. '
+      + 'FCM_SERVICE_ACCOUNT_FILE (a path to that file) is accepted instead.');
   }
   let parsed: any;
   try { parsed = JSON.parse(raw); }
   catch {
-    throw fcmError('fcm_config_invalid', 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON.');
+    throw fcmError('fcm_config_invalid', `${label} is not valid JSON.`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw fcmError('fcm_config_invalid', `${label} must be a JSON object.`);
   }
   for (const k of ['client_email', 'private_key', 'project_id']) {
-    if (!parsed[k]) {
+    if (typeof parsed[k] !== 'string' || !parsed[k].trim()) {
       throw fcmError('fcm_config_invalid',
-        `FCM_SERVICE_ACCOUNT_JSON is missing required field "${k}".`);
+        `${label} is missing required field "${k}".`);
     }
   }
   return parsed as FcmServiceAccount;
+}
+
+/**
+ * Boot-time inspection for server/push_config.mjs: is push configured, from
+ * where, and is the key even usable. Names and booleans only -- never the
+ * key, the email, the project id or the file path.
+ */
+export function inspectFcmConfig(env: Record<string, string | undefined> = process.env): {
+  configured: boolean; source: 'file' | 'env' | 'none'; problem: string | null;
+} {
+  const source = env.FCM_SERVICE_ACCOUNT_FILE ? 'file' : env.FCM_SERVICE_ACCOUNT_JSON ? 'env' : 'none';
+  if (source === 'none') return { configured: false, source, problem: null };
+  try {
+    const sa = readServiceAccount(env);
+    createPrivateKey(sa.private_key); // throws on a key that could never sign
+    return { configured: true, source, problem: null };
+  } catch (e: any) {
+    return { configured: false, source,
+      problem: e?.code === 'fcm_config_invalid' ? String(e.message) : 'the private_key is not a usable PEM key' };
+  }
+}
+
+/**
+ * The FCM v1 API origin. Always Google's, EXCEPT outside production where
+ * FCM_API_BASE_URL may point at a local stub (the push end-to-end tests run a
+ * real HTTP server in place of Google). Ignored entirely under
+ * NODE_ENV=production, so a stray variable can never redirect real pushes.
+ */
+export function fcmApiBase(env: Record<string, string | undefined> = process.env): string {
+  const override = env.FCM_API_BASE_URL;
+  if (override && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test')) {
+    try {
+      const u = new URL(override);
+      if (u.protocol === 'http:' || u.protocol === 'https:') return u.origin;
+    } catch { /* fall through to Google */ }
+  }
+  return 'https://fcm.googleapis.com';
 }
 
 // ------------------------------------------------------- OAuth2 (RFC 7523) --
@@ -257,7 +318,7 @@ export async function sendFcm(
   const sa = readServiceAccount();
   const accessToken = await mintAccessToken(sa, fetchImpl, now);
 
-  const url = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
+  const url = `${fcmApiBase()}/v1/projects/${encodeURIComponent(sa.project_id)}/messages:send`;
   const res = await fetchImpl(url, {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },

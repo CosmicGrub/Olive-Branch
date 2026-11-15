@@ -75,6 +75,7 @@ for spec in \
   "route contract: auth session (refresh, sign-out, PIN change)|server/test/auth_session_route_test.mjs" \
   "route contract: parental controls (visibility & pacing)|server/test/guardian_activity_override_route_test.mjs" \
   "device-tokens route contract|server/test/device_tokens_route.test.mjs" \
+  "push config, call helpers, call_cancelled, scheduler registry (no DB)|server/test/push_config.test.mjs" \
   "route contract: me/delete|server/test/me_delete_route.test.mjs" \
   "transport+contract|packages/transport/test/transport.test.mjs" \
   "push: fcm sender (mocked)|packages/transport/test/fcm.test.mjs" \
@@ -136,11 +137,12 @@ for spec in \
   "olive UI art drift guard (kit icons, scenes, spots to Dart)|tools/test/olive_art.test.mjs" \
   "parity scenarios: prototype scenarios + rule table, drift guard|tools/test/parity_scenarios.test.mjs" \
   "version sync + release tooling helpers (docs/RELEASING.md)|tools/test/version_sync.test.mjs" \
+  "webauthn relying party from env: rpId/origin validation, android origins, assetlinks, android-origin assertion (pure)|server/test/webauthn_config.test.mjs" \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "CPace draft-21 appendix B.1 vectors (CPACE-X25519-SHA512), byte for byte|tools/test/cpace_draft21.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
-  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -437,6 +439,8 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
+            "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
+            "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
@@ -452,6 +456,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "letters route: real age-gated open, RLS child-owned (real DB)|server/test/letters_route.test.mjs" \
             "inbox route (real DB, real RLS)|server/test/inbox_route.test.mjs" \
             "delivery chain: send, worker tick, inbox, media, receipt; day-parts + tz routes; hostile cases (real DB, real RLS)|server/test/delivery_chain.test.mjs" \
+            "live chain: sign-up, confirmed edge, caps, delivery host, readiness (real DB, real RLS)|server/test/live_chain.test.mjs" \
             "scheduler: rematerialize + media reap sweeps, lock contention (real DB)|packages/db/test/scheduler.test.mjs" \
             "media upload/download route (real DB + real filesystem)|packages/api/test/media_route.test.mjs" \
             "db pool: no self-deadlock, limits, broken clients (real RLS)|packages/db/test/pool_concurrency.test.mjs" \
@@ -460,6 +465,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
             "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
+            "migration 0050 backfills pre-existing bootstrapped invites when applied as the NON-superuser app_owner (FORCE RLS, real DB)|tools/test/migrate_0050_backfill.test.mjs" \
             "db health views under FORCE RLS, app_owner-migrated: true counts for every caller, monitor reads no rows (0047, real DB)|packages/db/test/health_views_force_rls.test.mjs" \
             "family simulation CI subset: 3 families, strict cross-family isolation probes (real DB, real RLS)|tools/family-sim/test/isolation_ci.test.mjs" \
             "family simulation day plan: seeded day-parts independent of the hour the run lands in (no DB, fixed clock)|tools/family-sim/test/dayplan_clock.test.mjs" \
@@ -512,8 +518,10 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: exchange route|server/test/exchange_route.test.mjs" \
             "as app_runtime: inbox route|server/test/inbox_route.test.mjs" \
             "as app_runtime: delivery chain|server/test/delivery_chain.test.mjs" \
+            "as app_runtime: live chain|server/test/live_chain.test.mjs" \
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
+            "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)

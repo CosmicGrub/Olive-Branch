@@ -188,6 +188,14 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      # Identity lane: the WebAuthn relying party (server/webauthn_config.mjs). All optional:
+      # unset keeps passkeys off in production (device-credential sign-in is unaffected) and
+      # the development default elsewhere. WEBAUTHN_ANDROID_ORIGINS is a comma list of
+      # android:apk-key-hash:<base64url SHA-256 of the app signing certificate>.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      WEBAUTHN_ANDROID_ORIGINS: ${WEBAUTHN_ANDROID_ORIGINS:-}
+      WEBAUTHN_ANDROID_PACKAGE: ${WEBAUTHN_ANDROID_PACKAGE:-}
       # Pinned explicitly rather than left to server/routes.mjs's own
       # DEFAULT_MEDIA_STORAGE_ROOT fallback (derived from import.meta.url —
       # an internal implementation detail, not a contract). The volume
@@ -206,6 +214,29 @@ services:
       # scaling this service past one replica — found by this project's own
       # post-tier audit.
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — see .env.prod.example (openssl rand -hex 32) — use a DIFFERENT value than any dev .env}
+      # Audit G1/G7/G8. This stack runs the dedicated `delivery` service below (the ONE
+      # delivery worker, `tools/scheduler.mjs deliver-loop`), so the server does not host a
+      # second copy of it: DELIVERY_IN_SERVER=0. Set it to 1 (and drop the `delivery`
+      # service) for a single-container deployment; running both is safe (one advisory lock)
+      # but wasted work. Sign-up is invite-only through `POST /v1/auth/signup`, gated by
+      # allowance tokens the operator issues with `node tools/provision-signup.mjs issue`.
+      # INTERNAL_METRICS_TOKEN lets a scraper on the docker network reach
+      # /internal/metrics (it is loopback-only otherwise, and a published port does not
+      # arrive from loopback).
+      DELIVERY_IN_SERVER: ${DELIVERY_IN_SERVER:-0}
+      INTERNAL_METRICS_TOKEN: ${INTERNAL_METRICS_TOKEN:-}
+      # PUSH (MASTERFILE section 11). Optional: a server with no Firebase project runs
+      # fine (the app is offline-first), it just cannot wake a closed app.
+      # FCM_SERVICE_ACCOUNT_FILE is a path INSIDE the container to the
+      # service-account JSON, normally under the read-only mount below
+      # (put the file in scaffold/secrets/, which git ignores, and set
+      # FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file> in the env file).
+      # A key in an env var shows up in `docker inspect`; a file does not.
+      # Checked once at boot; a malformed key refuses to start. Live push is
+      # unverified until a real Firebase project exists.
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      # Longest a call session stays joinable (minutes).
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
       # Server-snoop hardening (docs/superpowers/specs/2026-11-08-server-snoop-
       # hardening-design.md section 4.1). The server never terminates TLS; a
       # reverse proxy does (docs/operators/proxy-and-tls.md). With NODE_ENV=
@@ -233,10 +264,11 @@ services:
       # redeploy. Named volume, same durability pattern already used for
       # `olive-prod-pgdata` below.
       - olive-prod-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "server/index.mjs"]
     healthcheck:
       test: ["CMD", "node", "-e",
-             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+             "fetch('http://127.0.0.1:8123/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -368,6 +400,12 @@ services:
       # this feature exists at all. Pinned explicitly, same reasoning as
       # `server`'s own identical comment above.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # The nightly `run all` includes the deliver job, which sends the message_ready push
+      # from THIS process, so it needs the same push credential the server has (see
+      # `server` above). It also ends abandoned call sessions (CALL_MAX_AGE_MINUTES).
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
       # P-04 -- the scheduler's `backup` job (tools/scheduler.mjs) and the
       # stale-backup alarm in its health-alert job. See
       # docs/backup-and-restore.md for exactly what is and is not automatic.
@@ -392,6 +430,7 @@ services:
       # Same named volume `server` writes to; `reap-media` needs to delete
       # the exact bytes `server` wrote, not a private copy.
       - olive-prod-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "loop"]
     deploy:
       resources:
@@ -421,6 +460,12 @@ services:
     environment:
       DATABASE_URL: postgres://app_runtime:${APP_RUNTIME_PASSWORD:?APP_RUNTIME_PASSWORD must be set — see .env.prod.example}@db:5432/${POSTGRES_DB_NAME:-olive_prod}
       DELIVERY_TICK_MS: "${DELIVERY_TICK_MS:-30000}"
+      # This process sends the content-free message_ready push after each claim, so it
+      # needs the same push credential the server has (optional; see `server`).
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+    volumes:
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "deliver-loop"]
     deploy:
       resources:

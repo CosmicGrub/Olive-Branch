@@ -20,7 +20,8 @@ import { issueSession, verifyAssertion, newChallenge } from '../packages/auth/sr
 import { Api, readRequestBody, MAX_UNAUTH_BODY_BYTES } from '../packages/api/src/api.mjs';
 import { createPool, dbPort, withSystemSession, createChallenge, consumeChallenge,
          webauthnCredentialById, updateWebauthnSignCount, mediaUploadFor } from '../packages/db/src/pool.mjs';
-import { registerRoutes, RP_ID, RP_ORIGIN, defaultMediaStorage } from './routes.mjs';
+import { registerRoutes, RP_ID, RP_ORIGIN, WEBAUTHN_CFG, defaultMediaStorage } from './routes.mjs';
+import { assetLinks } from './webauthn_config.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
 import { createAuthLimiter, createWriteLimiter } from './rate_limit.mjs';
@@ -30,8 +31,13 @@ import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { checkRuntimeRole } from './db_role.mjs';
 import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
-import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
+import { resolvePushConfig, describePushConfig } from './push_config.mjs';
+import { Metrics, requestIdFor, accessLogLine, isInternalRequest, shouldLogAccess } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
+import { createDeliveryTick, hostIntervalFromEnv } from './delivery_tick.mjs';
+import { checkReadiness, createReadinessCache } from './readiness.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PORT = Number(process.env.PORT ?? 8080);
@@ -59,7 +65,7 @@ if (boot.problems.length) {
   process.exit(2);
 }
 
-// MASTERFILE �16.2 #6 (third reversal): CALL_PROVIDER=jitsi|livekit and the Jitsi
+// MASTERFILE �16.2 #6 (third reversal): CALL_PROVIDER=jitsi|livekit and the Jitsi
 // env are validated here like the secrets above. Unset is fine (the calls route
 // then says the provider is unavailable); set-but-malformed is not.
 const bootCalls = resolveCallConfig(process.env);
@@ -68,6 +74,30 @@ if (bootCalls.problems.length) {
   process.exit(2);
 }
 console.log(`calls: ${JSON.stringify(describeCallConfig(bootCalls))}`);
+
+// Identity lane: the WebAuthn relying party (rpId, origin, Android signing-key
+// origins) comes from WEBAUTHN_* env, validated here like the call config.
+// Unset in production is a warning (passkeys unusable, device-credential
+// sign-in unaffected); set-but-malformed refuses to boot. server/webauthn_config.mjs.
+for (const w of WEBAUTHN_CFG.warnings) console.warn(`WARNING: ${w}`);
+if (WEBAUTHN_CFG.problems.length) {
+  for (const p of WEBAUTHN_CFG.problems) console.error(`webauthn config check failed: ${p}`);
+  process.exit(2);
+}
+
+// Push credentials are checked ONCE here instead of failing silently at the first send.
+// Unset is fine (the app is offline-first: the inbox still fills and the child's app polls, a
+// server with no Firebase project must still run). Set-but-malformed is not: "I turned push
+// on and it never fires" is the worst failure here, so a bad FCM key refuses to boot. A
+// half-configured APNs is only warned about (iOS is not shipped). Names and booleans only.
+const bootPush = resolvePushConfig(process.env);
+const pushFatal = bootPush.problems.filter((p) => p.startsWith('FCM:'));
+if (pushFatal.length) {
+  for (const p of pushFatal) console.error(`push check failed: ${p}`);
+  process.exit(2);
+}
+for (const p of bootPush.problems.filter((x) => !x.startsWith('FCM:'))) console.warn(`WARNING: push: ${p}`);
+console.log(`push: ${JSON.stringify(describePushConfig(bootPush))}`);
 
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
@@ -95,7 +125,9 @@ const sessionKeys = { current: secret, previous: boot.previousSessionSecret };
 // cast error (500). S-B6 writeLimiter: per-principal throttle on authenticated writes.
 const api = new Api(sessionKeys, dbPort(pool), () => Date.now(),
   { strictIds: true, writeLimiter: createWriteLimiter() });
-registerRoutes(api, pool);
+// G1: the delivery worker. Declared before the routes so a banked message can nudge it.
+let deliveryTick = null;
+registerRoutes(api, pool, defaultMediaStorage, { afterMessageBanked: () => deliveryTick?.kick() });
 
 // ---- network play (checkers, live) — MASTERFILE §5.14, §5.17, §5.19 ------
 // In-memory only (packages/game-sync/src/table.ts's T7): no table, token, or
@@ -243,6 +275,7 @@ async function webauthnLoginVerify(rawBody) {
     credential,
     expectedChallenge: clientData.challenge ?? '',
     expectedOrigin: RP_ORIGIN,
+    extraOrigins: WEBAUTHN_CFG.androidOrigins,
     expectedRpIdHash: createHash('sha256').update(RP_ID, 'utf8').digest(),
     // challengeIssuedAt: now — this repo enforces the challenge TTL and
     // single-use exactly once, inside consumeChallenge()'s own atomic UPDATE
@@ -279,6 +312,28 @@ async function webauthnLoginVerify(rawBody) {
 
 // ---- observability + abuse limits (audit P-07 server half, P-08) ----------
 const metrics = new Metrics();
+deliveryTick = createDeliveryTick({
+  pool, intervalMs: hostIntervalFromEnv(process.env), metrics,
+  log: (line) => console.log(line),
+});
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(SERVER_DIR, '..', 'db', 'migrations');
+let draining = false;
+// The compose healthcheck probes /readyz every few seconds and the probe does a database
+// query plus a media-volume write and unlink. A short shared cache (one check in flight at
+// a time, reused for READYZ_CACHE_MS, default 2 s) keeps a stampede of probes to one piece
+// of work; draining is never cached, so SIGTERM is visible on the very next probe.
+const READYZ_CACHE_RAW = process.env.READYZ_CACHE_MS;
+const readiness = createReadinessCache({
+  check: () => checkReadiness({
+    pool, migrationsDir: MIGRATIONS_DIR,
+    mediaRoot: defaultMediaStorage.root ?? process.env.MEDIA_STORAGE_ROOT ?? '',
+    delivery: deliveryTick, isDraining: () => draining,
+  }),
+  isDraining: () => draining,
+  ttlMs: READYZ_CACHE_RAW !== undefined && READYZ_CACHE_RAW !== '' && Number.isFinite(Number(READYZ_CACHE_RAW))
+    ? Number(READYZ_CACHE_RAW) : 2000,
+});
 const authLimiter = createAuthLimiter();
 const ACCESS_LOG = process.env.ACCESS_LOG !== '0';
 const ACCESS_LOG_HEALTHZ = process.env.ACCESS_LOG_HEALTHZ === '1';
@@ -292,6 +347,8 @@ const RAW_AUTH_PATHS = new Set([
 /** Fixed, attacker-proof label for the access log / counters. */
 function routeLabel(method, pathname, url) {
   if (pathname === '/healthz') return '/healthz';
+  if (pathname === '/.well-known/assetlinks.json') return pathname;
+  if (pathname === '/readyz') return '/readyz';
   if (pathname === '/internal/metrics') return '/internal/metrics';
   if (pathname.startsWith('/media/')) return '/media/:key';
   if (RAW_AUTH_PATHS.has(url)) return url;
@@ -321,7 +378,7 @@ const server = createServer(async (req, res) => {
   res.on('finish', () => {
     const ms = performance.now() - startedAt;
     metrics.record({ method, route: label, status: res.statusCode, ms });
-    if (ACCESS_LOG && (label !== '/healthz' || ACCESS_LOG_HEALTHZ)) {
+    if (shouldLogAccess({ route: label, accessLog: ACCESS_LOG, logProbes: ACCESS_LOG_HEALTHZ })) {
       console.log(accessLogLine({ id, method, route: label, status: res.statusCode, ms }));
     }
   });
@@ -363,6 +420,13 @@ const server = createServer(async (req, res) => {
     // data. Bounded to 3 s (P-01): with the pool exhausted, pool.query()
     // would otherwise wait for a free slot and the probe would hang with it
     // instead of reporting the outage it exists to report.
+    // Digital Asset Links: the file Android fetches from https://<rpId>/.well-known/
+    // to decide this app may use this domain's passkeys. Public by design, built
+    // from WEBAUTHN_ANDROID_ORIGINS only (no secret in it).
+    if (method === 'GET' && url === '/.well-known/assetlinks.json') {
+      return send({ status: 200, body: assetLinks(WEBAUTHN_CFG) }, { 'cache-control': 'public, max-age=3600' });
+    }
+
     if (method === 'GET' && url === '/healthz') {
       try {
         await Promise.race([
@@ -378,6 +442,17 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // Readiness (audit G7). /healthz above stays a pure liveness probe. This one says
+    // whether to hand this process traffic: database reachable, schema at the level this
+    // image expects, media volume writable, not draining. A stalled delivery worker shows
+    // as `degraded` and does not make the process unready (the app must keep serving).
+    // The body names a category and nothing else.
+    if (method === 'GET' && url === '/readyz') {
+      const r = await readiness();
+      return send({ status: r.ready ? 200 : 503,
+        body: { status: r.ready ? 'ready' : 'not_ready', failing: r.failing, degraded: r.degraded } });
+    }
+
     // In-process counters — internal callers only (see isInternalRequest).
     // A refused caller gets the same 404 any unknown path would.
     if (method === 'GET' && pathname === '/internal/metrics') {
@@ -385,6 +460,8 @@ const server = createServer(async (req, res) => {
       return send({ status: 200, body: metrics.snapshot({
         pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
         game_tables_open: gameTables.size,
+        delivery: deliveryTick.status(),
+        push: describePushConfig(resolvePushConfig(process.env)),
       }) });
     }
 
@@ -461,18 +538,31 @@ const { wss, stopSweep } = attachGameSocketServer(server, {
 
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));
+  deliveryTick.start();
+  console.log(deliveryTick.status().enabled
+    ? `delivery worker: every ${deliveryTick.status().intervalMs} ms`
+    : 'delivery worker: not hosted in this process (DELIVERY_IN_SERVER=0; the dedicated `delivery` service must run it)');
 });
 
 // ---- graceful shutdown (audit P-14) -----------------------------------------
 // See shutdown.mjs for the full why. Idempotent: signals arriving while a
 // shutdown is already running share its promise, so pool.end() runs once.
 const shutdown = createShutdown({
-  server, wss, pool, stopTimers: [stopSweep],
+  server, wss, pool, stopTimers: [stopSweep, () => deliveryTick.stop()],
   deadlineMs: Number(process.env.SHUTDOWN_DEADLINE_MS) > 0
     ? Number(process.env.SHUTDOWN_DEADLINE_MS) : DEFAULT_SHUTDOWN_DEADLINE_MS,
   log: (line) => console.log(line),
 });
-const onSignal = (sig) => {
+// Audit G7: flip /readyz to 503 FIRST, give the orchestrator a moment to stop routing here,
+// then close the listener. Production defaults to 2 s (inside the 8 s shutdown deadline and
+// the 10 s docker grace); development and tests default to 0 so Ctrl-C stays instant.
+const DRAIN_MS = Number.isFinite(Number(process.env.READYZ_DRAIN_MS)) && process.env.READYZ_DRAIN_MS !== undefined
+  && process.env.READYZ_DRAIN_MS !== ''
+  ? Math.max(0, Number(process.env.READYZ_DRAIN_MS))
+  : (process.env.NODE_ENV === 'production' ? 2000 : 0);
+const onSignal = async (sig) => {
+  draining = true;
+  if (DRAIN_MS > 0) await new Promise((r) => setTimeout(r, DRAIN_MS));
   shutdown(sig).then(() => process.exit(0), (e) => { console.error(errorLine(e, { msg: 'shutdown failed' })); process.exit(1); });
 };
 process.on('SIGINT', () => onSignal('SIGINT'));

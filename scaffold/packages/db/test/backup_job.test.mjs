@@ -170,7 +170,7 @@ try {
   // ---- G · through the scheduler's own runner ------------------------------------------
   {
     check('G scheduler', 'JOB_NAMES includes deliver, purge-challenges, expiry-digest and backup, and health-alert runs LAST (so it sees the new backup)',
-      JOB_NAMES.join(','), 'rematerialize,deliver,reap-media,sweep-orphan-media,purge-challenges,expiry-digest,backup,health-alert');
+      JOB_NAMES.join(','), 'rematerialize,deliver,end-stale-calls,reap-media,sweep-orphan-media,purge-challenges,expiry-digest,backup,health-alert');
     const pool = createPool(DATABASE_URL);
     const saved = { ...process.env };
     try {

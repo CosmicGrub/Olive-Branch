@@ -6,6 +6,77 @@ import 'package:http/testing.dart';
 import 'package:olive_client/api_client.dart';
 
 void main() {
+  group('identity lane (0050): sign-up, children, invite confirm', () {
+    test('signUpWithAllowance posts the allowance and returns the device credential', () async {
+      final mock = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.path, '/v1/auth/signup');
+        expect(req.headers.containsKey('authorization'), isFalse);
+        final sent = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(sent['allowanceToken'], 'tok');
+        expect(sent['pin'], '4821');
+        return http.Response(
+            jsonEncode({'token': 's', 'userId': 'u', 'deviceId': 'd', 'deviceCredential': 'c'}), 201);
+      });
+      final r = await signUpWithAllowance('http://api.test',
+          allowanceToken: 'tok', displayName: 'Dad', homeTz: 'America/Chicago', pin: '4821', client: mock);
+      expect(r['deviceCredential'], 'c');
+    });
+
+    test('an invalid allowance is a 403 ApiException that names no detail', () async {
+      final mock = MockClient((req) async =>
+          http.Response(jsonEncode({'error': 'invalid_allowance'}), 403));
+      await expectLater(
+        () => signUpWithAllowance('http://api.test',
+            allowanceToken: 'x', displayName: 'Dad', homeTz: 'UTC', pin: '4821', client: mock),
+        throwsA(isA<ForbiddenException>().having((e) => e.error, 'error', 'invalid_allowance')),
+      );
+    });
+
+    test('fetchMyChildren, createChild and the invite calls hit the real paths', () async {
+      final seen = <String>[];
+      final mock = MockClient((req) async {
+        seen.add('${req.method} ${req.url.path}');
+        expect(req.headers['authorization'], 'Bearer tok');
+        if (req.url.path == '/v1/me/children') {
+          return http.Response(jsonEncode({'children': [{'id': 'c1', 'displayName': 'Ivy'}]}), 200);
+        }
+        if (req.url.path == '/v1/children') {
+          return http.Response(jsonEncode({'child': {'id': 'c2'}}), 201);
+        }
+        if (req.url.path.endsWith('/guardian-invites')) {
+          return http.Response(jsonEncode({'invites': [{'id': 'i1', 'status': 'waiting_for_you'}]}), 200);
+        }
+        return http.Response(jsonEncode({'ok': true}), 200);
+      });
+      expect((await fetchMyChildren('http://api.test', 'tok', client: mock)).single['id'], 'c1');
+      expect((await createChild('http://api.test', 'tok',
+          displayName: 'Ivy', birthDate: '2018-03-04', homeTz: 'UTC', pin: '4821', client: mock))['id'], 'c2');
+      expect((await fetchGuardianInvitesForChild('http://api.test', 'c1', 'tok', client: mock))
+          .single['status'], 'waiting_for_you');
+      await claimGuardianInvite('http://api.test', 'i1', 'tok', client: mock);
+      await confirmGuardianInvite('http://api.test', 'i1', 'tok', '4821', client: mock);
+      await declineGuardianInvite('http://api.test', 'i1', 'tok', client: mock);
+      expect(seen, [
+        'GET /v1/me/children',
+        'POST /v1/children',
+        'GET /v1/children/c1/guardian-invites',
+        'POST /v1/guardian-invites/i1/claim',
+        'POST /v1/guardian-invites/i1/confirm',
+        'POST /v1/guardian-invites/i1/decline',
+      ]);
+    });
+
+    test('bootstrapGuardianInvite(enrol: true) asks the server to enrol the device', () async {
+      final mock = MockClient((req) async {
+        expect((jsonDecode(req.body) as Map<String, dynamic>)['enrol'], true);
+        return http.Response(jsonEncode({'ok': true, 'deviceCredential': 'c'}), 201);
+      });
+      final r = await bootstrapGuardianInvite('http://api.test', 'i1', 'Nana', enrol: true, client: mock);
+      expect(r['deviceCredential'], 'c');
+    });
+  });
+
   group('OliveApi — real HTTP calls against a mocked transport', () {
     test('fetchMe decodes a 200 response', () async {
       final mock = MockClient((req) async {

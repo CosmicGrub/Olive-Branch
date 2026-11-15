@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { can, type Edge, type LadderStep } from '../../family-graph/src/authorize.ts';
 
 /**
@@ -98,7 +98,14 @@ export function createSession(input: {
     throw new Error('room name leaks an identifier');
   }
   return {
-    id: randomBytes(16).toString('hex'),
+    // A canonical dashed uuid, NOT 32 bare hex: the id is returned to the client as
+    // `sessionId` and comes back as the :sessionId path segment of .../join and
+    // .../end, which the strict-ids guard (api.ts UUID_PARAMS, on in production)
+    // refuses with 400 bad_path unless it is a dashed uuid. A bare-hex id made
+    // every started call impossible to join or end through the real server
+    // (found by tools/family-sim as gap G7). Still unguessable (122 random bits);
+    // call_log.id is text, so it stores either form.
+    id: randomUUID(),
     childId: input.childId,
     roomName,
     kind: input.kind,

@@ -122,6 +122,14 @@ services:
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      # Identity lane: the WebAuthn relying party (server/webauthn_config.mjs). All optional:
+      # unset keeps passkeys off in production (device-credential sign-in is unaffected) and
+      # the development default elsewhere. WEBAUTHN_ANDROID_ORIGINS is a comma list of
+      # android:apk-key-hash:<base64url SHA-256 of the app signing certificate>.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      WEBAUTHN_ANDROID_ORIGINS: ${WEBAUTHN_ANDROID_ORIGINS:-}
+      WEBAUTHN_ANDROID_PACKAGE: ${WEBAUTHN_ANDROID_PACKAGE:-}
       # Pinned to the same absolute path the volume below mounts — see
       # docker-compose.prod.yml's matching line for why this is written
       # explicitly rather than left to server/routes.mjs's own
@@ -134,6 +142,29 @@ services:
       # outstanding signed media URL on the next `docker compose up`/restart
       # — found by this project's own post-tier audit.
       MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set — copy scaffold/.env.example to scaffold/.env and fill it in (openssl rand -hex 32)}
+      # Audit G1/G7/G8. This stack runs the dedicated `delivery` service below (the ONE
+      # delivery worker, `tools/scheduler.mjs deliver-loop`), so the server does not host a
+      # second copy of it: DELIVERY_IN_SERVER=0. Set it to 1 (and drop the `delivery`
+      # service) for a single-container deployment; running both is safe (one advisory lock)
+      # but wasted work. Sign-up is invite-only through `POST /v1/auth/signup`, gated by
+      # allowance tokens the operator issues with `node tools/provision-signup.mjs issue`.
+      # INTERNAL_METRICS_TOKEN lets a scraper on the docker network reach
+      # /internal/metrics (it is loopback-only otherwise, and a published port does not
+      # arrive from loopback).
+      DELIVERY_IN_SERVER: ${DELIVERY_IN_SERVER:-0}
+      INTERNAL_METRICS_TOKEN: ${INTERNAL_METRICS_TOKEN:-}
+      # PUSH (MASTERFILE section 11). Optional: a server with no Firebase project runs
+      # fine (the app is offline-first), it just cannot wake a closed app.
+      # FCM_SERVICE_ACCOUNT_FILE is a path INSIDE the container to the
+      # service-account JSON, normally under the read-only mount below
+      # (put the file in scaffold/secrets/, which git ignores, and set
+      # FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file> in the env file).
+      # A key in an env var shows up in `docker inspect`; a file does not.
+      # Checked once at boot; a malformed key refuses to start. Live push is
+      # unverified until a real Firebase project exists.
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      # Longest a call session stays joinable (minutes).
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
     ports:
       # Loopback-only, not "8123:8123" (which publishes on every host
       # interface). Physical devices reach this exactly the same way they
@@ -150,6 +181,7 @@ services:
       # better one. See docker-compose.prod.yml's matching comment for the
       # full data-loss reasoning this mirrors.
       - olive-dev-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "server/index.mjs"]
     restart: unless-stopped
     healthcheck:
@@ -161,7 +193,7 @@ services:
       # image. start_period gives the process time to open its DB pool on
       # first boot before failures start counting against retries.
       test: ["CMD", "node", "-e",
-             "fetch('http://127.0.0.1:8123/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+             "fetch('http://127.0.0.1:8123/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -244,8 +276,16 @@ services:
       # container's own disconnected filesystem, never the volume below —
       # found by this project's own post-tier audit, not a hypothetical.
       MEDIA_STORAGE_ROOT: /app/data/media
+      # The nightly `run all` includes the deliver job, which sends the message_ready push
+      # from THIS process, so it needs the same push credential the server has.
+      # DELIVERY_PUSH=off keeps delivery and skips only the wake-up. The nightly run also
+      # ends abandoned call sessions (CALL_MAX_AGE_MINUTES).
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+      CALL_MAX_AGE_MINUTES: "${CALL_MAX_AGE_MINUTES:-240}"
     volumes:
       - olive-dev-media:/app/data/media
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "loop"]
     restart: unless-stopped
 
@@ -264,6 +304,13 @@ services:
     environment:
       DATABASE_URL: postgres://app_runtime:app_runtime@db:5432/olive_devicetest
       DELIVERY_TICK_MS: "${DELIVERY_TICK_MS:-30000}"
+      # This process sends the content-free message_ready push after each claim, so it
+      # needs the same push credential the server has (optional; see `server`).
+      # DELIVERY_PUSH=off keeps delivery and skips only the wake-up.
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+      DELIVERY_PUSH: "${DELIVERY_PUSH:-on}"
+    volumes:
+      - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "deliver-loop"]
     restart: unless-stopped
 

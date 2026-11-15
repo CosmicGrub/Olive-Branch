@@ -1518,6 +1518,8 @@ POST   /v1/auth/webauthn/register/verify        guardian passkey enrollment, ste
 POST   /v1/auth/webauthn/login/challenge        guardian passkey sign-in, step 1 (server/index.mjs — pre-session, cannot go through api.register())
 POST   /v1/auth/webauthn/login/verify           guardian passkey sign-in, step 2 (ditto)
 POST   /v1/auth/dev-login                       DEV_LOGIN=1 only — never production
+POST   /v1/auth/signup                          no session; an operator-issued allowance token creates the first account, PIN and device (§7.17, migration 0050)
+GET    /v1/children/:childId/calls/availability provider name, available, sameNetworkOnly — never a secret or the URL (§7.18)
 ```
 
 **v0.49.9 — the guardian invitation route, real, and honestly incomplete.**
@@ -1527,7 +1529,13 @@ create/read/accept-decision/revoke, all real and RLS-backed
 (`db/migrations/0014_guardian_invite.sql`). Does NOT create a `guardianship`
 row: that needs an app_user row for the invited party, and this codebase has
 no account-creation route for one, for a first OR an invited guardian — see
-this section's own note below and the migration's own header.
+this section's own note below and the migration's own header. **Superseded by
+§7.17 (migration 0050):** invite-only sign-up now creates the first account,
+and the inviter's confirm step now creates the edge.
+
+(`db/migrations/0014_guardian_invite.sql`). *(As first shipped it did not create a
+`guardianship` row. That still holds for accept and bootstrap. The edge is made by the inviter's
+confirm step and a first family by `POST /v1/auth/signup`; see "The live chain on the server" below.)*
 
 ```
 POST   /v1/children/:childId/guardianships      a real guardian invites a
@@ -1563,6 +1571,49 @@ account, including why no existing test had caught this
 `contract.test.mjs` never calls `api.handle()`; `routes.test.mjs` had zero
 guardian-invite coverage) and the new tests that now do, at both the `Api`
 mechanism level and against these real routes end to end.
+
+**The live chain on the server (server audit G1, G2, G3, G7; migrations 0050 to 0052).**
+Before these lanes the server could not carry a first family: nothing made a
+family, an accepted invite gave the second guardian no access, and nothing
+delivered a banked message to the child. The routes below are the whole of it;
+the reasoning, the push sender, calls, readiness and the tests are §7.16 to §7.18,
+and every route is proved against a real Postgres through the real routes
+(`server/test/identity_chain_route.test.mjs`, `live_chain.test.mjs`,
+`delivery_chain.test.mjs`, the process-level `delivery_push_calls_e2e.test.mjs`) and
+by `tools/smoke-stack.mjs` against a running stack.
+
+```
+POST   /v1/auth/signup        no session; an operator-issued, single-use allowance token is the
+                              credential (tools/provision-signup.mjs). Account + first PIN +
+                              enrolled device in one transaction. (§7.17)
+POST   /v1/children           a guardian (own PIN) creates a child, her edge, a time-zone
+                              interval and the default day (§7.18) in one transaction.
+POST   /v1/guardian-invites/:inviteId/bootstrap
+                              an account for the invited person and NO edge: account first,
+                              access second.
+POST   /v1/guardian-invites/:inviteId/confirm
+                              the inviter's own PIN. The ONLY step that creates the invited
+                              adult's edge, with the invite's own role and scope (a sitter
+                              invite is a sitter edge, never a promoted one). Caps (G-37): at
+                              most 4 parent-class edges (guardian, step_parent, foster_parent)
+                              and 8 carer edges per child, counted under a lock on the child
+                              row; 409 family_full beyond that. The inviter must still hold a
+                              live, unrestricted guardian edge: otherwise 403 and the invite is
+                              not burned.
+GET    /readyz                readiness, as distinct from /healthz liveness (§7.18).
+```
+
+A family is the set of children and adults joined by guardianship edges, which is
+what every RLS policy since 0040 keys on. There is deliberately no `family` table:
+one with no policy attached would be a second, unenforced notion of "family", and
+GAP-REGISTER G-02 warns about FORCE-RLS recursion if one is bolted onto
+`guardianship`. The text of audit item S-D26 (the family tenant) is still not in the
+repository, so this is fitted to the schema, not to that finding.
+
+`server/seed-dev.mjs` refuses `NODE_ENV=production` because it plants well-known
+accounts with a throwaway PIN. `INTERNAL_METRICS_TOKEN` is passed through both compose
+files so a scraper on the docker network can reach `/internal/metrics` (it is
+loopback-only otherwise).
 
 No dedicated `escalate` server route exists, and none was needed — **as of
 v0.49.7, §8.3's PIN+biometric escalation ceremony has a real UI surface**
@@ -1980,7 +2031,7 @@ unrouted path logs as `unmatched`). `x-request-id` is echoed on every response
 per-route count / 5xx / avg / max latency, pool gauges, rate-limit and
 body-cap counters). It is internal-only: loopback peer **and** no proxy header,
 or a matching `INTERNAL_METRICS_TOKEN`; anyone else gets the 404 an unknown
-path gets. `ACCESS_LOG=0` silences the log; `/healthz` is not logged unless
+path gets. `ACCESS_LOG=0` silences the log; `/healthz` and `/readyz` are not logged unless
 `ACCESS_LOG_HEALTHZ=1`. Not built: shipping the counters anywhere (no
 Prometheus/OTel exporter), and the client half of P-07.
 
@@ -2172,8 +2223,8 @@ S-B7 (the account-deletion recovery window and pseudonymising purge), S-B10
 (an Ed25519 signature and timestamp on the certified export), S-B11 (**shipped
 afterwards, see 7.12.1**), S-B12 (PIN per-device backoff, six-digit minimum for new PINs with a
 blocklist, `PIN_PEPPER`, and scoping the kiosk attempt counter to the caller),
-the rest of S-B16, S-B17 to S-B20 (`RP_ID` is still the placeholder
-`olivebranch.local`; backup encryption off by default; privacy-law gaps; the
+the rest of S-B16, S-B17 to S-B20 (`RP_ID` was the placeholder
+`olivebranch.local`, now environment-driven, §7.17; backup encryption off by default; privacy-law gaps; the
 two-guardian consent for roles that read the P8 log), and edge policies for the
 five child-keyed scheduling tables in the RLS allow-list. The residual in S-B3
 (a first PIN with no proof) and the client change the step-up needed (the exports
@@ -2423,8 +2474,8 @@ from a fresh generation. Dart asserts custody, care and the ledger chain; there
 is no Dart port of the gate or materialiser (the client does no zone maths), so
 the delivery vectors are a contract for any future port.
 
-**Not done in this pass** (each stays in the audits; the items marked "since done" were closed later, see §7.16): the delivery worker (since done) and
-anything that needs a push provider (parked); delivery timestamps and receipts
+**Not done in this pass** (each stays in the audits; the items marked "since done" were closed later, see §7.16 to §7.18): the delivery worker (since done) and
+anything that needs a push provider (the sender and its wake-ups are built since, never run against Google: §7.18); delivery timestamps and receipts
 (S-D3, since done); a child's reply recipient (S-D4); write paths for day-parts, time-zone
 intervals (S-D5, since done) and custody orders (still open); the 6 to 12 month deletion window (S-D16);
 take-and-go breadth (S-D17); succession behaviour (S-D18); the polymorphic uuid
@@ -2515,7 +2566,77 @@ Editing a bedtime or moving her zone fires the migration 0002 triggers, which re
 
 **Tests.** `server/test/delivery_chain.test.mjs` (wired in `tools/verify.sh` as the table owner and again as the least-privilege `app_runtime` role) drives the real routes and the real worker against Postgres with no row seeded `delivered`: send, tick, inbox, media, signed URL, open, sender receipt; hostile input for every new route (bad kinds, times, days, zones, sources, dates, ids, SQL in a field, oversize lists, other families, sitters, children, no token); an expired intent; two workers racing 40 rows with no row claimed twice; and the child's own reply not appearing in her own inbox. `tools/test/infra.test.mjs` asserts the `delivery` service in both Compose files. The client path constants are in `client/lib/api_client.dart` so the route-drift test sees them.
 
-**Not done** (each stays open): a guardian-to-child **family** with its edge (`POST /v1/families`, accept-invite creating the edge) — owner decisions on the consent posture and the tenant design, and the identity lane, are pending, so no runtime path creates a `guardianship` row and a real family still cannot send (GAP-REGISTER G-02); a child's reply **recipient** and its guardian-facing reader (S-D4); a write path for custody orders and re-timing on a custody change (the engine has no custody logic); `GET .../batches` and the other sender views of message banking; a guardian "send now" (`immediate`) policy through the API; an idempotency key on `POST .../messages` and `.../media` and the app-level outbox drain; streaming upload and ranged download for large videos; a push for a ready message (a content-free `since` cursor for cheap polling is the planned substitute); `on_event` targets; and the Android screens for the media player, sender receipts and the bedtime and zone settings.
+**Not done** (each stays open): the server **family tenant** (the identity lane since made the guardian-to-child edge reachable through `POST /v1/auth/signup`, `POST /v1/children` and the inviter's confirm, §7.17, but there is still no family row, GAP-REGISTER G-02); a child's reply **recipient** and its guardian-facing reader (S-D4); a write path for custody orders and re-timing on a custody change (the engine has no custody logic); `GET .../batches` and the other sender views of message banking; a guardian "send now" (`immediate`) policy through the API; an idempotency key on `POST .../messages` and `.../media` and the app-level outbox drain; streaming upload and ranged download for large videos; a push for a ready message (since built, never run against Google: §7.18; a content-free `since` cursor for cheap polling remains the planned substitute); `on_event` targets; and the Android screens for the media player, sender receipts and the bedtime and zone settings.
+
+### 7.17 Identity lane — as shipped (migration 0050)
+
+**Migration 0050 on a database that already has invites.** Its backfill copies each already-bootstrapped invite's `bootstrap_user_id` into the new `claimant_user_id`. `guardian_invite` is FORCE row level security and the production migrator (`app_owner`) is NOBYPASSRLS, so the statement sets `app.role = 'system'` for the migration transaction first; without it the `UPDATE` matched zero rows without an error and every pre-0050 bootstrapped invite lost its claimant. `tools/test/migrate_0050_backfill.test.mjs` applies the migrations before 0050 as `app_owner`, seeds a bootstrapped, an accepted and a pending invite, applies 0050 as `app_owner`, and asserts the claimant was copied, nothing else changed, and the role did not outlive the transaction.
+
+**The defect.** A fresh server had no way to get a first account, a child or a guardianship edge except raw SQL (`server/seed-dev.mjs`, the family-sim harness). Production refuses `DEV_LOGIN`, so a production server had no first user. An accepted or bootstrapped invite gave an adult an account with no access. A started call's `sessionId` was 32 bare hex characters, which the strict-ids guard (on in production) refuses as `400 bad_path`, so no call could be joined or ended through the real server. `RP_ID` was the constant `olivebranch.local`. The ten-family simulation logged these as gaps G1 to G9; none was fixed on main. (The delivery worker, the other half of "a message reaches the child", is the delivery lane's: §7.16.)
+
+**Sign-up is invite-only.** `signup_allowance` holds operator-issued, single-use, expiring tokens, stored only as a SHA-256 (the plaintext exists once, in the operator's terminal). `signup_policy` is one row: a kill switch (`enabled`) and an optional account cap (`max_accounts`). Both tables are `ENABLE` + `FORCE` row level security with a `system`-only policy: no guardian or child session can read or write either. The operator tool is `tools/provision-signup.mjs` (`issue [--label] [--days]`, `status`, `disable`, `enable`, `cap <n|none>`), run with `docker exec`; a label may not contain an `@`.
+
+```
+POST   /v1/auth/signup                 no session. { allowanceToken, displayName, homeTz, pin, deviceLabel? } ->
+                                       201 { token, expiresAt, userId, deviceId, deviceCredential }.
+                                       One transaction: kill switch and cap (policy row locked FOR UPDATE), allowance
+                                       redeemed (compare-and-swap), app_user, first PIN, enrolled device.
+                                       403 invalid_allowance (unknown, expired and already-redeemed are ONE answer),
+                                       403 signup_disabled, 403 signup_cap_reached (only ever told to a caller who
+                                       holds a live token; a tokenless caller cannot read the kill switch or the cap);
+                                       400 on a bad name, zone or PIN. The allowance and policy are judged BEFORE the
+                                       PIN is hashed (scrypt blocks the event loop and the route is unauthenticated),
+                                       so a junk token costs one indexed lookup; a bad PIN with a junk token is 403,
+                                       with a live token 400.
+                                       Per-IP limited by the /v1/auth/ prefix.
+GET    /v1/me/children                 guardian session. The children the caller holds a LIVE, unrestricted edge to.
+POST   /v1/children                    guardian session + own PIN. { displayName, birthDate, homeTz, pin } -> 201 { child }.
+                                       The child, the caller's guardianship edge, a timezone interval and a default
+                                       day-part plan are one transaction. At most 12 children per account.
+GET    /v1/children/:childId/guardian-invites
+                                       the CALLER's own invites for the child with their state (sent, accepted,
+                                       waiting_for_you, confirmed, declined, revoked, expired) and, once someone has
+                                       presented one, only the name they gave.
+POST   /v1/guardian-invites/:inviteId/claim     guardian session. An EXISTING account whose email IS the invited email
+                                       presents an accepted invite (the "second invite to a registered email" dead end).
+                                       A mismatch is 404, indistinguishable from no invite. Grants nothing.
+                                       LIMIT: this works only for accounts that HAVE an email, which today means
+                                       accounts the invite bootstrap created. Sign-up stores no email and no route
+                                       sets or verifies one, so a grown-up who signed up with their own allowance
+                                       cannot claim an invite addressed to them (404), and bootstrapping that invite
+                                       would create a second account for the same person. Closing it needs a
+                                       verified-email step (a mailer); this lane does not build one.
+POST   /v1/guardian-invites/:inviteId/confirm   inviter + own PIN. The ONLY step that creates the invited adult's
+                                       guardianship edge, with the invite's role and scope, in the same transaction that
+                                       consumes the invite and records a content-free `guardian_added` security event.
+POST   /v1/guardian-invites/:inviteId/decline   inviter, no PIN. Turns away whoever presented the invite.
+```
+
+**What closed.** (1) The invite chain: accept and bootstrap still create no edge (deliberate, and now asserted as the safe pre-state); the inviter, who is physically with the invitee because there is no mailer, says yes with their own PIN. Only the inviter can confirm (anyone else sees `404`), only a claimed invite, only before it expires, only while the inviter still holds a live guardian edge themself. A revoked or declined invite creates no edge. `bootstrap` now also records the claimant and accepts `enrol` (see 2). (2) Device identity: sign-up and bootstrap (with `enrol`) insert a `paired_device` (role `guardian`, `paired_via` NULL; migration 0050 makes the column nullable) and return its credential once, so the existing `POST /v1/auth/session/refresh` keeps the grown-up signed in past the first hour with no domain and no passkey. Deactivating an account revokes its enrolled devices in the same transaction, so a live device-bound session ends at once instead of running out its hour. (3) Call ids: `createSession` mints a canonical dashed uuid, so `.../calls/:sessionId/join` and `/end` are reachable under strict ids (`call_log.id` is text and stores either form). (4) The relying party: `server/webauthn_config.mjs` reads `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `WEBAUTHN_ANDROID_ORIGINS` (`android:apk-key-hash:<base64url SHA-256 of the signing certificate>`) and `WEBAUTHN_ANDROID_PACKAGE`. Unset keeps the development default so nothing existing changes; unset in production is a boot warning (passkeys are unusable, device-credential sign-in is not); a malformed value refuses to boot. Registration and login accept the configured Android origins alongside the https origin (`verifyAssertion` takes `extraOrigins`, exact match only), and `GET /.well-known/assetlinks.json` is served from the same values.
+
+**Why a default day-part plan.** `POST /v1/children/:childId/messages` targets the `bedtime` day part by default and answers `400 daypart_undefined` for a child that has none. So a child created by `POST /v1/children` gets the one placeholder plan in §7.18 (wake 06:30 to 08:00, free 08:00 to 19:30, bedtime 19:30 to 20:30, asleep 20:30 to 06:30) that asserts no schedule beyond "overnight is quiet, evening is bedtime", written under the same per-child lock as the delivery lane's `PUT /v1/children/:childId/day-parts`, which is how a family replaces it. Without it a brand-new child could receive nothing.
+
+**Not built (kept honest).** There is no `family` table and no server family tenant (S-D26; its text is not in the repository; gap G-02 stays open for the family-sync design). Account recovery and restore (a lost device or passkey, a forgotten PIN, undelete within the 6 to 12 month window) is not built: a grown-up who loses every enrolled device and has no second grown-up has no way back in. The device credential does not rotate and has no absolute lifetime (a stolen one is cut off by revoking the device). There is no per-device limiter on refresh (all families behind one Docker bridge address share the per-IP bucket). The LAN-paired tablet still has no server identity and no bridge to a server child. The guardian client is not yet wired to the new routes (the Dart API functions exist and are tested; no screen calls them), and the invite deep link and the paste-an-invite screen are not built. Push is built but waits for a Firebase service account (§7.18). The G-37 caps (4 parent-class and 8 carer edges per child, 409 `family_full`) are enforced in the confirm step under a lock on the child row.
+
+**Tests.** `server/test/identity_chain_route.test.mjs` (real Postgres through the real `Api` with strict ids on, run as `app_owner` and again as `app_runtime`, wired in `tools/verify.sh`): sign-up (validation, replay, expiry, concurrency, kill switch, cap, a junk token learning nothing about either, refused before the PIN is hashed, refresh, RLS on both tables), children (PIN step-up, the live edge, two real families isolated from each other), the whole invite chain (claim, confirm, decline, revoke, expiry, non-inviter, closed inviter, email already registered), deactivation ending a device session, a sign-up-created child (paired device, a message that materializes, the call id surviving strict ids) and the operator tool. `server/test/webauthn_config.test.mjs` (pure): configuration validation, origin matching, the assetlinks document, and a real P-256 assertion with an Android origin. `packages/api/test/contract.test.mjs` gains the seven new routes (every one must have a Dart constant) and the `guardian-invites` identity exception.
+
+### 7.18 Push, honest calls and readiness: the three server lanes reconciled — as shipped (server lane `live`, migrations 0051 and 0052)
+
+**Why.** The server audit found the chain the live app needs (sign in, create or join a family, deliver an item, the child reads it, a wake-up push, a call) open at several links, all masked because every test and the owner's stack get their family and their delivered messages from `server/seed-dev.mjs` and `DEV_LOGIN=1`. Three lanes closed overlapping parts of it in parallel, each against an older main, and each invented its own first-family route, its own default day, its own push-config module and (two of them) its own delivery worker. This section is what the integration kept, and the rest of §7.16 and §7.17 is what the other lanes shipped.
+
+**One of each.** (1) *First family:* invite-only `POST /v1/auth/signup` (an operator-issued allowance token, §7.17) and `POST /v1/children`. There is no `POST /v1/families`, no shared setup code and no enrolment-code table: the other two lanes' versions of that route were dropped, and their input rules live on as `server/identity_input.mjs` (names are NFC, collapsed, counted in code points and refuse control characters; zones must be IANA names; birth dates must be real, not in the future and under 18) which both identity routes now use. (2) *Edge for an invited adult:* only the inviter's PIN-gated `POST /v1/guardian-invites/:inviteId/confirm` creates it. Bootstrap makes an account and no access (a tested pre-state), so a link in the wrong hands never becomes access to a child. The G-37 caps (at most 4 parent-class edges and 8 carer edges per child, counted under a lock on the child row so two simultaneous confirms cannot both take the last slot, 409 `family_full`) and the inviter re-check (she must still hold a live, unrestricted guardian edge when the edge is made) live in that one place. (3) *Default day:* one `DEFAULT_DAY_PARTS` in `packages/db/src/pool.ts`, written by one helper under the same per-child advisory lock the day-parts `PUT` takes: wake 06:30 to 08:00, free 08:00 to 19:30, bedtime 19:30 to 20:30 (all reachable) and asleep 20:30 to 06:30 (not reachable, wrapping midnight), every day, `HH:MM`, so a guardian can read it back with `GET .../day-parts` and replace it with `PUT` unchanged. (4) *Delivery worker:* `runDeliverSweep` in `tools/scheduler.mjs` (§7.16) is the only implementation. It gained the push step (below). `server/delivery_tick.mjs` is a thin in-process HOST for that same function (a timer, `kick()` after a message is banked, status and backlog for readiness); it contains no delivery logic. The Compose files run the dedicated `delivery` service and set `DELIVERY_IN_SERVER=0` on the server; a single-container deployment sets it to 1. Both take the same advisory lock (`deliver`), so running both is safe, only wasted. (5) *Push configuration:* `server/push_config.mjs` over `inspectFcmConfig()` in the sender.
+
+**The push sender and its wake-ups.** `runDeliverSweep` sends ONE content-free `message_ready` push per child that just received something (the `ref` is the newest claimed intent id, an opaque handle; no sender, count, caption or time) after the claim has committed, so a failed push never un-delivers a message, one child's failing push never stops the next, and the recipient-side asleep/school gate still applies (a message due in quiet hours is delivered silently and she finds it when she opens the app). The result counts `pushed`, `silent` (gated, or no push-capable device), `noDevice` and `pushFailed`. `DELIVERY_PUSH=off` keeps delivery and skips the push. `FCM_SERVICE_ACCOUNT_FILE` (a mounted path outside the repository; `scaffold/secrets/` is git-ignored and bind-mounted read-only into the server, the scheduler and the delivery service) is read at send time and wins over the inline `FCM_SERVICE_ACCOUNT_JSON`, which still works. A missing file, non-JSON, a non-object, an empty file, a missing or blank or non-string field and a private key that cannot sign are each a clear `fcm_config_invalid`, never echoing a path or key. At boot `server/index.mjs` logs `push: {androidRing, fcm:{configured, source}, apns:{configured}, problems}` (names and booleans only) and returns the same object from the loopback-only `/internal/metrics`. Unset is fine (the app is offline-first: the inbox fills and the child's app polls). Set but malformed refuses to boot, because "I turned push on and it never fires" is the worst failure here; a half-configured APNs is only a warning. `FCM_API_BASE_URL` redirects the sender to an HTTP stand-in for Google and is honoured only when `NODE_ENV` is `development` or `test`. New kind `call_cancelled`: data-only, no banner, `calls` channel, no full-screen intent; on iOS a background push with no CallKit. Of the push kinds, `call_incoming`, `call_cancelled` and `message_ready` now have real callers; `turn_ready`, `exchange_reminder` and `dose_due` still have none.
+
+**Calls fail honestly (migration 0052).** The `call_log` row is written FIRST (a failing write is 503 `call_unavailable`, nothing rung, no grant minted); an unconfigured provider is refused before any ring for both providers. The response gains `ringState`, one word derived from the per-device result codes only (`rang`, `quiet_hours`, `no_devices`, `no_push_capability`, `send_failed`; `message` is never returned), so the guardian UI can say honestly why a child's device did not ring. Quiet-hours policy is unchanged (an explicit emergency bypass is an open owner decision). The names in the Jitsi token and the response are read under RLS from `app_user.display_name` and `child.display_name`, sanitised (`cleanDisplayName`: control, bidi and line-separator characters stripped, markup removed, capped) and never taken from the request or hard-coded. `call_log.answered_at` is stamped when the child first mints a join token; ending a call records `ended_reason` (`answered`, `cancelled` by the caller before an answer, `declined` by the child's device, `stale`), and ending an unanswered call sends the child's devices a `call_cancelled` push (priority `emergency`, so the quiet-hours gate cannot strand a ring that began a minute earlier). `callSessionFor()` refuses a session older than `CALL_MAX_AGE_MINUTES` (default 240) and the `end-stale-calls` job (part of the nightly run) ends such calls with reason `stale`; an end racing the sweep has exactly one winner. Call session ids are canonical uuids (§7.17), so the join and end routes are reachable under strict ids. `GET /v1/children/:childId/calls/availability` returns only `{provider, available, sameNetworkOnly}` (never the URL, app id or secret); `sameNetworkOnly` is true when the configured Jitsi host is a private, loopback, link-local or single-label name. Migration 0052 adds the two nullable columns and a partial index, with no backfill (a reason cannot be reconstructed, and an `UPDATE` under FORCE RLS would match nothing).
+
+**Readiness (migration 0051).** `GET /healthz` stays a pure liveness check. `GET /readyz` answers 200 `{status:"ready"}` only when the database answers, its schema is at or past the newest migration baked into the image, the media volume accepts a write and the process is not draining; otherwise 503 `{status:"not_ready", failing:[...]}` naming a category and nothing else. `degraded: ["delivery"]` (the app keeps serving) means either the in-process host has failed three passes in a row or has not succeeded for six intervals, or, whichever process hosts the worker, a `ready` row whose delivery instant passed more than ten minutes ago is still unclaimed. `app_runtime` cannot read `schema_migration`, so migration 0051 adds `schema_migration_level()`, a SECURITY DEFINER function returning only the newest applied filename. On SIGTERM `/readyz` flips to 503 first and the listener closes after `READYZ_DRAIN_MS` (default 2 s in production, 0 otherwise). Both Compose files point the server healthcheck at `/readyz`; concurrent probes share one check for `READYZ_CACHE_MS` (default 2000); probes are not access-logged unless `ACCESS_LOG_HEALTHZ=1`.
+
+**Operator surface.** `tools/smoke-stack.mjs` (`npm run smoke:stack -- --base ... --db-container ... --server-container ...`) walks the chain over real HTTP, one PASS/FAIL line per link, exit non-zero on any FAIL: it issues its own sign-up allowances by running `provision-signup.mjs` inside the named server container, signs a guardian up, creates a child, invites a second guardian and asserts she has an account and NO access until the inviter confirms, pairs a child device, banks a message, waits for the worker, has the child read it, and probes a second family for isolation. It refuses the long-lived stacks by name and by the port they publish, and deletes only rows carrying its own marker. Its one cheat, moving one throwaway row's scheduled instant into the past (a bedtime message is hours away), is printed. `server/seed-dev.mjs` refuses `NODE_ENV=production` because it plants well-known accounts with a throwaway PIN.
+
+**What is still not true.** No push has ever been delivered by Google: the sender is proven against a real HTTP server shaped like Google's OAuth and FCM v1 endpoints, not against Google, and needs the owner's Firebase project. A closed Android app cannot ring: there is no `google-services.json`, no Google services Gradle plugin, no native `FirebaseMessagingService`, no `calls` or `reminders` notification channel, no full-screen-intent permission and no foreground service in the client; hardware verification on the two devices is outstanding. Calls need the owner's Jitsi stack switched on; server-side Jitsi media revocation is not built; a child-to-guardian call request is an open product decision. Family-record sync has no server leg (it waits for the family tenant and the external crypto review). Nothing in this section has run on a device.
+
+**Tests.** `server/test/live_chain.test.mjs` (real Postgres through the real `Api` with strict ids, as `app_owner` and again as `app_runtime`: an invited adult has an account and no access until the inviter confirms, sitter edges stay narrow, revoked, expired, not-accepted and duplicate-e-mail invites, the caps including two simultaneous confirms for the last slot, the inviter-standing re-check, delivery through the real routes with no hand-inserted row including "not before its time", two racing workers, retention expiry, a failing push provider, the content-free push body, the debounced kick, a database outage, and readiness against the real database including the queue-based degraded signal), `server/test/live_chain_pure.test.mjs` (input rules, readiness helpers, the host's contract with the single sweep, shutdown ordering, the `/readyz` transport exemption, compose and source wiring sweeps, `seed-dev` refusal, the smoke target guard, probe logging and the readiness cache), `server/test/delivery_push_calls_e2e.test.mjs` (the real server process with no dev-login and an HTTP server standing in for Google: sign-up, a first child, pairing, send, worker, inbox, opened, the exact FCM v1 body and a leak scan, wrong child, expired intent, concurrent workers, quiet hours, a dead and a failing device, push off, push unconfigured, calls end to end with real names, every end reason, the cancel push, a failing `call_log` insert injected with a trigger, stale calls, availability, the operator metrics) and `server/test/push_config.test.mjs` (credential shapes, no leaks, the sender reading the file, the stub base URL ignored in production, `ringStateFrom`, `isLanOnlyHost`, `call_cancelled`, the scheduler registry). Wired in `tools/verify.sh`.
 
 ## §8 UI architecture
 
@@ -3539,7 +3660,7 @@ enrollment. Documented in the security policy required by §10.1.
 > that existing, already-tested contract.
 >
 > **Never run against a live FCM or APNs endpoint** — no
-> `FCM_SERVICE_ACCOUNT_JSON` or `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`/
+> `FCM_SERVICE_ACCOUNT_FILE` (or the older inline `FCM_SERVICE_ACCOUNT_JSON`, still accepted; §7.16) or `APNS_KEY_P8`/`APNS_KEY_ID`/`APNS_TEAM_ID`/
 > `APNS_TOPIC` exists in this environment; every claim about request shape
 > and JWT-signature correctness is proven against a mocked transport (see
 > `packages/transport/test/fcm.test.mjs`, `apns.test.mjs`). **Not wired to
@@ -8375,9 +8496,10 @@ Each row is something this document or the product's own screens might lead a re
 | **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Sharing a screen between grown-ups: the road** | Everything in section 8.5.9 "Sharing a screen with another grown-up": the sealed format, the rules, the inbox, take-back and expiry, tested headless. | A transport to the other grown-up's phone (same Wi-Fi, the sealed relay or a meeting of the phones, `FAMILY-SYNC-DESIGN.md`) and the live app founding the family ledger, so a real phone has a second grown-up to choose. Until both exist the action does not appear on a real phone. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
-| **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
-| **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
-| **Invites** (a second guardian joining) | Invite create, read, decide and revoke routes (`0014_guardian_invite.sql`) and `invitation_screen.dart`. | Accepting an invite does **not** create an account or a guardianship, and a guardian on a fresh device still has to pair with a code (§7.1c). |
+| **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`, the `message_ready` wake-up after each delivery and the `call_incoming` and `call_cancelled` kinds, the credential read from a mounted file and checked at boot (§7.18): tested against mocks, an HTTP stand-in for Google, and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
+| **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, and the ONE delivery worker (`runDeliverSweep` in `tools/scheduler.mjs`, hosted by the `delivery` service or in-process by `server/delivery_tick.mjs`): a message is timed at send, claimed when due and appears in the child's inbox, proved through the real routes against a real Postgres with no hand-inserted row, in a real server process, and by `tools/smoke-stack.mjs` against a running stack (§7.16, §7.18). | Not run on a real device. The `message_ready` push is built, content-free and tested against an HTTP stand-in for Google only: **it needs a Firebase project** (see Push notifications). A guardian can read and replace the child's day-parts through `GET` and `PUT .../day-parts` (§7.16) but no Android screen calls them yet. |
+| **Invites** (a second guardian joining) | Invite create, read, accept, revoke, bootstrap (with optional device enrolment), claim by an existing account, decline, the inviter's PIN-gated confirm that creates the edge (with the 4 parent and 8 carer caps and the inviter's standing re-checked), and the inviter's own invite listing (§7.17, §7.18, tested against a real Postgres including sitter, revoked, expired, duplicate-e-mail and simultaneous-confirm cases). `invitation_screen.dart` is still the preview. | No client screen calls the invite or sign-up routes yet (the Dart functions exist), there is no deep link or paste-an-invite screen, and no mailer: the invite id travels out of band and the inviter confirms in person. Revoking an accepted invite does not close the edge (the only route that closes an edge is the child's majority hand-over); what a *restricted* guardian may do versus a full one needs the owner's rule; a guardian on a fresh device still has to pair with a code (§7.1c). |
+| **Server sign-up and the live chain: what is left** (server audit, 2026-11-15) | `POST /v1/auth/signup`, `POST /v1/children`, the inviter's confirm, the delivery worker, push and honest calls, `/readyz`, `tools/smoke-stack.mjs` (§7.16 to §7.18). | (1) No client screen calls sign-up; the Dart function exists. (2) The only family cap is the operator's allowance (a single-use token, an optional account cap and a kill switch); no waitlist. (3) The sealed mailbox and ledger endpoints of `FAMILY-SYNC-DESIGN` (S10, S12) are not built. (4) `docker-compose.prod.yml` is still never booted in CI and the repository ships no TLS proxy for it (`docs/operators/proxy-and-tls.md`). (5) Backups have no scheduled restore drill. (6) Recovery for a guardian who loses her only device is undecided. (7) No route lets a guardian close a co-guardian's edge. (8) Push credentials are wired into the Compose files (`FCM_SERVICE_ACCOUNT_FILE`) but no Firebase project exists, so nothing has reached a device. |
 | **Two-device play: what is left** | War, Connect 4 and Uno run on the shared play envelope, game contract, session controller and dealer's save (§9.2); the TypeScript reference, the Dart port, the golden vectors and the in-memory two-device tests are CI-verified. | Not run on a Fold 5 or a Tab S9 FE (the plan is in the pull request). War is not saved across an app kill. The calm away and ended wording is a draft awaiting the owner. |
 | **Networked games** | Live checkers through the server's table relay (`packages/game-sync`, `networked_checkers_*`): tests and a server-side end-to-end run. | No two-device run over a real network is recorded. The games played during a call need calls. |
 | **Read together and Watch together, server and transports** (§8.26) | The pure core (`packages/co-view`), its Dart port, `CoViewLeader` and `CoViewFollower` over an abstract transport (a loopback in tests) and the screens. | No real transport (neither the call data channel nor a game-sync table is connected), no server route or storage for sessions or the daily-time total, the screens are not reachable from the app's navigation, and there is no Watch together. |

@@ -1,0 +1,324 @@
+/**
+ * Server live-chain support, pure (no database): input rules for names, zones and birth
+ * dates on the identity routes, readiness helpers, the delivery worker's host config and
+ * its shutdown contract, the transport exemption for /readyz, the compose wiring, and the
+ * seed-dev production refusal. The real-database half is live_chain.test.mjs.
+ */
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { DateTime } from 'luxon';
+import { cleanName, cleanTz, cleanBirthDate } from '../identity_input.mjs';
+import {
+  newestShippedMigration, compareSchemaLevel, mediaRootWritable, checkReadiness,
+} from '../readiness.mjs';
+import { hostIntervalFromEnv, createDeliveryTick } from '../delivery_tick.mjs';
+import { DEFAULT_DELIVER_TICK_MS, MIN_DELIVER_TICK_MS } from '../../tools/scheduler.mjs';
+import { createShutdown } from '../shutdown.mjs';
+import { httpsRequired } from '../transport.mjs';
+import { createReadinessCache } from '../readiness.mjs';
+import { shouldLogAccess, accessLogLine } from '../observability.mjs';
+import { judgeSmokeTarget, parseDockerListing, publishedHostPorts, isProtectedName } from '../../tools/smoke_target.mjs';
+
+// Fixture names are built, never written out: the migration-hygiene scan reads every source file
+// and would (rightly) flag a literal NNNN_name.sql that is not a real migration.
+const migName = (n, s) => `${n}_${s}.sql`;
+let pass = 0, fail = 0; const rows = [];
+const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
+  rows.push({ g, n, ok, a: String(a), e: String(e) }); };
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+// Several cases await work whose only timer is unref'd by design (the shutdown deadline, the
+// worker's interval): without a ref'd handle Node would exit mid-await and report nothing.
+const keepAlive = setInterval(() => {}, 1000);
+const NOW = DateTime.fromISO('2026-11-15T12:00:00Z', { zone: 'utc' });
+
+// ---- A · names, zones, dates ------------------------------------------------
+check('A names', 'a plain name is kept', cleanName('Ivy'), 'Ivy');
+check('A names', 'whitespace is trimmed and collapsed', cleanName('  Mary   Jane  '), 'Mary Jane');
+check('A names', 'accents and emoji are fine', cleanName('Zoë 🌿'), 'Zoë 🌿');
+check('A names', 'NFC-normalised (e + combining acute == é)', cleanName('Café'), 'Café');
+check('A names', 'empty -> null', cleanName(''), 'null');
+check('A names', 'only spaces -> null', cleanName('    '), 'null');
+check('A names', '60 chars ok, 61 refused', `${!!cleanName('a'.repeat(60))}/${cleanName('a'.repeat(61))}`, 'true/null');
+check('A names', 'counts characters, not UTF-16 units (60 emoji ok)', !!cleanName('🌿'.repeat(60)), 'true');
+check('A names', 'a control character is refused', cleanName('a\u0001b'), 'null');
+check('A names', 'a line separator (U+2028) is whitespace: collapsed to one space, never stored raw', cleanName('a\u2028b'), 'a b');
+check('A names', 'a newline inside a name is likewise collapsed', cleanName('a\nb'), 'a b');
+check('A names', 'the module loads (it once held a raw U+2028 inside a regex literal, a SyntaxError)', typeof cleanName, 'function');
+check('A names', 'DEL is refused', cleanName('a\u007fb'), 'null');
+check('A names', 'a number is refused', cleanName(7), 'null');
+check('A names', 'an object is refused', cleanName({ toString: () => 'x' }), 'null');
+check('A names', 'null/undefined refused', `${cleanName(null)}/${cleanName(undefined)}`, 'null/null');
+check('A names', 'SQL text is stored as text, not rejected or interpreted', cleanName("Robert'); DROP TABLE child;--"), "Robert'); DROP TABLE child;--");
+
+check('A zones', 'America/Chicago ok', cleanTz('America/Chicago'), 'America/Chicago');
+check('A zones', 'UTC ok', cleanTz('UTC'), 'UTC');
+check('A zones', 'a three-part name ok', cleanTz('America/Argentina/Buenos_Aires'), 'America/Argentina/Buenos_Aires');
+check('A zones', 'nonsense refused', cleanTz('Mars/Olympus'), 'null');
+check('A zones', 'an offset is not a zone', cleanTz('+05:00'), 'null');
+check('A zones', "'local' is not a zone", cleanTz('local'), 'null');
+check('A zones', 'empty refused', cleanTz(''), 'null');
+check('A zones', 'a 65-character string refused', cleanTz('A'.repeat(65)), 'null');
+check('A zones', 'SQL in a zone refused', cleanTz("UTC'; DROP"), 'null');
+check('A zones', 'non-string refused', cleanTz(5), 'null');
+
+check('A dates', 'a normal birth date ok', cleanBirthDate('2016-04-02', NOW), '2016-04-02');
+check('A dates', 'today ok (a newborn)', cleanBirthDate('2026-11-15', NOW), '2026-11-15');
+check('A dates', 'tomorrow refused (future)', cleanBirthDate('2026-11-17', NOW), 'null');
+check('A dates', 'far future refused', cleanBirthDate('2999-01-01', NOW), 'null');
+check('A dates', 'Feb 30 refused', cleanBirthDate('2020-02-30', NOW), 'null');
+check('A dates', 'Feb 29 in a leap year ok', cleanBirthDate('2020-02-29', NOW), '2020-02-29');
+check('A dates', 'Feb 29 in a non-leap year refused', cleanBirthDate('2021-02-29', NOW), 'null');
+check('A dates', '17 years old ok', cleanBirthDate('2009-11-16', NOW), '2009-11-16');
+check('A dates', '18 years old refused (majority_age is 18)', cleanBirthDate('2008-11-14', NOW), 'null');
+check('A dates', 'an adult refused', cleanBirthDate('1980-01-01', NOW), 'null');
+check('A dates', 'wrong shape refused', cleanBirthDate('4/2/2016', NOW), 'null');
+check('A dates', 'a datetime refused (date only)', cleanBirthDate('2016-04-02T00:00:00Z', NOW), 'null');
+check('A dates', 'a number refused', cleanBirthDate(20160402, NOW), 'null');
+
+
+// ---- C · readiness helpers ---------------------------------------------------
+const dir = mkdtempSync(join(tmpdir(), 'olive-ready-'));
+try {
+  for (const f of [migName('0001', 'a'), migName('0051', 'schema_level'), migName('0010', 'b'), 'README.md', 'notes.txt']) writeFileSync(join(dir, f), 'x');
+  check('C schema', 'newest shipped migration is the highest-numbered .sql', newestShippedMigration(dir), migName('0051', 'schema_level'));
+  check('C schema', 'an unreadable directory -> null, not a throw', newestShippedMigration(join(dir, 'nope')), 'null');
+  check('C schema', 'an empty directory -> null', newestShippedMigration(mkdtempSync(join(tmpdir(), 'olive-empty-'))), 'null');
+  check('C schema', 'the REAL shipped directory ends at 0051 or later', newestShippedMigration(join(ROOT, 'db', 'migrations')) >= migName('0051', 'schema_level'), 'true');
+  check('C schema', 'db at the image level -> ok', compareSchemaLevel(migName('0049', 'x'), migName('0049', 'x')), 'ok');
+  check('C schema', 'db AHEAD of the image (a rollback) -> still ok', compareSchemaLevel(migName('0050', 'y'), migName('0049', 'x')), 'ok');
+  check('C schema', 'db BEHIND the image -> behind', compareSchemaLevel(migName('0047', 'x'), migName('0049', 'x')), 'behind');
+  check('C schema', 'unknown on either side -> unknown (and readiness treats it as not ok)', `${compareSchemaLevel(null, migName('0049', 'x'))}/${compareSchemaLevel(migName('0049', 'x'), null)}`, 'unknown/unknown');
+  check('C media', 'a normal directory is writable', mediaRootWritable(join(dir, 'media')), 'true');
+  check('C media', 'the probe file is removed afterwards', JSON.stringify(readdirSyncSafe(join(dir, 'media'))), '[]');
+  check('C media', 'a path under a regular file is not', mediaRootWritable(join(dir, migName('0001', 'a'), 'sub')), 'false');
+  check('C media', 'an empty path is not', mediaRootWritable(''), 'false');
+} finally { rmSync(dir, { recursive: true, force: true }); }
+function readdirSyncSafe(p) { try { return readdirSync(p); } catch { return ['ERR']; } }
+
+// ---- D · readiness decisions with fakes --------------------------------------
+{
+  const mig = mkdtempSync(join(tmpdir(), 'olive-mig-')); writeFileSync(join(mig, migName('0049', 'x')), 'x');
+  const media = mkdtempSync(join(tmpdir(), 'olive-med-'));
+  const poolAt = (level) => ({ query: async () => ({ rows: [{ level }] }) });
+  try {
+    check('D ready', 'all good -> ready', JSON.stringify(await checkReadiness({ pool: poolAt(migName('0049', 'x')), migrationsDir: mig, mediaRoot: media })), JSON.stringify({ ready: true, failing: [], degraded: [] }));
+    check('D ready', 'a NULL level (function missing / empty table) -> not ready "schema"', (await checkReadiness({ pool: poolAt(null), migrationsDir: mig, mediaRoot: media })).failing.join(), 'schema');
+    check('D ready', 'a hanging database is cut at 3 s, not waited on forever', await (async () => {
+      const slow = { query: () => new Promise(() => {}) };
+      const t0 = Date.now(); const r = await checkReadiness({ pool: slow, migrationsDir: mig, mediaRoot: media });
+      return `${r.failing.join()}/${Date.now() - t0 < 4500}`;
+    })(), 'db/true');
+    check('D ready', 'drain beats everything and does not even touch the database', await (async () => {
+      let touched = false; const p = { query: async () => { touched = true; return { rows: [] }; } };
+      const r = await checkReadiness({ pool: p, migrationsDir: mig, mediaRoot: media, isDraining: () => true });
+      return `${r.failing.join()}/${touched}`;
+    })(), 'draining/false');
+    const dly = (s) => ({ status: () => ({ enabled: true, intervalMs: 15000, consecutiveFailures: 0, lastOkAgeSec: null, ...s }) });
+    const rd = async (d) => (await checkReadiness({ pool: poolAt(migName('0049', 'x')), migrationsDir: mig, mediaRoot: media, delivery: d }));
+    check('D ready', 'a freshly booted worker (no pass yet) is fine', (await rd(dly({}))).degraded.length, 0);
+    check('D ready', '2 failures in a row is not yet degraded', (await rd(dly({ consecutiveFailures: 2 }))).degraded.length, 0);
+    check('D ready', '3 failures in a row is degraded', (await rd(dly({ consecutiveFailures: 3 }))).degraded.join(), 'delivery');
+    check('D ready', 'last success 10 minutes ago is degraded (interval 15 s)', (await rd(dly({ lastOkAgeSec: 600 }))).degraded.join(), 'delivery');
+    check('D ready', 'last success 20 s ago is fine', (await rd(dly({ lastOkAgeSec: 20 }))).degraded.length, 0);
+    check('D ready', 'a worker not hosted here (DELIVERY_IN_SERVER=0) is never degraded by its own status', (await rd(dly({ enabled: false, consecutiveFailures: 9 }))).degraded.length, 0);
+    const withBacklog = (age, over = {}) => ({ ...dly({ enabled: false }), backlog: async () => ({ pending: 0, ready: 1, oldestReadyAgeSec: age }), ...over });
+    check('D ready', 'an external worker is judged by the queue: a due row 20 minutes old is degraded', (await rd(withBacklog(1200))).degraded.join(), 'delivery');
+    check('D ready', 'a due row 30 seconds old is fine', (await rd(withBacklog(30))).degraded.length, 0);
+    check('D ready', 'an empty queue (no due row) is fine', (await rd(withBacklog(null))).degraded.length, 0);
+    check('D ready', 'a backlog query that throws neither degrades nor breaks readiness', JSON.stringify(await rd(withBacklog(0, { backlog: async () => { throw new Error('x'); } }))), JSON.stringify({ ready: true, failing: [], degraded: [] }));
+    check('D ready', 'the in-process status AND the queue both reporting trouble list delivery once', (await rd(withBacklog(1200, { status: () => ({ enabled: true, intervalMs: 15000, consecutiveFailures: 9, lastOkAgeSec: null }) }))).degraded.join(), 'delivery');
+    check('D ready', 'degraded never makes the process unready', (await rd(dly({ consecutiveFailures: 9 }))).ready, true);
+  } finally { rmSync(mig, { recursive: true, force: true }); rmSync(media, { recursive: true, force: true }); }
+}
+
+// ---- E · where the worker is hosted --------------------------------------------
+check('E host', 'unset -> the dedicated worker\'s own default (30 s)', hostIntervalFromEnv({}), DEFAULT_DELIVER_TICK_MS);
+check('E host', 'empty -> the floor, exactly as the dedicated worker reads it', hostIntervalFromEnv({ DELIVERY_TICK_MS: '' }), MIN_DELIVER_TICK_MS);
+check('E host', 'DELIVERY_IN_SERVER=0 -> 0 (not hosted here: the delivery service runs it)', hostIntervalFromEnv({ DELIVERY_IN_SERVER: '0' }), 0);
+check('E host', 'DELIVERY_IN_SERVER=0 wins over a tick value', hostIntervalFromEnv({ DELIVERY_IN_SERVER: '0', DELIVERY_TICK_MS: '9000' }), 0);
+check('E host', 'DELIVERY_IN_SERVER=1 hosts it', hostIntervalFromEnv({ DELIVERY_IN_SERVER: '1', DELIVERY_TICK_MS: '9000' }), 9000);
+check('E host', 'below the floor is clamped up (no hot loop)', hostIntervalFromEnv({ DELIVERY_TICK_MS: '10' }), MIN_DELIVER_TICK_MS);
+check('E host', 'garbage -> default', hostIntervalFromEnv({ DELIVERY_TICK_MS: 'fast' }), DEFAULT_DELIVER_TICK_MS);
+{
+  // The host adds no delivery logic: it runs the injected sweep under the shared lock.
+  const calls = [];
+  const fakePool = { connect: async () => ({ query: async (sql) => { calls.push(sql.slice(0, 30)); return { rows: [{ locked: true }] }; }, release() {}, on() {}, removeListener() {} }) };
+  const sweepOut = { expired: 1, rematerialized: { materialized: 2, errored: 0 }, delivered: 3, ids: ['a'], children: ['c'], errors: [], pushed: 1, pushFailed: 0 };
+  const seen = [];
+  const t = createDeliveryTick({ pool: fakePool, intervalMs: 5000, metrics: { inc: (n, by) => seen.push(`${n}:${by ?? 1}`) },
+    log: () => {}, sweep: async (_p, o) => { seen.push(`notify:${typeof o.notify}`); return sweepOut; } });
+  const r = await t.runOnce();
+  check('E host', 'a pass runs the ONE sweep under the advisory lock and hands it the push sender', `${r.delivered}/${seen.includes('notify:function')}/${calls.some((c) => c.includes('pg_try_advisory_lock'))}`, '3/true/true');
+  check('E host', 'counters come from the sweep result', ['delivery_claimed_total:3', 'delivery_expired_total:1', 'delivery_push_sent_total:1'].every((x) => seen.includes(x)), 'true');
+  check('E host', 'status reports one tick, a success and no failure', JSON.stringify([t.status().ticks, t.status().failures, t.status().lastOkAgeSec !== null]), '[1,0,true]');
+  const t2 = createDeliveryTick({ pool: fakePool, intervalMs: 5000, log: () => {}, sweep: async () => ({ ...sweepOut, errors: ['claim: boom'] }) });
+  const r2 = await t2.runOnce();
+  check('E host', 'a sweep that reports a failed step counts as a failed pass (so /readyz can say degraded)', `${r2.error}/${t2.status().failures}/${t2.status().lastError}`, 'true/1/sweep_step_failed');
+  const lockedPool = { connect: async () => ({ query: async () => ({ rows: [{ locked: false }] }), release() {}, on() {}, removeListener() {} }) };
+  const t3 = createDeliveryTick({ pool: lockedPool, intervalMs: 5000, log: () => {}, sweep: async () => { throw new Error('must not run'); } });
+  check('E host', 'when another worker holds the lock this host skips without running the sweep', JSON.stringify(await t3.runOnce()), JSON.stringify({ locked: true }));
+}
+
+// ---- F · shutdown waits for a stopper's promise (the in-flight delivery pass) ---
+{
+  const order = [];
+  const server = { close: (cb) => { order.push('server.close'); cb(); }, closeIdleConnections() {}, closeAllConnections() {} };
+  const pool = { end: async () => { order.push('pool.end'); } };
+  const stopSlow = () => new Promise((r) => setTimeout(() => { order.push('worker settled'); r(); }, 150));
+  const sd = createShutdown({ server, pool, stopTimers: [() => order.push('sync stop'), stopSlow], deadlineMs: 2000, log: () => {} });
+  await sd('test');
+  check('F shutdown', 'the pool is ended only AFTER the in-flight worker pass settles',
+    order.join(' > '), 'sync stop > server.close > worker settled > pool.end');
+  const order2 = [];
+  const pool2 = { end: async () => { order2.push('pool.end'); } };
+  const sd2 = createShutdown({ server: { close: (cb) => cb(), closeIdleConnections() {}, closeAllConnections() {} }, pool: pool2,
+    stopTimers: [() => new Promise(() => {})], deadlineMs: 1000, log: () => {} });
+  const t0 = Date.now(); await sd2('test');
+  check('F shutdown', 'a worker pass that never settles cannot hold shutdown past the deadline', `${order2.join()}/${Date.now() - t0 < 3500}`, 'pool.end/true');
+  const sd3 = createShutdown({ server: { close: (cb) => cb(), closeIdleConnections() {} }, pool: { end: async () => {} },
+    stopTimers: [() => { throw new Error('boom'); }], log: () => {} });
+  let threw = false; try { await sd3('t'); } catch { threw = true; }
+  check('F shutdown', 'a stopper that throws does not abort shutdown', threw, false);
+}
+
+// ---- G · transport: /readyz is exempt like /healthz, from direct loopback only ---
+{
+  // Reserved documentation / private-range addresses, assembled so no literal address is committed.
+  const DOC_ADDR = ['203', '0', '113', '9'].join('.');
+  const PRIVATE_PEER = ['10', '0', '0', '5'].join('.');
+  const PROD = { NODE_ENV: 'production', PUBLIC_BASE_URL: 'https://x.example', TRUST_PROXY: '1', TRUST_PROXY_HOPS: '1' };
+  const req = (headers = {}, addr = '127.0.0.1') => ({ headers, socket: { remoteAddress: addr } });
+  check('G transport', 'prod: loopback /readyz is exempt from https_required (the in-container probe)', httpsRequired(req(), PROD, '/readyz'), 'false');
+  check('G transport', 'prod: /readyz through a proxy over http is refused', httpsRequired(req({ 'x-forwarded-for': DOC_ADDR }), PROD, '/readyz'), 'true');
+  check('G transport', 'prod: /readyz from a non-loopback peer is refused', httpsRequired(req({}, PRIVATE_PEER), PROD, '/readyz'), 'true');
+  check('G transport', 'prod: the sign-up route is NOT exempt', httpsRequired(req(), PROD, '/v1/auth/signup'), 'true');
+}
+
+// ---- H · wiring (source sweeps that fail when someone un-wires it) ---------------
+{
+  const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+  for (const f of ['docker-compose.dev.yml', 'docker-compose.prod.yml']) {
+    const t = read(f);
+    check('H compose', `${f} no longer carries a shared sign-up code (sign-up is allowance-token based)`, /FAMILY_SETUP_CODE/.test(t), 'false');
+    check('H compose', `${f} does not host a second delivery worker in the server (the delivery service is the one)`, /DELIVERY_IN_SERVER: \$\{DELIVERY_IN_SERVER:-0\}/.test(t), 'true');
+    check('H compose', `${f} passes INTERNAL_METRICS_TOKEN`, /INTERNAL_METRICS_TOKEN:/.test(t), 'true');
+    check('H compose', `${f} points the server healthcheck at /readyz`, /8123\/readyz/.test(t), 'true');
+  }
+  const idx = read('server/index.mjs');
+  check('H index', 'the server starts the delivery host and stops it on shutdown', /deliveryTick\.start\(\)/.test(idx) && /deliveryTick\.stop\(\)/.test(idx), 'true');
+  check('H index', 'a banked message nudges the host', /afterMessageBanked: \(\) => deliveryTick\?\.kick\(\)/.test(idx), 'true');
+  check('H index', 'SIGTERM flips readiness before closing', /draining = true;/.test(idx), 'true');
+  check('H index', '/readyz is a labelled route (no per-request cardinality)', /pathname === '\/readyz'\) return '\/readyz'/.test(idx), 'true');
+  check('H index', 'there is no /v1/families route or limiter entry left', /\/v1\/families/.test(idx), 'false');
+  const routes = read('server/routes.mjs');
+  check('H routes', 'POST /v1/auth/signup is session-less (the allowance is the credential)', /path: '\/v1\/auth\/signup'[\s\S]{0,200}noSessionRequired: true/.test(routes), 'true');
+  check('H routes', 'there is exactly one family-creation route set: no /v1/families and no setup code', /path: '\/v1\/families'|setupCodeMatches|FAMILY_SETUP_CODE/.test(routes), 'false');
+  check('H routes', 'bootstrap creates no edge: only confirmGuardianInvite inserts an invited adult\'s guardianship', !/INSERT INTO guardianship/.test(routes), 'true');
+  const dart = read('client/lib/api_client.dart');
+  check('H client', 'the Dart client names the identity routes and not a second family route', /'\/v1\/auth\/signup'/.test(dart) && /'\/v1\/children'/.test(dart) && !/'\/v1\/families'/.test(dart), 'true');
+  const sched = read('tools/scheduler.mjs');
+  check('H scheduler', 'there is ONE delivery sweep: the scheduler\'s, and the server host imports it',
+    /export async function runDeliverSweep/.test(sched) && /runDeliverSweep/.test(read('server/delivery_tick.mjs')) && !/claim_due_intents/.test(read('server/delivery_tick.mjs')), 'true');
+}
+
+// ---- I · seed-dev refuses production ----------------------------------------------
+{
+  const r = spawnSync(process.execPath, [join(ROOT, 'server', 'seed-dev.mjs')], {
+    env: { ...process.env, NODE_ENV: 'production', DATABASE_URL: 'postgres://nobody:nobody@127.0.0.1:1/none' },
+    encoding: 'utf8', timeout: 20000,
+  });
+  check('I seed-dev', 'NODE_ENV=production -> exit 2 before any connection is attempted', r.status, 2);
+  check('I seed-dev', 'and it says why and where to go instead', /refuses to run with NODE_ENV=production/.test(r.stderr) && /POST \/v1\/auth\/signup/.test(r.stderr), 'true');
+}
+
+// ---- J · push credentials: the boot check lives in push_config.test.mjs (inspectFcmConfig),
+//          one implementation shared by the sender and the server's boot refusal.
+
+// ---- K · the smoke test refuses a target it cannot show is a test stack ---------------
+{
+  const row = (name, ports, project) => ({ name, ports, project });
+  const L = [
+    row('olive-live-server-1', '0.0.0.0:8130->8123/tcp, [::]:8130->8123/tcp', 'olive-live'),
+    row('olive-live-db-1', '5432/tcp', 'olive-live'),
+    row('olive-sim-server-1', '0.0.0.0:8141->8123/tcp', 'olive-sim'),
+    row('olive-fresh-server-1', '0.0.0.0:8123->8123/tcp', 'olive-fresh'),
+    row('olive-fresh-db-1', '5432/tcp', 'olive-fresh'),
+    row('some-other-1', '0.0.0.0:8200->80/tcp', 'other'),
+  ];
+  const j = (o) => judgeSmokeTarget({ containers: L, ...o });
+  const fresh = { dbContainer: 'olive-fresh-db-1', serverContainer: 'olive-fresh-server-1' };
+  check('K smoke', 'the fresh stack on its own port with its own containers is allowed', j({ base: 'http://127.0.0.1:8123', ...fresh }).ok, 'true');
+  check('K smoke', '--base on the LIVE port with NO containers named is refused (the reported hole)', j({ base: 'http://127.0.0.1:8130' }).ok, 'false');
+  check('K smoke', 'and the refusal names the long-lived stack that owns the port', j({ base: 'http://127.0.0.1:8130' }).problems.some((p) => /olive-live-server-1/.test(p)), 'true');
+  check('K smoke', '--base on the SIM port with the fresh containers is refused', j({ base: 'http://127.0.0.1:8141', ...fresh }).ok, 'false');
+  check('K smoke', '--base on the live port with the fresh containers is refused (cleanup would hit the wrong database)', j({ base: 'http://localhost:8130', ...fresh }).ok, 'false');
+  check('K smoke', 'fresh server on its port but the LIVE db container named is refused', j({ base: 'http://127.0.0.1:8123', dbContainer: 'olive-live-db-1', serverContainer: 'olive-fresh-server-1' }).ok, 'false');
+  check('K smoke', 'a db container from a different compose project is refused even if not protected', j({ base: 'http://127.0.0.1:8123', dbContainer: 'some-other-1', serverContainer: 'olive-fresh-server-1' }).ok, 'false');
+  check('K smoke', 'a db container with no project label cannot be tied to the server -> refused', judgeSmokeTarget({ base: 'http://127.0.0.1:8123', ...fresh,
+    containers: [row('olive-fresh-server-1', '0.0.0.0:8123->8123/tcp', 'olive-fresh'), row('olive-fresh-db-1', '5432/tcp', '')] }).ok, 'false');
+  check('K smoke', 'a server container that is not running is refused', j({ base: 'http://127.0.0.1:8123', serverContainer: 'olive-fresh-server-9' }).ok, 'false');
+  check('K smoke', 'a server container that does not publish the --base port is refused', j({ base: 'http://127.0.0.1:8200', ...fresh }).ok, 'false');
+  check('K smoke', 'docker unreachable (listing null) fails CLOSED', judgeSmokeTarget({ base: 'http://127.0.0.1:8123', ...fresh, containers: null }).ok, 'false');
+  check('K smoke', 'a non-loopback host with nothing named cannot be shown to be a test stack', j({ base: `http://${['192', '0', '2', '7'].join('.')}:8123` }).ok, 'false');
+  check('K smoke', 'a native server on a free loopback port with no containers is allowed', j({ base: 'http://127.0.0.1:9999' }).ok, 'true');
+  check('K smoke', 'a protected name is refused even when it is the only thing named', j({ base: 'http://127.0.0.1:9999', dbContainer: 'olive-healthrls-pg' }).ok, 'false');
+  check('K smoke', 'a garbage --base is refused', j({ base: 'not a url' }).ok, 'false');
+  check('K smoke', 'the explicit override passes, and still reports what it overrode', (() => { const v = j({ base: 'http://127.0.0.1:8130', override: true }); return `${v.ok}/${v.problems.every((p) => p.startsWith('overridden: '))}/${v.problems.length > 0}`; })(), 'true/true/true');
+  check('K smoke', 'protected names: live, sim, sec3 pg, healthrls pg, prod, jitsi; fresh is not',
+    ['olive-live-db-1', 'olive-sim-server-1', 'wt-sec3-pg', 'olive-healthrls-pg', 'olive-prod-x', 'jitsi-web'].every(isProtectedName) && !isProtectedName('olive-fresh-db-1'), 'true');
+  check('K smoke', 'docker Ports column parsing: ipv4+ipv6 mapping, a range, an unpublished port, junk',
+    JSON.stringify([...publishedHostPorts('0.0.0.0:8130->8123/tcp, [::]:8130->8123/tcp')]) + JSON.stringify([...publishedHostPorts('0.0.0.0:8000-8002->8000-8002/tcp')]) + JSON.stringify([...publishedHostPorts('5432/tcp')]) + JSON.stringify([...publishedHostPorts(null)]),
+    '[8130][8000,8001,8002][][]');
+  check('K smoke', 'docker listing parse keeps name, ports and project; skips blank lines',
+    JSON.stringify(parseDockerListing('a\t0.0.0.0:1->2/tcp\tp1\r\n\r\nb\t\t\n')), JSON.stringify([{ name: 'a', ports: '0.0.0.0:1->2/tcp', project: 'p1' }, { name: 'b', ports: '', project: '' }]));
+  const smoke = readFileSync(join(ROOT, 'tools', 'smoke-stack.mjs'), 'utf8');
+  check('K smoke', 'smoke-stack.mjs runs the target check before its first request', smoke.indexOf('judgeSmokeTarget(') > 0 && smoke.indexOf('judgeSmokeTarget(') < smoke.indexOf('async function main'), 'true');
+}
+
+// ---- L · probes are not access-logged; /readyz work is shared -------------------------
+{
+  check('L probes', '/healthz is not logged by default', shouldLogAccess({ route: '/healthz' }), 'false');
+  check('L probes', '/readyz is not logged by default (the reported 17k lines a day)', shouldLogAccess({ route: '/readyz' }), 'false');
+  check('L probes', 'ACCESS_LOG_HEALTHZ=1 logs both probes', `${shouldLogAccess({ route: '/healthz', logProbes: true })}/${shouldLogAccess({ route: '/readyz', logProbes: true })}`, 'true/true');
+  check('L probes', 'real traffic is logged', shouldLogAccess({ route: 'POST /v1/auth/signup' }), 'true');
+  check('L probes', 'ACCESS_LOG=0 silences everything, even with the probe switch on', shouldLogAccess({ route: 'GET /v1/me', accessLog: false, logProbes: true }), 'false');
+  check('L probes', 'an unmatched path is still logged (a scanner is worth seeing)', shouldLogAccess({ route: 'unmatched' }), 'true');
+  const idx2 = readFileSync(join(ROOT, 'server', 'index.mjs'), 'utf8');
+  check('L probes', 'index.mjs uses shouldLogAccess for the access log', /shouldLogAccess\(\{ route: label/.test(idx2), 'true');
+  check('L probes', 'index.mjs serves /readyz through the shared cache, not a fresh check per probe', /const r = await readiness\(\)/.test(idx2) && /createReadinessCache\(/.test(idx2), 'true');
+  check('L probes', 'a log line still carries only the fixed fields (unchanged)', Object.keys(JSON.parse(accessLogLine({ id: 'abcdefgh', method: 'GET', route: '/readyz', status: 200, ms: 1 }))).join(), 'ts,level,msg,id,method,route,status,ms');
+
+  let n = 0; let clock = 1000; let drain = false;
+  const slow = () => new Promise((r) => setTimeout(() => { n++; r({ ready: true, failing: [], degraded: [], n }); }, 40));
+  const rd = createReadinessCache({ check: slow, isDraining: () => drain, ttlMs: 2000, now: () => clock });
+  const burst = await Promise.all([rd(), rd(), rd(), rd(), rd()]);
+  check('L cache', 'five simultaneous probes share ONE check', `${n}/${burst.every((r) => r.n === 1)}`, '1/true');
+  clock += 1500; await rd();
+  check('L cache', 'a probe inside the TTL reuses the result', n, 1);
+  clock += 600; const after = await rd();
+  check('L cache', 'a probe after the TTL runs a fresh check', `${n}/${after.n}`, '2/2');
+  drain = true; clock += 1; const dr = await rd();
+  check('L cache', 'draining bypasses the cache, so SIGTERM shows on the very next probe', `${n}/${dr.n}`, '3/3');
+  drain = false; clock += 1; await rd();
+  const post = await rd();
+  check('L cache', 'a result computed while draining is not stored: after it clears the earlier genuine result is served', `${n}/${post.n}`, '3/2');
+  let calls = 0; let boom = true;
+  const flaky = createReadinessCache({ check: async () => { calls++; if (boom) throw new Error('x'); return { ready: true, failing: [], degraded: [] }; }, ttlMs: 2000, now: () => clock });
+  let threw1 = false; try { await flaky(); } catch { threw1 = true; }
+  boom = false; const ok = await flaky();
+  check('L cache', 'a failed check is not cached and does not wedge later probes', `${threw1}/${calls}/${ok.ready}`, 'true/2/true');
+  let c3 = 0; const off = createReadinessCache({ check: async () => { c3++; return { ready: true }; }, ttlMs: 0, now: () => clock });
+  await Promise.all([off(), off()]); await off();
+  check('L cache', 'ttlMs 0 turns the cache off (every probe checks)', c3, 3);
+}
+
+let g = '';
+for (const r of rows) { if (r.g !== g) { g = r.g; console.log(`\n${g}`); }
+  console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.n}` + (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`)); }
+console.log(`\n${'-'.repeat(56)}\n${pass} passed, ${fail} failed\n`);
+clearInterval(keepAlive);
+process.exit(fail === 0 ? 0 : 1);
