@@ -6783,6 +6783,7 @@ drift. Nothing is written that is not in it.
 | `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds, and which welcome requests that grown-up asked to see again later and when (a reminder, never an answer). A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
 | `guardian.local-guardian.trust` | On a grown-up's device: which child devices it added and when it last met them, the keys it stopped or forgot, and the plain-language, hash-chained history (added, paused, stopped, forgot). | **Yes** |
 | `guardian.local-guardian.screenshares` | On a grown-up's device only: the pictures of a screen another grown-up sent here (at most three, until each expires or is put away), what this phone sent and is still waiting to hand over or take back, a mark for each one put away or taken back so a late copy is dropped, and one quiet family-history line per share (who shared a screen with whom, never the picture). Never on a child's device, never in her app (section 8.5.9). | **Yes** |
+| `guardian.local-guardian.familysync` | On a grown-up's device: the updates the grown-ups' phones have shared with each other (so far the emergency card, §8.24.9), each one sealed and signed by the phone that wrote it, a note of what the other phone last said it holds, and a short note of any refused duplicate-counter update (§8.24.9). A child's device holds none and cannot open one. Nothing is uploaded; an update leaves the phone only when a grown-up copies it. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -8315,7 +8316,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **48 areas, 28 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **49 areas, 29 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
@@ -8336,7 +8337,7 @@ Each row is something this document or the product's own screens might lead a re
 | **Networked games** | Live checkers through the server's table relay (`packages/game-sync`, `networked_checkers_*`): tests and a server-side end-to-end run. | No two-device run over a real network is recorded. The games played during a call need calls. |
 | **Read together and Watch together, server and transports** (§8.26) | The pure core (`packages/co-view`), its Dart port, `CoViewLeader` and `CoViewFollower` over an abstract transport (a loopback in tests) and the screens. | No real transport (neither the call data channel nor a game-sync table is connected), no server route or storage for sessions or the daily-time total, the screens are not reachable from the app's navigation, and there is no Watch together. |
 | **Custody and medication entry** | The custody schedule engine and a **read-only** order view (`GET .../custody-order`); the medication list and dose log (`GET .../medications`, `POST .../doses`). | No route or screen creates or edits a custody order or a medication; a guardian cannot enter either in the app. |
-| **Server sync** between a family's devices and homes | None. Every on-device area is per device (§8.16.7). Server tables and routes exist for Parent Learn (migration 0035) and the emergency card's version history (0036). | The client does not call the `/v1/learn` routes (it uses the on-device store), and the family structure's server half was parked (§8.18). Sharing a routine, bag, place, helper, story or shelf between homes is parked in every suite. |
+| **Server sync** between a family's devices and homes | None on the server. On devices, a first slice shares the emergency card between two grown-ups' phones by a copied and pasted sealed update (§8.24.9); it is not reachable from any menu and has not run on two real phones. Every other on-device area is per device (§8.16.7). Server tables and routes exist for Parent Learn (migration 0035) and the emergency card's version history (0036). | The client does not call the `/v1/learn` routes (it uses the on-device store), and the family structure's server half was parked (§8.18). Sharing a routine, bag, place, helper, story or shelf between homes is parked in every suite. |
 | **Captions** (live captions and translation, §8.4) | A per-child switch that records a wish (§8.21.8); a per-person language (`packages/i18n`). | Nothing shows captions; `captionsActive` is false whatever the switch says. |
 | **Voice navigation, a dyslexia typeface, a TalkBack pass on a real device** | Read-aloud, reduced motion, roomier reading, larger targets (§8.21). | Not built, or not run (§8.21.9). |
 | **Care guides: the content** (who to call, choking, a bump to the head, a high fever, making the home safe) | The whole engine, **built but gated** (§8.30): one schema, a lossless converter proven by a content hash and a structural check, a loader with a hard review gate (the drafts themselves are not bundled in the app), and the guardian screens (library with the emergency button first, one guide with age tabs, who to call, a new carer's first screen, helper-page selection) with sources, retrieved date and last-reviewed always on screen. | **No medical text is shown to anyone.** All five guides are `DRAFT_UNREVIEWED`; a release build cannot display them. It needs a qualified clinician's review of each guide (and a hands-on first-aid instructor for choking), the 66 parent-facing strings that still talk to the reviewer or point at material the app does not carry rewritten, the reviewer's answers recorded in each guide's `review` block, and the block headings signed off. Also not built: the About-child profile the "For Mia" strip reads from (the strip renders nothing until it exists), saving the helper-page choice, sharing the helper page with a helper, and region choice beyond the guide's own region. |
@@ -9562,6 +9563,51 @@ photo door; no unit-bearing number in what the app writes). **Not run on a devic
 *End of MASTERFILE v0.50.0. Amend in place. Bump version. Log in CHANGELOG.
 Update VISUAL. Update MARKUP. §2.1 changes require an explicit rationale entry per §0.
 §16.1 resolutions are provisional and reversible until Phase 0 data exists.*
+
+### 8.24.9 Sharing the emergency card between two grown-ups' phones (first slice of family sync; built, not reachable)
+
+Spec: `docs/planning/FAMILY-SYNC-DESIGN.md` (sections 3, 5, 6 and 13; build steps S1, S2, S3, road E of S4 and the emergency-card half of S5).
+Code: `family_sync_event.dart` (one signed, sealed event), `family_sync_engine.dart` (what a phone holds, waits on and sends),
+`family_sync_bundle.dart` (the copy-and-paste update), `family_sync_emergency.dart` (the emergency card on top of it) and
+`family_sync_screen.dart` (the grown-ups' screen). New sealed area `familysync` (§8.16.4).
+
+- **What a grown-up can do.** Share this phone's emergency card; copy an update for the other phone; paste an update from the other phone;
+  see the shared card beside this phone's card; "Use this card on this phone"; or, when two grown-ups shared different cards at the same time,
+  see both and "Keep this card" on one. Words are plain ("update", "card", "the other phone"); nothing says key, ledger or sync.
+- **Nothing changes by itself.** Receiving an update never alters the card on this phone, so hospital mode and the card screen read exactly
+  what they did before. "Use this card on this phone" goes through the card service (guardian only, stale-version check, size limits, history).
+  A shared card that breaks the card's own limits, or that the card's reader would have had to trim, shows as unreadable and can never be used.
+  A blank card is never shared (it would look like erasing the other phone's card).
+- **Never a silent overwrite, never a winner picked.** Two cards shared at once are two ends of one stream; both are shown; the choice a
+  grown-up makes is a new event that names both ends, so every phone converges on it. The clock orders a list; it never decides who is right.
+- **Who can write.** Only a device the family record lists as a grown-up's. A child tablet, a stranger and a grown-up who has left are refused
+  even though they may hold an old key. A child device holds no guardian key and cannot open or make an event or an update.
+- **What a carrier sees.** An event shows only a version label, a key number and a size bucket; an update is sealed again, so a messenger
+  app or clipboard history sees ciphertext (not the family, the writers, the cards or their words).
+- **Damage and hostility.** Every event is checked on its own (seal, family, closed kind table, signature, canonical form, clock not more than a
+  day ahead, clock after what it follows); a bad one is refused and the rest of the batch still lands. An event that arrives before what it
+  follows waits (bounded) and the screen says an update is missing. Two different events from one phone with one counter are refused: the
+  first stays, and the pair (stream, writer, counter; no card words) is kept in the sealed `familysync` area, even when that update added nothing
+  else, so it survives a restart. The grown-ups' screen says so in one plain sentence, with no count: "The other phone sent two different updates
+  that cannot both be right. Only the first one was kept. Nothing on this phone was changed." Nothing else reads the list, and it is not a log of
+  who did what. A failed save leaves the phone exactly as it was.
+- **Who sent an update.** The seal proves only that someone holding the guardian key made it, and a grown-up who has left may still hold an old
+  one. So the sender's header (who is sending, and the summary of what that phone holds) is signed by the sending device (Ed25519, over the
+  family, the key number, the sender and the summary) and an update whose header does not verify is refused whole and changes nothing. Without
+  that, a former grown-up could have made this phone believe the other phone already holds events it lacks, and sharing would quietly stall.
+  What this does not stop: a genuine update captured earlier can be pasted again under an old key; it shows an older summary (a phone only
+  ever holds more), so the worst case is repeated events that are already held, or "Both phones have this card." reading "This phone has the
+  shared card." until the next update. Only a listed grown-up's phone is remembered as a peer. The signed header changes the unreleased update
+  format, so an update made before this change is refused as damaged; nothing had shipped.
+- **Tests.** `family_sync_event_test.dart`, `family_sync_engine_test.dart` (including 25 seeded runs of shuffled, duplicated and partitioned
+  delivery that must converge exactly), `family_sync_bundle_test.dart`, `family_sync_emergency_test.dart`, `family_sync_screen_test.dart`.
+- **Not reachable.** The screen is in no menu: a phone cannot yet found a family or take a second grown-up's phone into it (identity steps 3 to 5
+  are not wired into pairing), so today no two phones share the guardian key outside tests. **Not built:** the same-Wi-Fi road, a file or share-sheet
+  (needs a plugin; the clipboard is used), the mailbox and wake push, the courier, signed delivery receipts ("Alex has it"), key rotation of
+  stored events, locked sections, a carry for a late joiner, About Mia, medicines and doses, expenses, the handover log (its hash chain needs
+  version 2 first, design 6.3), notifications, hospital mode showing both cards while forked (design question 9: owner and clinician), a
+  Node reference and shared test vectors for the event layout, and the outside cryptographic review (see the addendum in
+  `docs/planning/EXTERNAL-CRYPTO-REVIEW-BRIEF.md`). Not run on a real phone.
 
 ## §8.27 Family simulation: ten families, watched (operations and testing)
 
