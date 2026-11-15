@@ -51,6 +51,11 @@ String syncRefusalText(String reason) => switch (reason) {
       _ => 'That did not work. Nothing was changed.',
     };
 
+/// Said on the page, for good, once a phone has sent two different updates that cannot both be right. Plain words, no
+/// count; it changes nothing on this phone.
+const String kSyncConflictText =
+    'The other phone sent two different updates that cannot both be right. Only the first one was kept. Nothing on this phone was changed.';
+
 class FamilySyncScreen extends StatefulWidget {
   const FamilySyncScreen({
     super.key,
@@ -162,6 +167,7 @@ class _FamilySyncScreenState extends State<FamilySyncScreen> {
     if (r.ingest == null) return 'That does not look like an update from your family. Nothing was changed.';
     final SyncIngest i = r.ingest!;
     if (i.added > 0) return i.added == 1 ? 'Added 1 update.' : 'Added ${i.added} updates.';
+    if ((i.reasons['equivocation'] ?? 0) > 0) return kSyncConflictText;
     if (i.refused > 0 && i.known == 0 && i.held == 0) return 'That update could not be used. Nothing was changed.';
     return 'Nothing new in that update.';
   }
@@ -193,6 +199,10 @@ class _FamilySyncScreenState extends State<FamilySyncScreen> {
         if (widget.engine.heldCount > 0) ...<Widget>[
           const SizedBox(height: 12),
           const Text('Some updates are still missing. Ask the other phone to copy an update again.', key: Key('sync-missing')),
+        ],
+        if (widget.engine.equivocations.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 12),
+          const Text(kSyncConflictText, key: Key('sync-conflict')),
         ],
         if (_status != null) ...<Widget>[
           const SizedBox(height: 12),

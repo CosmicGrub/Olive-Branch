@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/cpace.dart' show cat, lv;
 import 'package:olive_client/device_keys.dart';
+import 'package:olive_client/family_keys.dart';
 import 'package:olive_client/family_ledger.dart';
 import 'package:olive_client/family_sync_bundle.dart';
 import 'package:olive_client/family_sync_engine.dart';
@@ -76,6 +78,78 @@ void main() {
       expect(again.ingest!.added, 0);
       expect(again.ingest!.known, 1);
       expect(d.eventCount, 1);
+    });
+  });
+
+  group('the sender header is signed (a grown-up who has left cannot forge what the other phone holds)', () {
+    // Builds an update sealed under the family's guardian key (which a removed grown-up may still hold) with a header
+    // of the forger's choosing.
+    Future<String> forge({required List<int> from, required Object? have, Object? sig, int epoch = 0, FamilyKeyring? ring, bool noSig = false}) async {
+      final FamilyKeyring r = ring ?? guardianRing();
+      final Uint8List outer = cat(<List<int>>[
+        lv(utf8.encode(kBundleLabel)),
+        <int>[(epoch >> 24) & 255, (epoch >> 16) & 255, (epoch >> 8) & 255, epoch & 255],
+      ]);
+      final Uint8List plain = encodeValue(<String, Object?>{
+        'v': 1, 'from': from, 'have': have, if (!noSig) 'sig': sig, 'events': <Uint8List>[],
+      });
+      return kBundlePrefix + b64(cat(<List<int>>[outer, await guardianSeal(r, epoch, plain, aad: outer)]));
+    }
+
+    test('a forged "the other phone already has everything" is refused whole, remembers nothing, and sharing carries on', () async {
+      await write(m, 'one');
+      await write(m, 'two');
+      final P gone = await P.make(9); // holds the old guardian key but is not the phone it claims to be
+      final List<Object?> full = m.summary().toValue();
+      final Uint8List sig = await gone.key.sign(bundleHeaderMessage(rig.fid, 0, rig.dad.key.publicKey, encodeValue(full)));
+      final SyncBundleIn r = await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: sig), state: rig.state);
+      expect(r.ingest, isNull);
+      expect(r.reason, 'sender');
+      expect(m.peers, isEmpty);
+      final SyncBundleOut out = await exportBundle(m);
+      expect(out.count, 2, reason: 'the real other phone still gets everything it lacks');
+    });
+
+    test('a header with no signature, a short one, or a signature over something else is refused', () async {
+      await write(m, 'one');
+      final List<Object?> full = m.summary().toValue();
+      final Uint8List good = await rig.dad.key.sign(bundleHeaderMessage(rig.fid, 0, rig.dad.key.publicKey, encodeValue(full)));
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, noSig: true), state: rig.state)).reason, 'shape');
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: Uint8List(10)), state: rig.state)).reason, 'shape');
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: Uint8List(64)), state: rig.state)).reason, 'sender');
+      // A real signature, but over a smaller claim than the one sent (the claim was changed after signing).
+      final Uint8List other = await rig.dad.key.sign(bundleHeaderMessage(rig.fid, 0, rig.dad.key.publicKey, encodeValue(<Object?>[])));
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: other), state: rig.state)).reason, 'sender');
+      // The genuine signature of ANOTHER phone, put under dad's name.
+      final Uint8List moms = await rig.mom.key.sign(bundleHeaderMessage(rig.fid, 0, rig.dad.key.publicKey, encodeValue(full)));
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: moms), state: rig.state)).reason, 'sender');
+      expect(m.peers, isEmpty);
+      // The genuine header is accepted (control).
+      final SyncBundleIn ok = await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: good), state: rig.state);
+      expect(ok.reason, isNull);
+      expect(ok.fromHex, hexOf(rig.dad.key.publicKey));
+      expect(m.peers.keys.single, hexOf(rig.dad.key.publicKey));
+    });
+
+    test('a header signed for another family or another key number is refused', () async {
+      final List<Object?> full = <Object?>[];
+      final Uint8List otherFamily = await rig.dad.key.sign(bundleHeaderMessage(Uint8List(16), 0, rig.dad.key.publicKey, encodeValue(full)));
+      expect((await importBundle(m, await forge(from: rig.dad.key.publicKey, have: full, sig: otherFamily), state: rig.state)).reason, 'sender');
+      final FamilyKeyring two = guardianRing()..putGk(1, Uint8List.fromList(List<int>.generate(32, (int i) => i * 3)));
+      final SyncEngine m2 = rig.engine(rig.mom, clock: clock, ring: two);
+      final Uint8List epoch0 = await rig.dad.key.sign(bundleHeaderMessage(rig.fid, 0, rig.dad.key.publicKey, encodeValue(full)));
+      expect((await importBundle(m2, await forge(from: rig.dad.key.publicKey, have: full, sig: epoch0, epoch: 1, ring: two), state: rig.state)).reason, 'sender');
+    });
+
+    test('a replayed genuine update shows an older summary: it adds nothing and invents no holdings', () async {
+      await write(d, 'one');
+      final String old = (await exportBundle(d, force: true)).text;
+      await write(d, 'two');
+      await importBundle(m, (await exportBundle(d, force: true)).text, state: rig.state);
+      expect(m.eventCount, 2);
+      final SyncBundleIn r = await importBundle(m, old, state: rig.state);
+      expect(r.ingest!.added, 0);
+      expect(m.eventCount, 2);
     });
   });
 

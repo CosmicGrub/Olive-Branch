@@ -1,11 +1,15 @@
 // OLIVE BRANCH — the grown-ups' sharing screen: sharing a card, copying and pasting an update, choosing between two
 // cards, plain words only, and nothing at all for a child. Verified by CI, headless.
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/emergency_card_local.dart';
 import 'package:olive_client/family_structure_logic.dart' show FamilyPrincipal;
+import 'package:olive_client/family_sync_bundle.dart';
 import 'package:olive_client/family_sync_emergency.dart';
 import 'package:olive_client/family_sync_engine.dart';
+import 'package:olive_client/family_sync_event.dart';
 import 'package:olive_client/family_sync_screen.dart';
 
 import 'family_sync_test_support.dart';
@@ -162,6 +166,31 @@ void main() {
     await tap(t, const Key('sync-paste-add'));
     expect(find.byKey(const Key('sync-forked')), findsNothing);
     expect(fromMom, isNotEmpty);
+  });
+
+  testWidgets('two different updates under one number: said in plain words with no numbers, and nothing on this phone changes', (WidgetTester t) async {
+    await boot();
+    Future<SyncEvent> one(String text) async => SyncEvent.create(
+          device: rig.mom.key, ring: guardianRing(), epoch: 0, fid: rig.fid, streamId: await syncStreamId(rig.fid, 'emergencycard', 'ivy'),
+          seq: 1, hlcMs: clock.ms, hlcC: 0, prev: const <List<int>>[], kind: 'emergency.set', payload: <String, Object?>{'t': text},
+        );
+    final SyncEvent x = await t.runAsync(() => one('x')) as SyncEvent, y = await t.runAsync(() => one('y')) as SyncEvent;
+    await t.runAsync(() => d.ingest(<Uint8List>[x.wire], state: rig.state));
+    await show(t, e: d, p: _dad, s: dadCard, c: dadClip, name: 'Dad');
+    expect(find.byKey(const Key('sync-conflict')), findsNothing);
+    // The second update arrives in a pasted text that holds nothing else.
+    final SyncEngine relay = rig.engine(rig.mom, clock: clock);
+    await t.runAsync(() => relay.ingest(<Uint8List>[y.wire], state: rig.state));
+    final String text = (await t.runAsync(() => exportBundle(relay, force: true)))!.text;
+    await tap(t, const Key('sync-paste'));
+    await t.enterText(find.byKey(const Key('sync-paste-field')), text);
+    await tap(t, const Key('sync-paste-add'));
+    expect(t.widget<Text>(find.byKey(const Key('sync-status'))).data, kSyncConflictText);
+    expect(find.byKey(const Key('sync-conflict')), findsOneWidget);
+    expect(d.equivocations.length, 1);
+    expect(allText(t).where(_technical.hasMatch), isEmpty);
+    expect(allText(t).where(RegExp(r'\d').hasMatch), isEmpty, reason: 'no counts or numbers on the page');
+    expect((await dadCard.read(_dad)).card, isNull, reason: 'nothing on this phone changed');
   });
 
   testWidgets('pasting something that is not an update says so gently and changes nothing', (WidgetTester t) async {

@@ -18,7 +18,8 @@
 //     event named in `prev`. Until then it waits ("held"), bounded, and the screen says an update is missing. That is
 //     also how a courier that dropped one event is noticed.
 //  5. One device cannot write two different events with the same counter in a stream (equivocation): the first stays,
-//     the second is refused and the pair is reported.
+//     the second is refused and the pair is recorded: kept in the sealed 'familysync' area (so it survives a restart,
+//     even when the batch added nothing else) and shown on the grown-ups' screen as one plain sentence.
 //  6. An event's clock must be later than everything it follows.
 //  7. Concurrent writes are never merged or chosen by the engine: [heads] returns every end of a stream, and two or
 //     more means "a grown-up must choose". A choice is just another event that names all the ends.
@@ -42,6 +43,7 @@ const int kSyncMaxHeld = 300;
 const int kSyncMaxBytes = 1200 * 1024;
 const int kSyncMaxStreams = 16;
 const int kSyncMaxPeers = 8;
+const int kSyncMaxEquivocations = 32;
 
 /// What one phone holds, as "for each stream and each writer, I hold everything from 1 up to N without a gap". A
 /// peer answers a summary with exactly the events beyond it.
@@ -121,13 +123,18 @@ class SyncEquivocation {
   const SyncEquivocation(this.streamHex, this.authorHex, this.seq);
   final String streamHex, authorHex;
   final int seq;
+
+  bool same(SyncEquivocation o) => streamHex == o.streamHex && authorHex == o.authorHex && seq == o.seq;
 }
 
 // ------------------------------------------------------------------------------------------------ persistence ---
 class SyncDoc {
-  SyncDoc({required this.wires, required this.peers});
+  SyncDoc({required this.wires, required this.peers, this.equivocations = const <SyncEquivocation>[]});
   final List<Uint8List> wires;
   final Map<String, SyncSummary> peers;
+
+  /// Refused duplicate-counter events, kept so a grown-up can be told about them after a restart.
+  final List<SyncEquivocation> equivocations;
 }
 
 abstract class SyncRepository {
@@ -146,15 +153,18 @@ class MemorySyncRepository implements SyncRepository {
   @override
   Future<void> save(SyncDoc d) async {
     if (failSaves) throw const LocalStoreFull('familysync', 0);
-    _d = SyncDoc(wires: List<Uint8List>.of(d.wires), peers: Map<String, SyncSummary>.of(d.peers));
+    _d = SyncDoc(
+        wires: List<Uint8List>.of(d.wires),
+        peers: Map<String, SyncSummary>.of(d.peers),
+        equivocations: List<SyncEquivocation>.of(d.equivocations));
   }
 
   @override
   Future<void> clear() async => _d = null;
 }
 
-/// Stored in the sealed 'familysync' area. Holds only sealed events (ciphertext inside a sealed file) and the other
-/// phones' last summaries.
+/// Stored in the sealed 'familysync' area. Holds only sealed events (ciphertext inside a sealed file), the other
+/// phones' last summaries and the refused duplicate-counter events (stream, writer, counter: no card words).
 class LocalStoreSyncRepository implements SyncRepository {
   LocalStoreSyncRepository(this._ns);
 
@@ -179,7 +189,16 @@ class LocalStoreSyncRepository implements SyncRepository {
         final SyncSummary? s = SyncSummary.fromJson(p.value);
         if (p.key is String && s != null && peers.length < kSyncMaxPeers) peers[p.key as String] = s;
       }
-      return SyncDoc(wires: wires, peers: peers);
+      final List<SyncEquivocation> eq = <SyncEquivocation>[];
+      final Object? rawEq = raw['q'];
+      if (rawEq is List) {
+        for (final Object? q in rawEq) {
+          if (q is List && q.length == 3 && q[0] is String && q[1] is String && q[2] is int && eq.length < kSyncMaxEquivocations) {
+            eq.add(SyncEquivocation(q[0] as String, q[1] as String, q[2] as int));
+          }
+        }
+      }
+      return SyncDoc(wires: wires, peers: peers, equivocations: eq);
     } catch (_) {
       return null;
     }
@@ -190,6 +209,7 @@ class LocalStoreSyncRepository implements SyncRepository {
         'v': 1,
         'e': <Object?>[for (final Uint8List w in d.wires) b64(w)],
         'p': <String, Object?>{for (final MapEntry<String, SyncSummary> p in d.peers.entries) p.key: p.value.toJson()},
+        'q': <Object?>[for (final SyncEquivocation q in d.equivocations) <Object?>[q.streamHex, q.authorHex, q.seq]],
       });
 
   @override
@@ -224,6 +244,12 @@ class _Data {
     d.peers.addAll(peers);
     d.equivocations.addAll(equivocations);
     return d;
+  }
+
+  /// Records a refused duplicate counter once (the same pair arriving again changes nothing), bounded.
+  void noteEquivocation(SyncEquivocation q) {
+    if (equivocations.length >= kSyncMaxEquivocations || equivocations.any(q.same)) return;
+    equivocations.add(q);
   }
 }
 
@@ -270,6 +296,9 @@ class SyncEngine {
         final SyncIngest r = SyncIngest();
         await _ingestInto(_d, doc.wires, null, r, restoring: true);
         _d.peers.addAll(doc.peers);
+        for (final SyncEquivocation q in doc.equivocations) {
+          _d.noteEquivocation(q);
+        }
       });
 
   // ------------------------------------------------------------------------------------------------ reading ---
@@ -422,7 +451,8 @@ class SyncEngine {
         final SyncIngest r = SyncIngest();
         final _Data next = _d.clone();
         await _ingestInto(next, wires, state, r);
-        if (r.added > 0 || r.held > 0) {
+        // A refused duplicate counter is worth keeping even when the batch added nothing else.
+        if (r.added > 0 || r.held > 0 || next.equivocations.length != _d.equivocations.length) {
           final String? saved = await _commit(next);
           if (saved != null) {
             r.full = saved == 'full';
@@ -511,7 +541,7 @@ class SyncEngine {
     final String slot = '${e.authorHex}:${e.seq}';
     final String? other = s.seqIndex[slot];
     if (other != null && other != e.idHex) {
-      d.equivocations.add(SyncEquivocation(sid, e.authorHex, e.seq));
+      d.noteEquivocation(SyncEquivocation(sid, e.authorHex, e.seq));
       if (d.streams[sid]!.events.isEmpty) d.streams.remove(sid);
       return 'equivocation';
     }
@@ -600,6 +630,7 @@ class SyncEngine {
               for (final SyncEvent e in (next.streams[sid]!.events.values.toList()..sort(_order))) e.wire,
           ],
           peers: next.peers,
+          equivocations: next.equivocations,
         ));
       } on LocalStoreFull {
         return 'full';

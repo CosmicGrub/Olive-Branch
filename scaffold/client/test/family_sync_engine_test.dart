@@ -469,6 +469,89 @@ void main() {
     });
   });
 
+  group('refused duplicate counters are kept, not only noticed', () {
+    Future<SyncEvent> one(P who, String t) => SyncEvent.create(
+          device: who.key, ring: guardianRing(), epoch: 0, fid: rig.fid, streamId: sid, seq: 1, hlcMs: t0 + 10 * day, hlcC: 0,
+          prev: const <List<int>>[], kind: 'emergency.set', payload: <String, Object?>{'t': t},
+        );
+
+    test('a batch holding ONLY the second event still records it, on this phone and on disk', () async {
+      final MemorySyncRepository repo = MemorySyncRepository();
+      final SyncEngine d = rig.engine(rig.dad, clock: clock, repo: repo);
+      final SyncEvent x = await one(rig.mom, 'x'), y = await one(rig.mom, 'y');
+      expect((await d.ingest(<Uint8List>[x.wire], state: rig.state)).added, 1);
+      expect(d.equivocations, isEmpty);
+      final SyncIngest r = await d.ingest(<Uint8List>[y.wire], state: rig.state);
+      expect(r.added, 0);
+      expect(r.reasons['equivocation'], 1);
+      expect(d.equivocations.single.seq, 1);
+      expect(d.equivocations.single.authorHex, hexOf(rig.mom.key.publicKey));
+      // It survives a restart.
+      final SyncEngine again = rig.engine(rig.dad, clock: clock, repo: repo);
+      await again.restore();
+      expect(again.equivocations.length, 1);
+      expect(again.events(hexOf(sid)).single.idHex, x.idHex, reason: 'the first event is still the one that stays');
+    });
+
+    test('the same conflict arriving again is noted once; a different writer is noted separately', () async {
+      final SyncEngine d = rig.engine(rig.dad, clock: clock);
+      final SyncEvent x = await one(rig.mom, 'x'), y = await one(rig.mom, 'y'), z = await one(rig.mom, 'z');
+      await d.ingest(<Uint8List>[x.wire], state: rig.state);
+      await d.ingest(<Uint8List>[y.wire], state: rig.state);
+      await d.ingest(<Uint8List>[y.wire], state: rig.state);
+      await d.ingest(<Uint8List>[z.wire], state: rig.state);
+      expect(d.equivocations.length, 1);
+      final SyncEvent sx = await one(rig.dad, 'sx');
+      final SyncEvent sy = await one(rig.dad, 'sy');
+      final SyncEngine m = rig.engine(rig.mom, clock: clock);
+      await m.ingest(<Uint8List>[sx.wire], state: rig.state);
+      await m.ingest(<Uint8List>[sy.wire], state: rig.state);
+      expect(m.equivocations.single.authorHex, hexOf(rig.dad.key.publicKey));
+    });
+
+    test('a conflict from a phone the family record does not list is refused as not a member and is not recorded', () async {
+      final P stranger = await P.make(9);
+      final SyncEngine d = rig.engine(rig.dad, clock: clock);
+      final SyncEvent x = await one(stranger, 'x'), y = await one(stranger, 'y');
+      await d.ingest(<Uint8List>[x.wire, y.wire], state: rig.state);
+      expect(d.equivocations, isEmpty);
+    });
+
+    test('the sealed on-device store keeps the list, reads an older document without it, and ignores damaged entries', () async {
+      final LocalServices svc = LocalServices.memory(childId: 'ivy', backend: MemoryStoreBackend());
+      final SyncEngine d = rig.engine(rig.dad, clock: clock, repo: LocalStoreSyncRepository.forServices(svc));
+      final SyncEvent x = await one(rig.mom, 'x'), y = await one(rig.mom, 'y');
+      await d.ingest(<Uint8List>[x.wire], state: rig.state);
+      await d.ingest(<Uint8List>[y.wire], state: rig.state);
+      final SyncEngine back = rig.engine(rig.dad, clock: clock, repo: LocalStoreSyncRepository.forServices(svc));
+      await back.restore();
+      expect(back.equivocations.length, 1);
+      final LocalNamespace ns = svc.area('familysync', ownerId: kLocalGuardianScope);
+      final Map<String, Object?> doc = Map<String, Object?>.from((await ns.get('doc'))! as Map);
+      doc.remove('q');
+      await ns.put('doc', doc);
+      final SyncEngine old = rig.engine(rig.dad, clock: clock, repo: LocalStoreSyncRepository.forServices(svc));
+      await old.restore();
+      expect(old.eventCount, 1);
+      expect(old.equivocations, isEmpty);
+      doc['q'] = <Object?>[1, 'x', <Object?>['s', 'a'], <Object?>['s', 'a', 'three'], <Object?>['s', 'a', 2]];
+      await ns.put('doc', doc);
+      final SyncEngine hurt = rig.engine(rig.dad, clock: clock, repo: LocalStoreSyncRepository.forServices(svc));
+      await hurt.restore();
+      expect(hurt.equivocations.single.seq, 2);
+    });
+
+    test('forget clears the list too', () async {
+      final MemorySyncRepository repo = MemorySyncRepository();
+      final SyncEngine d = rig.engine(rig.dad, clock: clock, repo: repo);
+      await d.ingest(<Uint8List>[(await one(rig.mom, 'x')).wire], state: rig.state);
+      await d.ingest(<Uint8List>[(await one(rig.mom, 'y')).wire], state: rig.state);
+      await d.forget();
+      expect(d.equivocations, isEmpty);
+      expect(await repo.load(), isNull);
+    });
+  });
+
   group('child safety', () {
     test('only the sync files import the sync engine, so no child-side file can write or read it', () {
       // A source guard: any lib file that mentions the sync engine, event, bundle, emergency adapter or screen must itself

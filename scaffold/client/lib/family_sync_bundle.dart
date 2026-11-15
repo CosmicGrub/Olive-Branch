@@ -11,20 +11,27 @@
 // about 240 KiB of events; when there is more, `more` says so and the sender shares again. Pasting more than
 // [kBundleMaxTextChars] characters is refused before any work is done.
 //
-// NOT AUTHENTICATED AS A WHOLE. The seal proves "a grown-up holding GK made this", not which one. The events inside
-// are each signed by their own device, which is what matters; the sender's summary is a hint (a grown-up can only
-// mislead their co-guardian about what they hold, not forge a record).
+// THE SEAL ALONE DOES NOT SAY WHO SENT IT. It proves "someone holding GK made this", and a grown-up who has left may
+// still hold an old GK. The events inside are each signed by their own device, which is what matters for the record.
+// The sender's header (`from`, and `have`, the summary of what they hold) is therefore signed too: Ed25519 by the
+// sending device over the family, the key epoch, `from` and `have` ([bundleHeaderMessage]). An update whose header does
+// not verify is refused whole and changes nothing, so a former grown-up cannot make this phone believe the other phone
+// holds something it does not (which would silently stall sharing). What stays true: a captured genuine update can be
+// replayed under an old key, which shows an OLDER summary (a phone only ever holds more over time), so the worst case
+// is a repeat of events already held, or "Both phones have this card." turning back into "This phone has the shared
+// card." until the next update. Only a listed grown-up's phone is remembered as a peer.
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'cpace.dart' show cat, lv;
-import 'device_keys.dart' show b64, unb64;
+import 'device_keys.dart' show DeviceKey, b64, unb64;
 import 'family_keys.dart';
 import 'family_ledger.dart' show bytesEqual, decodeValue, encodeValue, hexOf;
 import 'family_ledger_state.dart';
 import 'family_sync_engine.dart';
 
 const String kBundleLabel = 'olive-update-v1';
+const String kBundleSigLabel = 'olive-update-sig-v1';
 const String kBundlePrefix = 'OLIVE-UPDATE-1.';
 const int kBundleMaxEvents = 200;
 const int kBundleMaxTextChars = 2 * 1024 * 1024;
@@ -47,11 +54,16 @@ class SyncBundleIn {
   final String? fromHex;
 
   /// 'text' (not an update at all), 'size', 'no_key' (not sealed for a key this phone holds), 'seal' (damaged or not
-  /// from this family), 'shape'.
+  /// from this family), 'shape', 'sender' (the sender's signed header does not verify).
   final String? reason;
 }
 
 Uint8List _u32(int v) => Uint8List.fromList(<int>[(v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]);
+
+/// The bytes the sending device signs: this family, the key epoch, who is sending and the canonical encoding of what
+/// they say they hold. Public so tests can build a forged header and show it is refused.
+Uint8List bundleHeaderMessage(List<int> fid, int epoch, List<int> from, List<int> haveEncoded) =>
+    cat(<List<int>>[lv(utf8.encode(kBundleSigLabel)), lv(fid), _u32(epoch), lv(from), lv(haveEncoded)]);
 
 /// Builds an update for [peerHex]'s phone (the others' last summary is used when [peerHex] is null and exactly one is
 /// known; otherwise everything is offered). Never throws; an empty [SyncBundleOut.text] means "nothing new".
@@ -65,10 +77,13 @@ Future<SyncBundleOut> exportBundle(SyncEngine engine, {String? peerHex, bool for
   if (pick.wires.isEmpty && !force && peer != null) return const SyncBundleOut('', 0, false);
   final int epoch = engine.ring.gkEpochs.last;
   final Uint8List outer = cat(<List<int>>[lv(utf8.encode(kBundleLabel)), _u32(epoch)]);
+  final List<Object?> have = engine.summary().toValue();
+  final Uint8List sig = await engine.device.sign(bundleHeaderMessage(engine.fid, epoch, engine.device.publicKey, encodeValue(have)));
   final Uint8List plain = encodeValue(<String, Object?>{
     'v': 1,
     'from': engine.device.publicKey,
-    'have': engine.summary().toValue(),
+    'have': have,
+    'sig': sig,
     'events': pick.wires,
   });
   final Uint8List sealed = await guardianSeal(engine.ring, epoch, plain, aad: outer);
@@ -91,11 +106,16 @@ Future<SyncBundleIn> importBundle(SyncEngine engine, String text, {required Ledg
     final Uint8List? plain = await guardianOpen(engine.ring, epoch, raw.sublist(outer.length), aad: outer);
     if (plain == null) return const SyncBundleIn.no('seal');
     final Object? v = decodeValue(plain);
-    if (v is! Map<String, Object?> || v.length != 4 || v['v'] != 1 || !bytesEqual(encodeValue(v), plain)) return const SyncBundleIn.no('shape');
-    final Object? from = v['from'], have = v['have'], events = v['events'];
+    if (v is! Map<String, Object?> || v.length != 5 || v['v'] != 1 || !bytesEqual(encodeValue(v), plain)) return const SyncBundleIn.no('shape');
+    final Object? from = v['from'], have = v['have'], sig = v['sig'], events = v['events'];
     final SyncSummary? summary = SyncSummary.fromValue(have);
-    if (from is! Uint8List || from.length != 32 || summary == null || events is! List || events.length > kBundleMaxEvents) {
+    if (from is! Uint8List || from.length != 32 || sig is! Uint8List || sig.length != 64 || summary == null ||
+        events is! List || events.length > kBundleMaxEvents) {
       return const SyncBundleIn.no('shape');
+    }
+    // The header must be signed by the device it names, before anything is taken from the update.
+    if (!await DeviceKey.verify(from, bundleHeaderMessage(engine.fid, epoch, from, encodeValue(have)), sig)) {
+      return const SyncBundleIn.no('sender');
     }
     final List<Uint8List> wires = <Uint8List>[];
     for (final Object? e in events) {

@@ -6704,7 +6704,7 @@ drift. Nothing is written that is not in it.
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
 | `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
 | `guardian.local-guardian.trust` | On a grown-up's device: the paired devices' trust book (who each device is, when added, settling in, paused or stopped) and the plain-language history of those changes, kept in order so an edit can be noticed. Never shown on a child's screen. | **Yes** |
-| `guardian.local-guardian.familysync` | On a grown-up's device: the updates the grown-ups' phones have shared with each other (so far the emergency card, §8.24.9), each one sealed and signed by the phone that wrote it, and a note of what the other phone last said it holds. A child's device holds none and cannot open one. Nothing is uploaded; an update leaves the phone only when a grown-up copies it. | **Yes** |
+| `guardian.local-guardian.familysync` | On a grown-up's device: the updates the grown-ups' phones have shared with each other (so far the emergency card, §8.24.9), each one sealed and signed by the phone that wrote it, a note of what the other phone last said it holds, and a short note of any refused duplicate-counter update (§8.24.9). A child's device holds none and cannot open one. Nothing is uploaded; an update leaves the phone only when a grown-up copies it. | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -9506,8 +9506,19 @@ Code: `family_sync_event.dart` (one signed, sealed event), `family_sync_engine.d
   app or clipboard history sees ciphertext (not the family, the writers, the cards or their words).
 - **Damage and hostility.** Every event is checked on its own (seal, family, closed kind table, signature, canonical form, clock not more than a
   day ahead, clock after what it follows); a bad one is refused and the rest of the batch still lands. An event that arrives before what it
-  follows waits (bounded) and the screen says an update is missing. Two different events from one phone with one counter are refused and reported.
-  A failed save leaves the phone exactly as it was.
+  follows waits (bounded) and the screen says an update is missing. Two different events from one phone with one counter are refused: the
+  first stays, and the pair (stream, writer, counter; no card words) is kept in the sealed `familysync` area, even when that update added nothing
+  else, so it survives a restart. The grown-ups' screen says so in one plain sentence, with no count: "The other phone sent two different updates
+  that cannot both be right. Only the first one was kept. Nothing on this phone was changed." Nothing else reads the list, and it is not a log of
+  who did what. A failed save leaves the phone exactly as it was.
+- **Who sent an update.** The seal proves only that someone holding the guardian key made it, and a grown-up who has left may still hold an old
+  one. So the sender's header (who is sending, and the summary of what that phone holds) is signed by the sending device (Ed25519, over the
+  family, the key number, the sender and the summary) and an update whose header does not verify is refused whole and changes nothing. Without
+  that, a former grown-up could have made this phone believe the other phone already holds events it lacks, and sharing would quietly stall.
+  What this does not stop: a genuine update captured earlier can be pasted again under an old key; it shows an older summary (a phone only
+  ever holds more), so the worst case is repeated events that are already held, or "Both phones have this card." reading "This phone has the
+  shared card." until the next update. Only a listed grown-up's phone is remembered as a peer. The signed header changes the unreleased update
+  format, so an update made before this change is refused as damaged; nothing had shipped.
 - **Tests.** `family_sync_event_test.dart`, `family_sync_engine_test.dart` (including 25 seeded runs of shuffled, duplicated and partitioned
   delivery that must converge exactly), `family_sync_bundle_test.dart`, `family_sync_emergency_test.dart`, `family_sync_screen_test.dart`.
 - **Not reachable.** The screen is in no menu: a phone cannot yet found a family or take a second grown-up's phone into it (identity steps 3 to 5
