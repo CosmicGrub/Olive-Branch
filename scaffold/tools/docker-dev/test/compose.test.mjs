@@ -114,6 +114,53 @@ function portEntries(text) {
     /^POSTGRES_PASSWORD=/m.test(ENV_EXAMPLE), true);
 }
 
+// F · the delivery worker and the optional services. These guard the redeploy that put
+// the dedicated `delivery` service and /readyz on main: a rebuild that forgot the worker
+// leaves banked messages undelivered, and an optional LiveKit service that is not behind
+// a profile crash-loops (it exits at boot without LiveKit values) on every plain `up`.
+{
+  const server = serviceBlock('server') || '';
+  const delivery = serviceBlock('delivery') || '';
+  check('F delivery', 'a dedicated `delivery` service exists in the dev stack', delivery !== '', true);
+  check('F delivery', 'it runs the one delivery worker (deliver-loop)',
+    /"tools\/scheduler\.mjs",\s*"deliver-loop"/.test(delivery), true);
+  check('F delivery', 'it is NOT behind a profile, so a plain up starts it',
+    /^\s*profiles:/m.test(delivery), false);
+  check('F delivery', 'it runs as the least-privilege app_runtime role, not app_owner',
+    /DATABASE_URL:\s*postgres:\/\/app_runtime:/.test(delivery), true);
+  check('F delivery', 'the server does not host a second copy by default (DELIVERY_IN_SERVER 0)',
+    /DELIVERY_IN_SERVER:\s*\$\{DELIVERY_IN_SERVER:-0\}/.test(server), true);
+  check('F delivery', 'the server healthcheck is /readyz (schema level, media, drain), not liveness only',
+    /127\.0\.0\.1:8123\/readyz/.test(server), true);
+  check('F delivery', 'the server connects as app_runtime',
+    /DATABASE_URL:\s*postgres:\/\/app_runtime:/.test(server), true);
+  check('F callroom', 'the LiveKit-era callroom is opt-in (profile), not a default crash-looping service',
+    /^\s*profiles:\s*\["callroom"\]/m.test(serviceBlock('callroom') || ''), true);
+}
+
+// G · Compose interpolates EVERY service in a file, even one whose profile is off, so a
+// `${VAR:?...}` that is required only inside a profiled service makes `config`/`up` fail for
+// a deploy that never turns that profile on (docker-compose.prod.yml's callroom did exactly
+// this for LIVEKIT_*, contradicting its own comment). For both compose files: any variable
+// required with `:?` inside a profiled service must also be required by an un-profiled one.
+{
+  for (const file of ['docker-compose.dev.yml', 'docker-compose.prod.yml']) {
+    const text = readFileSync(SCAFFOLD + file, 'utf8').replace(/\r\n/g, '\n');
+    const body = text.slice(text.indexOf('\nservices:\n') + 1);
+    const blocks = body.split(/^  (?=[a-z][\w-]*:\n)/m).slice(1);
+    const profiled = new Set(); const plain = new Set(); let profiledCount = 0;
+    for (const b of blocks) {
+      const vars = [...b.matchAll(/\$\{(\w+):\?/g)].map((m) => m[1]);
+      if (/^\s{4}profiles:/m.test(b)) { profiledCount++; vars.forEach((v) => profiled.add(v)); }
+      else vars.forEach((v) => plain.add(v));
+    }
+    const only = [...profiled].filter((v) => !plain.has(v));
+    check('G profiles', `${file}: found its profiled services (parser sanity)`, profiledCount > 0, true);
+    check('G profiles', `${file}: no variable is required only inside a profiled service`,
+      only.join(',') || '(none)', '(none)');
+  }
+}
+
 let g = '';
 for (const r of rows) { if (r.g !== g) { g = r.g; console.log(`\n${g}`); }
   console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.n}` + (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`)); }

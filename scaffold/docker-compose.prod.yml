@@ -284,13 +284,19 @@ services:
   callroom:
     # The LiveKit-only dev room server. Opt-in (docker compose --profile callroom up)
     # so a default deploy (CALL_PROVIDER=jitsi, no LiveKit project) still starts.
+    # The values below are `:-` (empty default), NOT `:?`: Compose interpolates every
+    # service in the file even when its profile is off, so a `:?` here made
+    # `docker compose config` and `up` fail for any deploy without a LiveKit project, which
+    # is exactly the deploy this profile exists for. With the profile on and a value
+    # missing the container still refuses to start (tools/local-call-room-server.mjs exits
+    # at boot naming all three), so nothing is silently unconfigured.
     profiles: ["callroom"]
     image: ${IMAGE_REPO:-olive-branch}:${IMAGE_TAG:-latest}
     restart: always
     environment:
-      LIVEKIT_URL: ${LIVEKIT_URL:?LIVEKIT_URL must be set — see .env.prod.example}
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set — see .env.prod.example}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set — see .env.prod.example}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       CALLROOM_BIND_HOST: "0.0.0.0"
     ports:
       - "127.0.0.1:${CALLROOM_HOST_PORT:-8787}:8787"
