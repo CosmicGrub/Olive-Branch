@@ -64,7 +64,7 @@ Lane C, server and security (starts when capacity frees): the security findings 
 
 Lane D, release and QA (starts last): store-readiness audit, release cut 0.52, real-device test plan and runs, the 10-family simulation as a standing check.
 
-Parked online items (need credentials or hosting): calls over the internet, push (FCM and APNs; the server sender, the delivery worker and the invite-only sign-up are built, see OPERATIONS-RUNBOOK and MASTERFILE 7.16 to 7.18, but nothing has run against Google and the Android client has no Firebase config or ring UI), network invites, networked games beyond the encrypted relay, the public server address, relaying a pairing window through the server.
+Parked online items (need credentials or hosting): calls over the internet, push (FCM and APNs; the server sender, the delivery worker and the invite-only sign-up are built, see OPERATIONS-RUNBOOK and MASTERFILE 7.16 to 7.18, and the Android client side is built without any credential, MASTERFILE 7.19: guarded token registration, notification channels, a native knock for a closed app, the availability and call-log client; nothing has run against Google or on a device, and it needs the owner's Firebase project), network invites, networked games beyond the encrypted relay, the public server address, relaying a pairing window through the server.
 
 ## Gates before real families rely on any of this
 

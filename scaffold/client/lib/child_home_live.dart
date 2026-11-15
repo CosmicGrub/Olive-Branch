@@ -80,7 +80,8 @@ import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
-import 'call_knock_screen.dart' show buildCallIncomingHandler;
+import 'call_knock.dart' show KnockEnd;
+import 'call_knock_screen.dart' show CallKnockScreen;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
@@ -93,7 +94,11 @@ import 'access_shell.dart' show sharedReadAloud;
 import 'game_logic.dart' show neutralGrownUp;
 import 'local_repositories.dart';
 import 'local_services.dart';
+import 'incoming_call.dart';
+import 'incoming_call_channel.dart';
 import 'push_channel.dart';
+import 'push_config.dart';
+import 'push_service.dart';
 import 'wear_sync_channel.dart';
 
 enum _LoadState { loading, error, ready }
@@ -106,6 +111,8 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.httpClient,
     this.wearSync,
     this.pushChannel,
+    this.pushService,
+    this.incomingCallChannel,
     this.navigatorKey,
     this.familyService,
     this.clock,
@@ -130,6 +137,13 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// `_syncWear` piggybacks on it), so push registration lives here rather
   /// than inventing a second, parallel session concept.
   final PushChannel? pushChannel;
+
+  /// Injectable for tests: the guarded door to push (push_service.dart). Null = the real one, which does
+  /// nothing at all unless the build was given Firebase settings and this device has a signed-in session.
+  final PushService? pushService;
+
+  /// Injectable for tests: the phone's own ring surface (incoming_call_channel.dart). Null = the real bridge.
+  final IncomingCallChannel? incomingCallChannel;
   /// The real, previously-missing wire call_knock_screen.dart's own header
   /// named directly: "a `call_incoming` push carries only kind/ref/
   /// callHandle — buildCallIncomingHandler is real, tested wiring ready to
@@ -208,6 +222,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   String? _sessionToken;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
   PushChannel? _pushChannel;
+  PushService? _pushService;
+  IncomingCallController? _calls;
   // Her derived home (age band, My people, birthday line) from the local family structure.
   // Null (never loaded, or the local read failed) renders the home exactly as before.
   FamilyChildSnapshot? _family;
@@ -271,6 +287,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   @override
   void dispose() {
     _pushChannel?.dispose();
+    _pushService?.dispose();
+    _calls?.dispose();
     super.dispose();
   }
 
@@ -507,40 +525,77 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       builder: (_) => CallScreen(who: 'ivy', displayName: _childName)));
   }
 
-  // Real permission request + token registration (§11) using the exact
-  // session token this screen just fetched for itself above -- the only
-  // place this client currently holds a live, authenticated session. Never
-  // allowed to fail this screen's own readiness: PushChannel.initialize()
-  // throws a real, named PushInitializationError (push_channel.dart) the
-  // overwhelming majority of the time this runs, because no real Firebase
-  // project config exists in this repo (see pubspec.yaml) -- that failure
-  // is real and logged, not hidden, but it stays confined to push. A child
-  // or guardian opening this screen must still see their name and inbox
-  // count even on a checkout with zero push configuration.
+  // Push and calls for a CONNECTED child device (§11, §7.18). Runs after this screen has a real session, and is
+  // never allowed to fail this screen's own readiness or to show her anything:
+  //  * a build with no Firebase settings does nothing here at all (push_service.dart, push_config.dart);
+  //  * a locally paired tablet never reaches this method (it has no session, `_load` returns early);
+  //  * an injected [PushChannel] (tests) is used exactly as it always was.
+  // What each push means once it arrives is push_service.dart's PushDispatcher: a ring becomes a knock
+  // (incoming_call.dart decides if it is shown), a hang-up quietly removes the knock, "something new" lets the
+  // home look again. The system's "allow notifications" box is never shown to her: a grown-up answers it from
+  // Guardian mode (alerts_card.dart).
   Future<void> _initPush(String token) async {
-    final channel = widget.pushChannel ??
-        PushChannel(
-          OliveApi(widget.baseUrl, token,
-              client: widget.httpClient, session: AuthSession.current),
-          onForegroundPointer: widget.navigatorKey == null ? null : buildCallIncomingHandler(
-            navigatorKey: widget.navigatorKey!,
-            // Hardcoded, matching every other call site in this client
-            // (CallScreen's own constructors, local-call-room-server.mjs) —
-            // a real call_incoming push carries no caller identity by
-            // design (push.ts's content-free PushInput shape), so there is
-            // nothing to resolve 'from'/'who'/'displayName' from even if
-            // this screen wanted to.
-            // C-13: the real name when a parent is known to be free, else
-            // a neutral phrase — never a hard-coded "Dad".
-            from: _presence?.name ?? neutralGrownUp, who: 'ivy',
-            displayName: _childName.isEmpty ? 'there' : _childName,
-          ),
-        );
-    _pushChannel = channel;
+    final injected = widget.pushChannel;
+    if (injected != null) {
+      _pushChannel = injected;
+      try {
+        await injected.initialize();
+      } catch (e) {
+        debugPrint('[olive.push] not registered this run: ${e.runtimeType}');
+      }
+      return;
+    }
+    final PushService service = widget.pushService ?? PushService();
+    if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
+    // A reload of this screen starts push again: put the earlier listeners away first, or one ring would knock twice.
+    _pushService?.dispose();
+    _calls?.dispose();
+    _calls = null;
+    _pushService = service;
+    final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
+    IncomingCallController? calls;
+    if (navKey != null) {
+      Future<OliveApi> freshApi() => apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
+      calls = IncomingCallController(
+        navigatorKey: navKey,
+        channel: widget.incomingCallChannel ?? IncomingCallChannel(),
+        childId: widget.childId,
+        apiProvider: freshApi,
+        // The caller's name is not in the push (it is content-free); a neutral phrase until the home knows who is free.
+        buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
+            CallKnockScreen(
+              from: _presence?.name ?? neutralGrownUp, who: 'ivy',
+              displayName: _childName.isEmpty ? 'there' : _childName,
+              sessionId: ref, childId: widget.childId,
+              apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
+      );
+      _calls = calls;
+      unawaited(calls.attach());
+    }
+    final PushDispatcher dispatcher = PushDispatcher(
+      onCallIncoming: calls == null ? null : (String ref) => calls!.onRing(ref),
+      onCallCancelled: calls == null ? null : (String ref) => calls!.onCancel(ref),
+      onMessageReady: () => unawaited(_quietInboxRefresh()),
+    );
+    final OliveApi api = OliveApi(widget.baseUrl, token, client: widget.httpClient, session: AuthSession.current);
+    await service.start(api: api, onPointer: dispatcher.handle);
+  }
+
+  // "Something new is waiting" while the app is open: look again, and change nothing she can see except the
+  // quiet dot. No spinner, no error, no sound.
+  Future<void> _quietInboxRefresh() async {
     try {
-      await channel.initialize();
+      final api = await apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
+      try {
+        final inbox = await api.fetchInbox(widget.childId);
+        final List<dynamic> messages = inbox['entries'] as List;
+        final int unread = messages.where((dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
+        if (mounted && _state == _LoadState.ready) setState(() => _unreadCount = unread);
+      } finally {
+        api.close();
+      }
     } catch (e) {
-      debugPrint('[olive.push] not registered this run: $e');
+      debugPrint('[olive.push] quiet refresh failed: ${e.runtimeType}');
     }
   }
 

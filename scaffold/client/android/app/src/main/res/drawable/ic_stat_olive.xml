@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The small monochrome mark the status bar draws for Olive's notifications: a plain leaf. Android tints it,
+     so only the shape (alpha) matters. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,19C5,10 11,4 20,4C20,13 14,19 5,19Z" />
+</vector>

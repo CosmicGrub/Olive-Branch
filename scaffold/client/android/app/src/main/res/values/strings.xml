@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The only words the phone's own notification surface ever uses. They are shown on a CHILD's tablet,
+         so they are soft, say nothing about who or what, carry no count, and never use a word of refusal.
+         They are checked by test/android_push_contract_test.dart. -->
+    <string name="olive_channel_calls_name">Calls</string>
+    <string name="olive_channel_calls_desc">A quiet knock when a grown-up would like to talk.</string>
+    <string name="olive_channel_reminders_name">Reminders</string>
+    <string name="olive_channel_reminders_desc">A gentle note that something new is waiting.</string>
+    <string name="olive_ring_title">Olive</string>
+    <string name="olive_ring_text">Someone would like to talk.</string>
+</resources>

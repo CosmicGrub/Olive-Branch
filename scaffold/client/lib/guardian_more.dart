@@ -83,6 +83,7 @@ import 'clear_local_data_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
+import 'call_lifecycle.dart' show CallAvailability, availabilityLine, ringStateLine, ringStateOf;
 import 'push_channel.dart';
 import 'compass_repositories.dart';
 import 'compass_screens.dart';
@@ -341,12 +342,38 @@ class GuardianMoreScreen extends StatelessWidget {
     try {
       final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
       final Map<String, dynamic> started;
+      String? heads;
       try {
+        // Ask first (call_lifecycle.dart): calls are switched on by the operator, and "off" is better said before
+        // the grown-up taps than found out from a refusal. An answer that cannot be read changes nothing, and the
+        // server still has the last word when the call is started.
+        CallAvailability? availability;
+        try {
+          availability = CallAvailability.tryParse(await api.fetchCallAvailability(childId));
+        } catch (_) {
+          availability = null;
+        }
+        heads = availabilityLine(availability);
+        if (availability != null && !availability.available) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(heads!), duration: const Duration(seconds: 5)));
+          }
+          return;
+        }
         started = await api.startCall(childId);
       } finally {
         if (availabilityHttpClient == null) api.close();
       }
       onCallStarted?.call(started);
+      // Why her tablet may stay quiet (quiet time, not set up for rings, no pop-up alerts, a send that failed).
+      // The call is open and joinable either way; this is only the honest reason, in a grown-up's words.
+      final String? ringLine = ringStateLine(ringStateOf(started['ringState']), childName: childName);
+      final String note = <String?>[heads, ringLine].whereType<String>().join(' ');
+      if (note.isNotEmpty && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(note), duration: const Duration(seconds: 6)));
+      }
       final sessionId = started['sessionId'] as String?;
       // The grant says which engine carries this call (jitsi or livekit).
       final grant = CallGrant.fromJson(started);

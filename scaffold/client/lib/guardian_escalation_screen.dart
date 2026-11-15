@@ -21,6 +21,8 @@
 // `escalationTtl` lapse on its own, are the only two ways out today.
 import 'package:flutter/material.dart';
 
+import 'alerts_card.dart';
+
 class GuardianEscalationScreen extends StatelessWidget {
   const GuardianEscalationScreen({
     super.key,
@@ -42,7 +44,7 @@ class GuardianEscalationScreen extends StatelessWidget {
     final until = escalatedUntil;
     return Scaffold(
       appBar: AppBar(title: const Text('Guardian mode')),
-      body: SafeArea(child: Padding(
+      body: SafeArea(child: SingleChildScrollView(child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Container(
@@ -66,6 +68,8 @@ class GuardianEscalationScreen extends StatelessWidget {
             "you're done, not before.",
             style: Theme.of(context).textTheme.bodyMedium
               ?.copyWith(color: scheme.onSurfaceVariant)),
+          // What the phone allows for rings and alerts (alerts_card.dart); draws nothing where there is no phone side.
+          const AlertsCard(),
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),
@@ -73,7 +77,7 @@ class GuardianEscalationScreen extends StatelessWidget {
             icon: const Icon(Icons.lock_open_outlined),
             label: const Text('Exit kiosk mode'))),
         ]),
-      )),
+      ))),
     );
   }
 }

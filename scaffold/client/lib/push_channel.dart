@@ -1,5 +1,10 @@
 // OLIVE BRANCH — push notification channel (client side). MASTERFILE §11.
 //
+// UPDATE (MASTERFILE 7.19): Firebase now starts from run-time settings the build supplies (push_config.dart),
+// not from a google-services.json plugin; push_service.dart is the guarded door that decides whether any of
+// this runs at all, and the native ring (OlivePushReceiver.kt) does not depend on this file. The text below is
+// the original account and is still true of what has and has not run on a device.
+//
 // UNVERIFIED against a real device — see the file-wide convention this
 // codebase uses for exactly this caveat. HONEST STATUS: this compiles, and
 // every request shape/registration/
@@ -37,6 +42,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
 import 'device_channels.dart';
+import 'push_config.dart';
 
 /// Thrown by [PushChannel.initialize] (and, independently, by the top-level
 /// background handler below) when `Firebase.initializeApp()` itself fails —
@@ -118,7 +124,9 @@ class PushPointer {
 /// the same honest way.
 Future<void> _initializeFirebaseOrThrow() async {
   try {
-    await Firebase.initializeApp();
+    // With the build's Firebase settings (push_config.dart) Firebase starts from them; without, this is the
+    // plain call, which is what fails loudly in a checkout that has nothing configured.
+    await Firebase.initializeApp(options: FcmConfig.fromEnvironment()?.toFirebaseOptions());
   } catch (e) {
     throw PushInitializationError(e);
   }
@@ -207,10 +215,14 @@ class PushChannel {
     this.onForegroundPointer,
     FirebaseMessaging? messaging,
     PushChannelDeps? deps,
+    this.askPermission = false,
   })  : _messagingOverride = messaging,
         _deps = deps ?? const PushChannelDeps();
 
   final OliveApi api;
+
+  /// Whether [initialize] shows the system's notification-permission box. False unless a grown-up's flow asks.
+  final bool askPermission;
   final FirebaseMessaging? _messagingOverride;
   final PushChannelDeps _deps;
 
@@ -234,6 +246,9 @@ class PushChannel {
   StreamSubscription<String>? _onRefreshSub;
   String? _lastRegisteredToken;
 
+  /// True once the server has accepted a token from this channel. Names and booleans only: never the token.
+  bool get hasRegisteredToken => _lastRegisteredToken != null;
+
   /// Real init sequence: Firebase, permission, subscribe to foreground
   /// messages and token refresh, fetch+register the current token. Throws
   /// [PushInitializationError] (never swallows it) if Firebase itself is
@@ -241,10 +256,15 @@ class PushChannel {
   /// client's own live child-home screen, which must not fail to render
   /// just because no Firebase project exists here) catch this at the call
   /// site, not inside this method. See child_home_live.dart's `_initPush`.
+  ///
+  /// The system's "allow notifications" box is asked for only when the channel was built with
+  /// `askPermission: true`, which the child's device never does: that box is something a grown-up answers
+  /// (Guardian mode -> Alerts on this tablet, alerts_card.dart), never something that appears in front of a
+  /// child. A token needs no permission, so registration goes ahead either way.
   Future<void> initialize() async {
     await (_deps.initializeFirebase ?? _initializeFirebaseOrThrow).call();
 
-    await (_deps.requestPermission ?? _requestPermission).call();
+    if (askPermission) await (_deps.requestPermission ?? _requestPermission).call();
 
     final messages = _deps.onMessage ?? _defaultOnMessage;
     _onMessageSub = messages.listen(_handleForeground);

@@ -12,6 +12,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import 'push_channel.dart';
+import 'push_config.dart';
 
 const String kLiveBaseUrl = String.fromEnvironment('OLIVE_API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8123'); // Android emulator's host-loopback alias
@@ -33,15 +34,20 @@ const bool kDevLoginDartDefine = bool.fromEnvironment('OLIVE_DEV_LOGIN');
 /// firebaseMessagingBackgroundHandler) before runApp(), the one place FlutterFire's docs
 /// require it.
 ///
-/// Wrapped in try/catch because Firebase.initializeApp() genuinely fails in a checkout
-/// with no real android/app/google-services.json (see pubspec.yaml). Letting that escape
-/// would crash the build before its first frame. push_channel.dart's
-/// PushChannel.initialize(), called later once a real session exists, is the second,
-/// independent attempt and THAT failure is the one surfaced; this one is intentionally
-/// the boot-time exception.
+/// A build without Firebase settings (push_config.dart: the four OLIVE_FCM_* defines) does
+/// NOTHING here: it never touches the Firebase plugin, logs nothing and shows nothing. That is
+/// the normal state of a checkout and of any install the owner has not given a Firebase project
+/// to (the app is offline-first; push only ever adds to it).
+///
+/// With settings, this starts Firebase from them and registers the background handler. It is
+/// still wrapped in try/catch: a malformed project must never crash the build before its first
+/// frame, and push_channel.dart's PushChannel.initialize(), called later once a real session
+/// exists, is the second, independent attempt.
 Future<void> initFirebaseForLive() async {
+  final FcmConfig? config = FcmConfig.fromEnvironment();
+  if (config == null) return;
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(options: config.toFirebaseOptions());
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (e) {
     debugPrint('[olive.push] background handler not registered at boot: $e');
