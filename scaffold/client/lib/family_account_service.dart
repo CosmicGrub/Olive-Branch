@@ -2,6 +2,8 @@
 // real route shapes (client/test/family_account_service_test.dart, family_account_contract_test.dart).
 // MASTERFILE section 8.5.13.
 //
+// UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 8.5.13).
+//
 // WHAT THIS IS. The guardian client half of the server's identity routes (server/routes.mjs, migration 0050):
 //
 //   sign up      POST /v1/auth/signup        invite-only: an operator-issued, single-use code, a name, a time zone and

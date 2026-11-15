@@ -1,6 +1,8 @@
 // OLIVE BRANCH — the one place that builds the optional family account screen for a grown-up's phone. Verified
 // headless (client/test/family_account_screens_test.dart). MASTERFILE section 8.5.13.
 //
+// UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 8.5.13).
+//
 // Two callers open it: the Settings hub on a phone that is NOT connected ([GuardianLocalController.onAccount], set in
 // guardian_boot.dart) and the same hub on a connected phone (guardian_more.dart). Both come here so the wiring is the
 // same: the secure-storage sign-in, the on-device record of how far setup got, and the invite waiting to be finished.

@@ -1,6 +1,8 @@
 // OLIVE BRANCH — the optional family account, on a grown-up's phone. Verified headless
 // (client/test/family_account_screens_test.dart). MASTERFILE section 8.5.13.
 //
+// UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 8.5.13).
+//
 // Reached only from a grown-up's Settings, under Account ("Family account"). It is NEVER reachable from a child's
 // app, and a test fails if a child-side file imports this one. A child sees no PIN, code, count or error from any
 // of it (P1 to P11).
@@ -587,7 +589,7 @@ class _SentInviteCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Text('${invite.label.isEmpty ? 'Invite' : invite.label} • ${inviteRoleWords(invite.role).split(' (').first}',
+            Text('${invite.label.isEmpty ? 'Invite' : invite.label} • ${inviteRoleShortWords(invite.role)}',
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(invite.statusLine()),
@@ -1111,7 +1113,7 @@ class _JoinInviteScreenState extends State<JoinInviteScreen> {
           key: const Key('inviteFound'),
           child: ListTile(
             leading: const Icon(Icons.mail_outline),
-            title: Text('You are invited as ${inviteRoleWords(f.role).split(' (').first.toLowerCase()}'),
+            title: Text('You are invited as ${inviteRoleShortWords(f.role).toLowerCase()}'),
             subtitle: Text('They will be called ${f.label.isEmpty ? 'by a name they chose' : f.label}. Sent to '
                 '${f.maskedEmail}.'),
           ),
@@ -1196,7 +1198,7 @@ class _ConfirmGrownUpScreenState extends State<ConfirmGrownUpScreen> {
       Card(
         child: ListTile(
           leading: const Icon(Icons.how_to_reg_outlined),
-          title: Text('$who asked to join as ${inviteRoleWords(i.role).split(' (').first.toLowerCase()}'),
+          title: Text('$who asked to join as ${inviteRoleShortWords(i.role).toLowerCase()}'),
           subtitle: Text('You invited ${maskEmail(i.invitedEmail)}. Say yes only if $who is the person you meant.'),
         ),
       ),

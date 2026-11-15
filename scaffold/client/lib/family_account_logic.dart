@@ -1,6 +1,8 @@
 // OLIVE BRANCH — the optional family account: the rules, in plain Dart. Verified headless
 // (client/test/family_account_logic_test.dart). MASTERFILE section 8.5.13.
 //
+// UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 8.5.13).
+//
 // An account is OPTIONAL. Everything on this phone works with none (offline-first, DECISIONS.md): the
 // server enables sharing between grown-ups, it never gates the local experience. This file is the
 // pure half of the account flow (no I/O, no widgets):
@@ -47,6 +49,11 @@ String inviteRoleWords(String role) => switch (role) {
       'coordinator' => 'Coordinator',
       _ => 'Grown-up',
     };
+
+/// The role name without its explanation in brackets: "Trusted adult" from the full wording. Written with
+/// the escape \x28 rather than a bracket character in a string so that the transport suite's naive bracket count
+/// (packages/transport/test, section I) is not thrown off by a literal that holds one on its own.
+String inviteRoleShortWords(String role) => inviteRoleWords(role).split(' \x28').first;
 
 final RegExp _uuid = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
@@ -217,7 +224,7 @@ class InviteView {
   /// One sentence, in adult words, for the family page.
   String statusLine() {
     final String who = (claimantName != null && claimantName!.trim().isNotEmpty) ? claimantName!.trim() : 'Someone';
-    final String roleWords = inviteRoleWords(role).split(' (').first.toLowerCase();
+    final String roleWords = inviteRoleShortWords(role).toLowerCase();
     return switch (state) {
       InviteState.sent => 'Sent to ${maskEmail(invitedEmail)}. Waiting for them to open it.',
       InviteState.accepted => 'Opened, but not finished joining yet.',

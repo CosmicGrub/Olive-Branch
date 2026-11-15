@@ -2,6 +2,8 @@
 // picked up again. Verified headless (client/test/family_account_store_test.dart). MASTERFILE sections 8.5.13 and
 // 8.16.4.
 //
+// UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 8.5.13).
+//
 // Two small pieces, kept apart on purpose:
 //
 //   * [AccountRecord], in the device-scoped catalogue area `account` (device.account): which step was reached and

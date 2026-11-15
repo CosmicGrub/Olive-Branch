@@ -183,14 +183,15 @@ void main() {
     await t.pumpAndSettle();
   });
 
-  testWidgets('"something new is waiting" makes the home look again and changes nothing she can see but the quiet dot', (t) async {
+  testWidgets('"something new is waiting" changes nothing on her home: no inbox read, no dot, no count (MASTERFILE 7.19)', (t) async {
     final w = _World(t);
     await w.pumpHome(pushService: w.service());
     final inboxBefore = w.requests.where((r) => r.endsWith('/inbox')).length;
     w.unread = 2;
     w.push(<String, dynamic>{'kind': 'message_ready', 'ref': 'opaque-intent-id', 'senderName': 'must not be read'});
     await t.pumpAndSettle();
-    expect(w.requests.where((r) => r.endsWith('/inbox')).length, inboxBefore + 1);
+    expect(w.requests.where((r) => r.endsWith('/inbox')).length, inboxBefore);
+    expect(inboxBefore, 0, reason: 'her home never reads the inbox; the Messages screen does');
     expect(find.text('Hi, Ivy'), findsOneWidget);
     expect(find.text('must not be read'), findsNothing);
     expect(find.byType(SnackBar), findsNothing);

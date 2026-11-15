@@ -16,7 +16,7 @@
 // [PushPointer] (kind, ref, callHandle) and nothing else:
 //   call_incoming   -> a knock (incoming_call.dart decides whether it is shown)
 //   call_cancelled  -> the knock goes away, silently
-//   message_ready   -> "something new is waiting": the home may look again; nothing is shown for it
+//   message_ready   -> "something new is waiting": her home does nothing for it (the Messages screen reads the inbox itself); nothing is shown
 //   anything else   -> ignored (turn_ready, exchange_reminder and dose_due have no sender yet, and an unknown kind
 //                      from a newer server must not do anything in an older app)
 library;

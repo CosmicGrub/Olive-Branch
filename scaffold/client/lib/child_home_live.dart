@@ -547,8 +547,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   //  * a locally paired tablet never reaches this method (it has no session, `_load` returns early);
   //  * an injected [PushChannel] (tests) is used exactly as it always was.
   // What each push means once it arrives is push_service.dart's PushDispatcher: a ring becomes a knock
-  // (incoming_call.dart decides if it is shown), a hang-up quietly removes the knock, "something new" lets the
-  // home look again. The system's "allow notifications" box is never shown to her: a grown-up answers it from
+  // (incoming_call.dart decides if it is shown), a hang-up quietly removes the knock, "something new" is not
+  // wired to her home at all (it has no dot or count to refresh; the Messages screen reads the inbox itself). The system's "allow notifications" box is never shown to her: a grown-up answers it from
   // Guardian mode (alerts_card.dart).
   Future<void> _initPush(String token) async {
     final injected = widget.pushChannel;
@@ -571,28 +571,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     final PushDispatcher dispatcher = PushDispatcher(
       onCallIncoming: calls == null ? null : (String ref) => calls.onRing(ref),
       onCallCancelled: calls == null ? null : (String ref) => calls.onCancel(ref),
-      onMessageReady: () => unawaited(_quietInboxRefresh()),
+      // message_ready is deliberately not wired here (MASTERFILE 7.19 and 7.20): her home carries no dot or count,
+      // so there is nothing for it to refresh. The Messages screen reads her inbox itself, on open, on return to
+      // the app and every minute, and the system banner has already told a closed app that something is waiting.
     );
     final OliveApi api = OliveApi(widget.baseUrl, token, client: widget.httpClient, session: AuthSession.current);
     await service.start(api: api, onPointer: dispatcher.handle);
-  }
-
-  // "Something new is waiting" while the app is open: look again, and change nothing she can see except the
-  // quiet dot. No spinner, no error, no sound.
-  Future<void> _quietInboxRefresh() async {
-    try {
-      final api = await apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
-      try {
-        final inbox = await api.fetchInbox(widget.childId);
-        final List<dynamic> messages = inbox['entries'] as List;
-        final int unread = messages.where((dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
-        if (mounted && _state == _LoadState.ready) setState(() => _unreadCount = unread);
-      } finally {
-        api.close();
-      }
-    } catch (e) {
-      debugPrint('[olive.push] quiet refresh failed: ${e.runtimeType}');
-    }
   }
 
   /// The no-signal home. See the file header: pictures only, never raw text.
