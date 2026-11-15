@@ -79,6 +79,11 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
 // ---- B · this pass's specific new routes exist on BOTH sides --------------
 {
   const newRoutes = [
+    // identity lane (0050)
+    '/v1/auth/signup', '/v1/me/children', '/v1/children',
+    '/v1/children/:childId/guardian-invites',
+    '/v1/guardian-invites/:inviteId/claim', '/v1/guardian-invites/:inviteId/confirm',
+    '/v1/guardian-invites/:inviteId/decline',
     '/v1/children/:childId/kiosk-pin/verify',
     '/v1/me/pin',
     '/v1/auth/webauthn/register/challenge',
@@ -166,6 +171,13 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   check('C A1', 'paired-devices revoke declares action:null', pairedDeviceRevokeRoute?.action, 'null');
   check('C A1', 'paired-devices revoke explicitly opts into identityScopedByHandler',
     pairedDeviceRevokeRoute?.identityScopedByHandler, 'true');
+  // Identity lane (0050): the inviter's own invite listing is a guardian-only
+  // identity route for the same reason POST .../guardianships is (no Action
+  // for "invite" in authorize.ts); the handler checks the live edge itself.
+  const invitesListRoute = api.routes.find((r) => r.path === '/v1/children/:childId/guardian-invites');
+  check('C A1', 'guardian-invites list declares action:null', invitesListRoute?.action, 'null');
+  check('C A1', 'guardian-invites list explicitly opts into identityScopedByHandler',
+    invitesListRoute?.identityScopedByHandler, 'true');
   // The exception is narrow: no OTHER :childId route in this repo may use it
   // silently. now/inbox both declare a real Action, not null.
   const otherChildRoutes = api.routes.filter((r) =>
@@ -176,6 +188,7 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
     && r.path !== '/v1/children/:childId/handover'
     && r.path !== '/v1/children/:childId/device-pairing-codes'
     && r.path !== '/v1/children/:childId/paired-devices'
+    && r.path !== '/v1/children/:childId/guardian-invites'
     && r.path !== '/v1/children/:childId/paired-devices/:deviceId/revoke');
   check('C A1', 'every OTHER :childId route still declares a real (non-null) action',
     otherChildRoutes.every((r) => r.action !== null), 'true');

@@ -40,6 +40,6 @@ Same-room calls over Wi-Fi (peer-to-peer on the local network, no STUN or TURN) 
 ## Multi-family readiness (5 to 10 families at first)
 
 - Capacity is small (roughly 40 to 60 devices); one small server is plenty. The risks are isolation between families, onboarding without the owner present, and operations.
-- Priorities: finish S-B11 and the family tenant isolation (S-D26); add invite-only sign-up with a family cap, a waitlist and a kill switch; run the 10-family simulation (PR #179) and keep its fast subset in CI; backups with a tested restore drill; monitoring with no per-family data; a minimum-app-version gate; consent form and in-app acceptance record for the closed beta.
+- Priorities: finish S-B11 and the family tenant isolation (S-D26); invite-only sign-up with a family cap and a kill switch now exists (migration 0050, `tools/provision-signup.mjs`; the waitlist does not); run the 10-family simulation (PR #179) and keep its fast subset in CI; backups with a tested restore drill; monitoring with no per-family data; a minimum-app-version gate; consent form and in-app acceptance record for the closed beta.
 - A beta path that fits the store rules: waves of two or three families; the 12-tester Google rule is met by real families.
 - Calls stay inside each family; cross-family contact (a grandparent or sitter) happens only through an explicit guardian invite.

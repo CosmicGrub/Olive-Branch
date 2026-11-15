@@ -1527,7 +1527,9 @@ create/read/accept-decision/revoke, all real and RLS-backed
 (`db/migrations/0014_guardian_invite.sql`). Does NOT create a `guardianship`
 row: that needs an app_user row for the invited party, and this codebase has
 no account-creation route for one, for a first OR an invited guardian — see
-this section's own note below and the migration's own header.
+this section's own note below and the migration's own header. **Superseded by
+§7.17 (migration 0050):** invite-only sign-up now creates the first account,
+and the inviter's confirm step now creates the edge.
 
 ```
 POST   /v1/children/:childId/guardianships      a real guardian invites a
@@ -2172,8 +2174,8 @@ S-B7 (the account-deletion recovery window and pseudonymising purge), S-B10
 (an Ed25519 signature and timestamp on the certified export), S-B11 (**shipped
 afterwards, see 7.12.1**), S-B12 (PIN per-device backoff, six-digit minimum for new PINs with a
 blocklist, `PIN_PEPPER`, and scoping the kiosk attempt counter to the caller),
-the rest of S-B16, S-B17 to S-B20 (`RP_ID` is still the placeholder
-`olivebranch.local`; backup encryption off by default; privacy-law gaps; the
+the rest of S-B16, S-B17 to S-B20 (`RP_ID` was the placeholder
+`olivebranch.local`, now environment-driven, §7.17; backup encryption off by default; privacy-law gaps; the
 two-guardian consent for roles that read the P8 log), and edge policies for the
 five child-keyed scheduling tables in the RLS allow-list. The residual in S-B3
 (a first PIN with no proof) and the client change the step-up needed (the exports
@@ -2516,6 +2518,58 @@ Editing a bedtime or moving her zone fires the migration 0002 triggers, which re
 **Tests.** `server/test/delivery_chain.test.mjs` (wired in `tools/verify.sh` as the table owner and again as the least-privilege `app_runtime` role) drives the real routes and the real worker against Postgres with no row seeded `delivered`: send, tick, inbox, media, signed URL, open, sender receipt; hostile input for every new route (bad kinds, times, days, zones, sources, dates, ids, SQL in a field, oversize lists, other families, sitters, children, no token); an expired intent; two workers racing 40 rows with no row claimed twice; and the child's own reply not appearing in her own inbox. `tools/test/infra.test.mjs` asserts the `delivery` service in both Compose files. The client path constants are in `client/lib/api_client.dart` so the route-drift test sees them.
 
 **Not done** (each stays open): a guardian-to-child **family** with its edge (`POST /v1/families`, accept-invite creating the edge) — owner decisions on the consent posture and the tenant design, and the identity lane, are pending, so no runtime path creates a `guardianship` row and a real family still cannot send (GAP-REGISTER G-02); a child's reply **recipient** and its guardian-facing reader (S-D4); a write path for custody orders and re-timing on a custody change (the engine has no custody logic); `GET .../batches` and the other sender views of message banking; a guardian "send now" (`immediate`) policy through the API; an idempotency key on `POST .../messages` and `.../media` and the app-level outbox drain; streaming upload and ranged download for large videos; a push for a ready message (a content-free `since` cursor for cheap polling is the planned substitute); `on_event` targets; and the Android screens for the media player, sender receipts and the bedtime and zone settings.
+
+### 7.17 Identity lane — as shipped (migration 0050)
+
+**Migration 0050 on a database that already has invites.** Its backfill copies each already-bootstrapped invite's `bootstrap_user_id` into the new `claimant_user_id`. `guardian_invite` is FORCE row level security and the production migrator (`app_owner`) is NOBYPASSRLS, so the statement sets `app.role = 'system'` for the migration transaction first; without it the `UPDATE` matched zero rows without an error and every pre-0050 bootstrapped invite lost its claimant. `tools/test/migrate_0050_backfill.test.mjs` applies the migrations before 0050 as `app_owner`, seeds a bootstrapped, an accepted and a pending invite, applies 0050 as `app_owner`, and asserts the claimant was copied, nothing else changed, and the role did not outlive the transaction.
+
+**The defect.** A fresh server had no way to get a first account, a child or a guardianship edge except raw SQL (`server/seed-dev.mjs`, the family-sim harness). Production refuses `DEV_LOGIN`, so a production server had no first user. An accepted or bootstrapped invite gave an adult an account with no access. A started call's `sessionId` was 32 bare hex characters, which the strict-ids guard (on in production) refuses as `400 bad_path`, so no call could be joined or ended through the real server. `RP_ID` was the constant `olivebranch.local`. The ten-family simulation logged these as gaps G1 to G9; none was fixed on main. (The delivery worker, the other half of "a message reaches the child", is the delivery lane's: §7.16.)
+
+**Sign-up is invite-only.** `signup_allowance` holds operator-issued, single-use, expiring tokens, stored only as a SHA-256 (the plaintext exists once, in the operator's terminal). `signup_policy` is one row: a kill switch (`enabled`) and an optional account cap (`max_accounts`). Both tables are `ENABLE` + `FORCE` row level security with a `system`-only policy: no guardian or child session can read or write either. The operator tool is `tools/provision-signup.mjs` (`issue [--label] [--days]`, `status`, `disable`, `enable`, `cap <n|none>`), run with `docker exec`; a label may not contain an `@`.
+
+```
+POST   /v1/auth/signup                 no session. { allowanceToken, displayName, homeTz, pin, deviceLabel? } ->
+                                       201 { token, expiresAt, userId, deviceId, deviceCredential }.
+                                       One transaction: kill switch and cap (policy row locked FOR UPDATE), allowance
+                                       redeemed (compare-and-swap), app_user, first PIN, enrolled device.
+                                       403 invalid_allowance (unknown, expired and already-redeemed are ONE answer),
+                                       403 signup_disabled, 403 signup_cap_reached (only ever told to a caller who
+                                       holds a live token; a tokenless caller cannot read the kill switch or the cap);
+                                       400 on a bad name, zone or PIN. The allowance and policy are judged BEFORE the
+                                       PIN is hashed (scrypt blocks the event loop and the route is unauthenticated),
+                                       so a junk token costs one indexed lookup; a bad PIN with a junk token is 403,
+                                       with a live token 400.
+                                       Per-IP limited by the /v1/auth/ prefix.
+GET    /v1/me/children                 guardian session. The children the caller holds a LIVE, unrestricted edge to.
+POST   /v1/children                    guardian session + own PIN. { displayName, birthDate, homeTz, pin } -> 201 { child }.
+                                       The child, the caller's guardianship edge, a timezone interval and a default
+                                       day-part plan are one transaction. At most 12 children per account.
+GET    /v1/children/:childId/guardian-invites
+                                       the CALLER's own invites for the child with their state (sent, accepted,
+                                       waiting_for_you, confirmed, declined, revoked, expired) and, once someone has
+                                       presented one, only the name they gave.
+POST   /v1/guardian-invites/:inviteId/claim     guardian session. An EXISTING account whose email IS the invited email
+                                       presents an accepted invite (the "second invite to a registered email" dead end).
+                                       A mismatch is 404, indistinguishable from no invite. Grants nothing.
+                                       LIMIT: this works only for accounts that HAVE an email, which today means
+                                       accounts the invite bootstrap created. Sign-up stores no email and no route
+                                       sets or verifies one, so a grown-up who signed up with their own allowance
+                                       cannot claim an invite addressed to them (404), and bootstrapping that invite
+                                       would create a second account for the same person. Closing it needs a
+                                       verified-email step (a mailer); this lane does not build one.
+POST   /v1/guardian-invites/:inviteId/confirm   inviter + own PIN. The ONLY step that creates the invited adult's
+                                       guardianship edge, with the invite's role and scope, in the same transaction that
+                                       consumes the invite and records a content-free `guardian_added` security event.
+POST   /v1/guardian-invites/:inviteId/decline   inviter, no PIN. Turns away whoever presented the invite.
+```
+
+**What closed.** (1) The invite chain: accept and bootstrap still create no edge (deliberate, and now asserted as the safe pre-state); the inviter, who is physically with the invitee because there is no mailer, says yes with their own PIN. Only the inviter can confirm (anyone else sees `404`), only a claimed invite, only before it expires, only while the inviter still holds a live guardian edge themself. A revoked or declined invite creates no edge. `bootstrap` now also records the claimant and accepts `enrol` (see 2). (2) Device identity: sign-up and bootstrap (with `enrol`) insert a `paired_device` (role `guardian`, `paired_via` NULL; migration 0050 makes the column nullable) and return its credential once, so the existing `POST /v1/auth/session/refresh` keeps the grown-up signed in past the first hour with no domain and no passkey. Deactivating an account revokes its enrolled devices in the same transaction, so a live device-bound session ends at once instead of running out its hour. (3) Call ids: `createSession` mints a canonical dashed uuid, so `.../calls/:sessionId/join` and `/end` are reachable under strict ids (`call_log.id` is text and stores either form). (4) The relying party: `server/webauthn_config.mjs` reads `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`, `WEBAUTHN_ANDROID_ORIGINS` (`android:apk-key-hash:<base64url SHA-256 of the signing certificate>`) and `WEBAUTHN_ANDROID_PACKAGE`. Unset keeps the development default so nothing existing changes; unset in production is a boot warning (passkeys are unusable, device-credential sign-in is not); a malformed value refuses to boot. Registration and login accept the configured Android origins alongside the https origin (`verifyAssertion` takes `extraOrigins`, exact match only), and `GET /.well-known/assetlinks.json` is served from the same values.
+
+**Why a default day-part plan.** `POST /v1/children/:childId/messages` targets the `bedtime` day part by default and answers `400 daypart_undefined` for a child that has none, and no route edits day parts yet (the delivery lane's PR adds the write routes). So a child created by `POST /v1/children` gets a placeholder plan (asleep 00:00 to 07:00, free, wind-down, bedtime 20:00 to 21:00, asleep 21:00 to 23:59:59) that asserts no schedule beyond "overnight is quiet, evening is bedtime". Without it a brand-new child could receive nothing. The family replaces it through those routes once they exist.
+
+**Not built (kept honest).** There is no `family` table and no server family tenant (S-D26; its text is not in the repository; gap G-02 stays open for the family-sync design). Account recovery and restore (a lost device or passkey, a forgotten PIN, undelete within the 6 to 12 month window) is not built: a grown-up who loses every enrolled device and has no second grown-up has no way back in. The device credential does not rotate and has no absolute lifetime (a stolen one is cut off by revoking the device). There is no per-device limiter on refresh (all families behind one Docker bridge address share the per-IP bucket). The LAN-paired tablet still has no server identity and no bridge to a server child. The guardian client is not yet wired to the new routes (the Dart API functions exist and are tested; no screen calls them), and the invite deep link and the paste-an-invite screen are not built. Push stays parked until a Firebase service account exists.
+
+**Tests.** `server/test/identity_chain_route.test.mjs` (real Postgres through the real `Api` with strict ids on, run as `app_owner` and again as `app_runtime`, wired in `tools/verify.sh`): sign-up (validation, replay, expiry, concurrency, kill switch, cap, a junk token learning nothing about either, refused before the PIN is hashed, refresh, RLS on both tables), children (PIN step-up, the live edge, two real families isolated from each other), the whole invite chain (claim, confirm, decline, revoke, expiry, non-inviter, closed inviter, email already registered), deactivation ending a device session, a sign-up-created child (paired device, a message that materializes, the call id surviving strict ids) and the operator tool. `server/test/webauthn_config.test.mjs` (pure): configuration validation, origin matching, the assetlinks document, and a real P-256 assertion with an Android origin. `packages/api/test/contract.test.mjs` gains the seven new routes (every one must have a Dart constant) and the `guardian-invites` identity exception.
 
 ## §8 UI architecture
 
@@ -8377,7 +8431,7 @@ Each row is something this document or the product's own screens might lead a re
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
 | **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
-| **Invites** (a second guardian joining) | Invite create, read, decide and revoke routes (`0014_guardian_invite.sql`) and `invitation_screen.dart`. | Accepting an invite does **not** create an account or a guardianship, and a guardian on a fresh device still has to pair with a code (§7.1c). |
+| **Invites** (a second guardian joining) | Invite create, read, accept, revoke, bootstrap (with optional device enrolment), claim by an existing account, decline, the inviter's PIN-gated confirm that creates the edge, and the inviter's own invite listing (§7.17, tested against a real Postgres). `invitation_screen.dart` is still the preview. | No client screen calls the invite or sign-up routes yet (the Dart functions exist), there is no deep link or paste-an-invite screen, and no mailer: the invite id travels out of band and the inviter confirms in person. |
 | **Two-device play: what is left** | War, Connect 4 and Uno run on the shared play envelope, game contract, session controller and dealer's save (§9.2); the TypeScript reference, the Dart port, the golden vectors and the in-memory two-device tests are CI-verified. | Not run on a Fold 5 or a Tab S9 FE (the plan is in the pull request). War is not saved across an app kill. The calm away and ended wording is a draft awaiting the owner. |
 | **Networked games** | Live checkers through the server's table relay (`packages/game-sync`, `networked_checkers_*`): tests and a server-side end-to-end run. | No two-device run over a real network is recorded. The games played during a call need calls. |
 | **Read together and Watch together, server and transports** (§8.26) | The pure core (`packages/co-view`), its Dart port, `CoViewLeader` and `CoViewFollower` over an abstract transport (a loopback in tests) and the screens. | No real transport (neither the call data channel nor a game-sync table is connected), no server route or storage for sessions or the daily-time total, the screens are not reachable from the app's navigation, and there is no Watch together. |

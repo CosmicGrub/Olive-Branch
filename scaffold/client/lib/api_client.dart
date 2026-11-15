@@ -455,6 +455,18 @@ class OliveApi {
   // [bootstrapGuardianInvite] below, the real free function this constant
   // backs.
   static const guardianInviteBootstrap = '/v1/guardian-invites/:inviteId/bootstrap';
+  // --- identity lane (db/migrations/0050_identity_signup.sql) ---------------
+  // The first account, the first child, and the inviter's confirm step that
+  // finally turns an accepted invite into a real guardianship edge. All are
+  // free functions below (sign-up has no session yet; the rest take the
+  // caller's session token explicitly, same shape as [revokeGuardianInvite]).
+  static const authSignup = '/v1/auth/signup';
+  static const meChildren = '/v1/me/children';
+  static const children = '/v1/children';
+  static const childGuardianInvites = '/v1/children/:childId/guardian-invites';
+  static const guardianInviteClaim = '/v1/guardian-invites/:inviteId/claim';
+  static const guardianInviteConfirm = '/v1/guardian-invites/:inviteId/confirm';
+  static const guardianInviteDecline = '/v1/guardian-invites/:inviteId/decline';
 
   // --- device pairing & provisioning (docs/superpowers/specs/2026-09-12-
   // device-pairing-provisioning-design.md) --------------------------------
@@ -1864,19 +1876,184 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
   String baseUrl,
   String inviteId,
   String displayName, {
+  /// 0050: also enrol this device in the same call. The response then carries
+  /// `deviceId` + `deviceCredential` (shown once) for POST
+  /// /v1/auth/session/refresh, so the new grown-up is not stranded after the
+  /// one-hour token.
+  bool enrol = false,
   http.Client? client,
 }) async {
   final c = client ?? OliveTransport.clientFor(baseUrl);
   final res = await c.post(
     Uri.parse('$baseUrl${OliveApi.guardianInviteBootstrap.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
-    body: jsonEncode({'displayName': displayName}),
+    body: jsonEncode({'displayName': displayName, if (enrol) 'enrol': true}),
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {
     throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
   }
   return body;
+}
+
+Map<String, dynamic> _decodeOrThrow(http.Response res) {
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
+}
+
+Future<Map<String, dynamic>> _identityPost(
+  String baseUrl,
+  String path,
+  Map<String, dynamic> body, {
+  String? sessionToken,
+  http.Client? client,
+}) async {
+  final c = client ?? OliveTransport.clientFor(baseUrl);
+  final res = await c.post(
+    Uri.parse('$baseUrl$path'),
+    headers: {
+      'content-type': 'application/json',
+      if (sessionToken != null) 'authorization': 'Bearer $sessionToken',
+    },
+    body: jsonEncode(body),
+  );
+  return _decodeOrThrow(res);
+}
+
+Future<Map<String, dynamic>> _identityGet(
+  String baseUrl,
+  String path,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  final c = client ?? OliveTransport.clientFor(baseUrl);
+  final res = await c.get(
+    Uri.parse('$baseUrl$path'),
+    headers: {'authorization': 'Bearer $sessionToken'},
+  );
+  return _decodeOrThrow(res);
+}
+
+/// First account on an invite-only server -- POST [OliveApi.authSignup]. No
+/// session yet: the operator-issued, single-use [allowanceToken] (printed once
+/// by tools/provision-signup.mjs) is the authority. Creates the account, its
+/// first PIN and an enrolled device, and returns `{token, expiresAt, userId,
+/// deviceId, deviceCredential}`; the credential is the device's long-lived
+/// proof for POST /v1/auth/session/refresh. Throws [ApiException]
+/// (invalid_allowance / signup_disabled / signup_cap_reached are all 403 and
+/// deliberately do not say which token is wrong).
+Future<Map<String, dynamic>> signUpWithAllowance(
+  String baseUrl, {
+  required String allowanceToken,
+  required String displayName,
+  required String homeTz,
+  required String pin,
+  String deviceLabel = '',
+  http.Client? client,
+}) =>
+    _identityPost(
+      baseUrl,
+      OliveApi.authSignup,
+      {
+        'allowanceToken': allowanceToken,
+        'displayName': displayName,
+        'homeTz': homeTz,
+        'pin': pin,
+        if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
+      },
+      client: client,
+    );
+
+/// The children the signed-in grown-up holds a live edge to -- GET
+/// [OliveApi.meChildren]. How a guardian client learns child ids at all.
+Future<List<Map<String, dynamic>>> fetchMyChildren(
+  String baseUrl,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  final body = await _identityGet(baseUrl, OliveApi.meChildren, sessionToken, client: client);
+  return (body['children'] as List<dynamic>).cast<Map<String, dynamic>>();
+}
+
+/// Creates a child and the caller's own guardianship edge to her -- POST
+/// [OliveApi.children], own-PIN step-up. `birthDate` is `YYYY-MM-DD`.
+Future<Map<String, dynamic>> createChild(
+  String baseUrl,
+  String sessionToken, {
+  required String displayName,
+  required String birthDate,
+  required String homeTz,
+  required String pin,
+  http.Client? client,
+}) async {
+  final body = await _identityPost(
+    baseUrl,
+    OliveApi.children,
+    {'displayName': displayName, 'birthDate': birthDate, 'homeTz': homeTz, 'pin': pin},
+    sessionToken: sessionToken,
+    client: client,
+  );
+  return body['child'] as Map<String, dynamic>;
+}
+
+/// The caller's own invites for [childId], with their state -- GET
+/// [OliveApi.childGuardianInvites]. `status` is one of sent / accepted /
+/// waiting_for_you / confirmed / declined / revoked / expired; once someone
+/// has presented an invite, `claimantName` is the name they gave.
+Future<List<Map<String, dynamic>>> fetchGuardianInvitesForChild(
+  String baseUrl,
+  String childId,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  final body = await _identityGet(
+    baseUrl,
+    OliveApi.childGuardianInvites.replaceFirst(':childId', childId),
+    sessionToken,
+    client: client,
+  );
+  return (body['invites'] as List<dynamic>).cast<Map<String, dynamic>>();
+}
+
+/// An existing account presents an accepted invite addressed to its own email
+/// -- POST [OliveApi.guardianInviteClaim]. Grants nothing by itself.
+Future<void> claimGuardianInvite(
+  String baseUrl,
+  String inviteId,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  await _identityPost(baseUrl, OliveApi.guardianInviteClaim.replaceFirst(':inviteId', inviteId), {},
+      sessionToken: sessionToken, client: client);
+}
+
+/// The inviter says "yes, that is who I meant" -- POST
+/// [OliveApi.guardianInviteConfirm], own-PIN step-up. The only call that
+/// creates the guardianship edge for an invited adult.
+Future<void> confirmGuardianInvite(
+  String baseUrl,
+  String inviteId,
+  String sessionToken,
+  String pin, {
+  http.Client? client,
+}) async {
+  await _identityPost(baseUrl, OliveApi.guardianInviteConfirm.replaceFirst(':inviteId', inviteId),
+      {'pin': pin}, sessionToken: sessionToken, client: client);
+}
+
+/// The inviter turns away whoever presented the invite -- POST
+/// [OliveApi.guardianInviteDecline]. No PIN: it only removes.
+Future<void> declineGuardianInvite(
+  String baseUrl,
+  String inviteId,
+  String sessionToken, {
+  http.Client? client,
+}) async {
+  await _identityPost(baseUrl, OliveApi.guardianInviteDecline.replaceFirst(':inviteId', inviteId), {},
+      sessionToken: sessionToken, client: client);
 }
 
 /// Redeems a device-pairing code -- POST [OliveApi.devicePairingRedeem],

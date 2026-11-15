@@ -103,6 +103,8 @@ const pool = {
       if (/DELETE FROM pin_credential/i.test(sql)) return { rows: [{ user_id: params[0] }] };
       if (/DELETE FROM webauthn_credential/i.test(sql)) return { rows: [{ credential_id: 'cred-1' }] };
       if (/DELETE FROM auth_challenge/i.test(sql)) return { rows: [{ challenge: 'chal-1' }] };
+      // 0050: deactivation also revokes the account's enrolled guardian devices.
+      if (/UPDATE paired_device SET revoked_at = now\(\)/i.test(sql)) return { rows: [] };
       if (/DELETE FROM device_token/i.test(sql))
         return { rows: [{ id: 'dt-1' }, { id: 'dt-2' }, { id: 'dt-3' }] };
       if (/UPDATE app_user SET deactivated_at = now\(\)/i.test(sql)) {

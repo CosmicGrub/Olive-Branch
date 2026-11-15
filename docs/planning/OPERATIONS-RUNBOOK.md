@@ -43,6 +43,13 @@ Practical notes learned while building. Nothing here contains credentials.
 - Docker Desktop updates itself and the engine is unavailable while that happens; wait, do not kill it. If it genuinely wedges, see the documented recovery steps in the Docker notes (stuck socket vs stuck WSL disk).
 - Never expose the dev stack to the internet: it has a credential-free dev login.
 
+## First family on a fresh server (identity lane, migration 0050)
+
+- A fresh server has no accounts and refuses `DEV_LOGIN` in production. Mint one single-use sign-up token: `docker exec <server-container> node tools/provision-signup.mjs issue --label "family 1"`. It prints the token once; hand it over in person. `status`, `disable`, `enable` and `cap <n|none>` are the kill switch and the account cap (same tool). Never put a token, a name or an email in a ticket or a commit.
+- The grown-up signs up in the app (name, time zone, PIN), creates the child (`POST /v1/children`, own PIN), and invites the second grown-up (`POST /v1/children/:childId/guardianships`). The invitee accepts, bootstraps (or, with an existing account, claims), and the inviter confirms with their PIN: that confirm is the only step that grants access. There is no mailer; the invite id travels out of band.
+- Passkeys need a real domain: set `WEBAUTHN_RP_ID` (and the Android signing-key hash in `WEBAUTHN_ANDROID_ORIGINS`) and the server serves `/.well-known/assetlinks.json`. With no domain, sign-in is the device credential from sign-up; there is no account recovery yet, so a grown-up who loses every enrolled device needs the other grown-up or the operator.
+- Migration order: 0050 (this lane) sits above the delivery lane's 0049. Merge the delivery lane first; the runner refuses to apply 0049 on a database that already has 0050.
+
 ## Memory limits (important)
 
 - The development PC has limited RAM. Running several Flutter and Gradle processes at once exhausted it (git and Docker failed to fork). Keep at most two or three heavy jobs at a time; run Gradle with `--no-daemon` and a 1 GB heap or run `./gradlew --stop` after builds; run `flutter test` with at most two jobs; push early.

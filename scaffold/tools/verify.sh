@@ -136,6 +136,7 @@ for spec in \
   "olive UI art drift guard (kit icons, scenes, spots to Dart)|tools/test/olive_art.test.mjs" \
   "parity scenarios: prototype scenarios + rule table, drift guard|tools/test/parity_scenarios.test.mjs" \
   "version sync + release tooling helpers (docs/RELEASING.md)|tools/test/version_sync.test.mjs" \
+  "webauthn relying party from env: rpId/origin validation, android origins, assetlinks, android-origin assertion (pure)|server/test/webauthn_config.test.mjs" \
   "child homes: per-age tiles, renames, More, your-home-grows, drift guard|tools/test/child_home_vectors.test.mjs" \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "CPace draft-21 appendix B.1 vectors (CPACE-X25519-SHA512), byte for byte|tools/test/cpace_draft21.test.mjs" \
@@ -437,6 +438,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "messages route (real DB)|packages/api/test/messages_route.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
+            "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
             "now route: real tz-interval + home_tz fallback (real DB)|server/test/now_route.test.mjs" \
@@ -460,6 +462,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "scheduler backup job: real pg_dump, prune, alarm (real DB)|packages/db/test/backup_job.test.mjs" \
             "migrate advisory lock (real DB)|tools/test/migrate_lock.test.mjs" \
             "migrate as the NON-superuser app_owner: full set, trusted extensions, no custom-GUC proconfig (real DB)|tools/test/migrate_nonsuper.test.mjs" \
+            "migration 0050 backfills pre-existing bootstrapped invites when applied as the NON-superuser app_owner (FORCE RLS, real DB)|tools/test/migrate_0050_backfill.test.mjs" \
             "db health views under FORCE RLS, app_owner-migrated: true counts for every caller, monitor reads no rows (0047, real DB)|packages/db/test/health_views_force_rls.test.mjs" \
             "family simulation CI subset: 3 families, strict cross-family isolation probes (real DB, real RLS)|tools/family-sim/test/isolation_ci.test.mjs" \
             "family simulation day plan: seeded day-parts independent of the hour the run lands in (no DB, fixed clock)|tools/family-sim/test/dayplan_clock.test.mjs" \
@@ -514,6 +517,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: delivery chain|server/test/delivery_chain.test.mjs" \
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
+            "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
