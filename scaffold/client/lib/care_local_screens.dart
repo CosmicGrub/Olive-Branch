@@ -24,6 +24,7 @@ import 'care_local.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 import 'guardian_local_scope.dart' show GuardianLocalController, GuardianLocalScope;
 import 'hub_widgets.dart';
+import 'screen_share_ui.dart' show ShareScreenAction, ShareRedact;
 
 // ----------------------------------------------------------------- helpers ---
 String careTime(DateTime t) =>
@@ -252,7 +253,7 @@ class _CareHubState extends State<CareHubScreen> with _CareLoad<CareHubScreen> {
               .length;
     final int notes = d?.notes.length ?? 0;
     return Scaffold(
-      appBar: AppBar(title: const Text('Care and coordination')),
+      appBar: AppBar(title: const Text('Care and coordination'), actions: const <Widget>[ShareScreenAction()]),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -496,7 +497,7 @@ class _LocalMedsState extends State<LocalMedsScreen> with _CareLoad<LocalMedsScr
         if (m.retired) m,
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('Medications')),
+      appBar: AppBar(title: const Text('Medications'), actions: const <Widget>[ShareScreenAction()]),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1006,7 +1007,7 @@ class _LocalExpensesState extends State<LocalExpensesScreen> with _CareLoad<Loca
     final bool sole = widget.guardianCount == 1;
     final bal = expenseBalance(d?.expenses ?? const <CareExpense>[], me);
     return Scaffold(
-      appBar: AppBar(title: const Text('Shared expenses')),
+      appBar: AppBar(title: const Text('Shared expenses'), actions: const <Widget>[ShareScreenAction()]),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1331,7 +1332,7 @@ class _LocalHandoverState extends State<LocalHandoverScreen> with _CareLoad<Loca
     ];
     final ChainStatus ch = chainStatus(d?.notes ?? const []);
     return Scaffold(
-      appBar: AppBar(title: const Text('Handover notes')),
+      appBar: AppBar(title: const Text('Handover notes'), actions: const <Widget>[ShareScreenAction()]),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1517,7 +1518,7 @@ class OverlapScreen extends StatelessWidget {
     final double nowPct = (now.hour * 60 + now.minute) / 1440;
     final ColorScheme c = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Her time, your time')),
+      appBar: AppBar(title: const Text('Her time, your time'), actions: const <Widget>[ShareScreenAction()]),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1527,12 +1528,14 @@ class OverlapScreen extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: _clockCard(
-                      context,
-                      "$childName, her time",
-                      sameZone ? careTime(now) : '--',
-                      sameZone ? now.timeZoneName : herZoneLabel,
-                      key: const Key('herClock'),
+                    child: ShareRedact(
+                      child: _clockCard(
+                        context,
+                        "$childName, her time",
+                        sameZone ? careTime(now) : '--',
+                        sameZone ? now.timeZoneName : herZoneLabel,
+                        key: const Key('herClock'),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),

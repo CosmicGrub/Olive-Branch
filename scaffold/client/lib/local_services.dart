@@ -311,6 +311,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '
           'turning a setting off forgets what it stored.'),
+  LocalDataEntry(
+      area: 'screenshares', scope: LocalScope.guardian, encrypted: true, maxBytes: 8 * _mib,
+      what: 'Screens shared between grown-ups, on a grown-up\'s device only: the pictures of a screen another '
+          'grown-up sent here (at most three, each until it expires or is put away), what this phone sent and is '
+          'still waiting to hand over or take back, a mark for each one put away or taken back so a late copy is '
+          'dropped, and one quiet line of family history for each share (who shared a screen with whom, never the '
+          'picture). Never on a child\'s device and never shown in her app. Sealed on the device; nothing is '
+          'uploaded.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a

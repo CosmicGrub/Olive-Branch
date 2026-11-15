@@ -40,6 +40,7 @@ import 'device_identity.dart';
 import 'device_role.dart';
 import 'guardian_home_live.dart';
 import 'app_lock.dart';
+import 'screen_share_ui.dart';
 import 'guardian_local_scope.dart';
 import 'play_notice.dart' show PlayAudience, PlayAudienceScope;
 import 'guardian_onboarding.dart';
@@ -310,7 +311,10 @@ Widget _guardianApp({
                 : GuardianLocalScope(
                     controller: local,
                     // App lock + quick hide (app_lock.dart): covers the guardian app only.
-                    child: AppLockGuard(controller: local.services.appLock, child: voiced));
+                    child: AppLockGuard(
+                        controller: local.services.appLock,
+                        // Share this screen with another grown-up (screen_share_ui.dart): the capture target.
+                        child: ShareCaptureScope(service: local.services.shares, child: voiced)));
           },
           home: home,
         );
