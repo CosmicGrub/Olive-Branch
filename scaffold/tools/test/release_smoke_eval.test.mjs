@@ -43,6 +43,11 @@ check('pidof listing two pids in a changing order passes (a common pid exists)',
 check('a crash after a hiccup is still caught', !evaluate({ ...base, alive: withGap(20, 7), logcat: crash }).ok);
 check('too few samples FAILS (sampling must cover the window)', !evaluate({ ...base, alive: alive(5) }).ok);
 check('am start error FAILS', !evaluate({ ...base, amStart: 'Error: Activity class does not exist.' }).ok);
+const AM_TIMEOUT = 'Starting: Intent { cmp=com.olivebranch.olive_client/.MainActivity }\nStatus: timeout\nLaunchState: UNKNOWN (-1)\n';
+check('am start timeout WITH a Displayed line passes (slow cold start, measured 11 s in CI)', (() => { const r = evaluate({ ...base, amStart: AM_TIMEOUT }); return r.ok && r.info.some((i) => /timed out/.test(i)); })());
+check('am start timeout WITHOUT a Displayed line FAILS', !evaluate({ ...base, amStart: AM_TIMEOUT, logcat: L(3, 4242, 'I', 'flutter', 'x') }).ok);
+check('am start timeout plus the original crash FAILS', !evaluate({ ...base, amStart: AM_TIMEOUT, logcat: crash }).ok);
+check('am start Status: error FAILS even with Displayed', !evaluate({ ...base, amStart: 'Status: error\nError: boom' }).ok);
 check('no Displayed line FAILS', !evaluate({ ...base, logcat: L(3, 4242, 'I', 'flutter', 'x') }).ok);
 check('native fatal signal in the app pid FAILS', !evaluate({ ...base, logcat: DISPLAYED + '\n' + L(4, 4242, 'F', 'libc', 'Fatal signal 11 (SIGSEGV), code 1') }).ok);
 check('an ANR in the app FAILS', !evaluate({ ...base, logcat: DISPLAYED + '\n' + L(9, 900, 'E', 'ActivityManager', `ANR in ${PKG} (${PKG}/.MainActivity)`) }).ok);

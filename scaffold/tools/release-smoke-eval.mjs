@@ -12,7 +12,7 @@
  *     "Fatal signal" in the app's pid (the original defect: "String resource ID #0x0" from the Jitsi SDK)
  *   - the process was not alive for the whole observation window (one isolated empty sample between two samples
  *     with a common pid is tolerated as an adb hiccup), or no single pid was present throughout (a restart hides a crash)
- *   - `am start -W` did not report Status: ok
+ *   - `am start -W` did not report Status: ok (a bare `Status: timeout` is tolerated when the Displayed line exists)
  *   - the system never logged "Displayed <pkg>/.MainActivity" (no window was ever drawn)
  * Reported but not failing: engine-start evidence (a release Flutter engine logs little), whether the activity was
  * the resumed one at the end, and FATAL EXCEPTION blocks that belong to other processes (system apps).
@@ -83,12 +83,19 @@ export function evaluate(ev) {
   add('same process throughout (a restart would hide a crash)', common.length > 0,
     distinct.length === 0 ? 'no pid was ever seen' : `pids seen: ${distinct.join(', ')}`);
 
-  // 3. am start status.
-  add('am start -W reported Status: ok', /Status:\s*ok/i.test(ev.amStart) && !/Error:/i.test(ev.amStart), ev.amStart.trim().split('\n').slice(0, 3).join(' | ').slice(0, 200));
-
-  // 4. a window was drawn (first frame evidence the platform itself logs).
+  // 4. a window was drawn (first frame evidence the platform itself logs). Computed first because check 3 needs it.
   const pkgRe = ev.pkg.replace(/\./g, '\\.');
   const displayed = lines.find((l) => new RegExp(`Displayed ${pkgRe}/[.\\w]*MainActivity`).test(l.msg));
+
+  // 3. am start status. `am start -W` gives up waiting after about 10 s and prints "Status: timeout" while the launch
+  // goes on; a cold start on the software-rendered CI emulator measured 11 s with a healthy app (CI run 43669021711,
+  // "Displayed ... +11s430ms"). So a timeout alone is NOT a failure when the system later logged the Displayed line;
+  // any other non-ok status, or an Error:, is.
+  const noErr = !/Error:/i.test(ev.amStart);
+  const amOk = /Status:\s*ok/i.test(ev.amStart) && noErr;
+  const amSlow = !amOk && noErr && /Status:\s*timeout/i.test(ev.amStart) && !!displayed;
+  add('am start -W reported Status: ok (or timed out but the activity was displayed)', amOk || amSlow, ev.amStart.trim().split('\n').slice(0, 3).join(' | ').slice(0, 200));
+  if (amSlow) info.push('am start -W timed out waiting (slow cold start) but the system logged Displayed: not failing');
   add('system logged "Displayed <pkg>/.MainActivity" (a window was drawn)', !!displayed, displayed ? displayed.msg.slice(0, 120) : 'no Displayed line');
 
   // Reported only.
