@@ -2049,13 +2049,32 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // applyRetentionOnOpen() checks out a second connection. A retention
       // failure after the commit is retry-safe: the re-fetch below finds
       // the already-'opened' row and re-applies retention.
+      // The receipt is FIXED at this moment: the zone she was in and the
+      // day-part that was active are written beside opened_at, so a later
+      // edit of her schedule or time-zone timeline can never re-word an old
+      // receipt (migration 0050). Computing it can never block opening: a
+      // failure here leaves the columns NULL and the reader falls back.
+      let snapCtx = null;
+      try { snapCtx = await childCtxFor(pool, c.childId); } catch { snapCtx = null; }
       const opened = await inSession(c, async (q) => {
       const updated = await q(
         `UPDATE delivery_intent SET state = 'opened', opened_at = now()
           WHERE id = $1 AND child_id = $2 AND state = 'delivered'
-          RETURNING id, payload_ref`,
+          RETURNING id, payload_ref,
+                    to_char(opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS opened_iso`,
         [c.params.messageId, c.childId],
       );
+      if (updated.length && snapCtx) {
+        let snap = null;
+        try { snap = receiptSnapshot(snapCtx, DateTime.fromISO(updated[0].opened_iso, { zone: 'utc' })); }
+        catch { snap = null; }
+        if (snap) {
+          await q(
+            `UPDATE delivery_intent SET opened_zone = $2, opened_part = $3
+              WHERE id = $1 AND child_id = $4 AND state = 'opened'`,
+            [updated[0].id, snap.zone, snap.part, c.childId]);
+        }
+      }
       // Idempotent success for a row already 'opened' — distinguished from
       // a genuine not-found/wrong-state so a client retry (or two tabs
       // racing) never sees a false error for something that already
@@ -4062,6 +4081,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
+  // The zone and the active day-part at an instant: what a receipt records.
+  const receiptSnapshot = (ctx, at) => {
+    const zone = openReceipt(ctx, at, null).zone;
+    return { zone, part: activeDayPart(ctx, at.setZone(zone))?.kind ?? null };
+  };
+
   // G7 -- the SENDER's view of what she sent: waiting / delivered / opened,
   // with the receipt phrase in HER (the child's) frame -- "Watched at 7:42 PM
   // her time -- at bedtime." (pipeline.ts openReceipt, section 8.2.4). Guardian
@@ -4080,22 +4105,30 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         `SELECT id, payload_kind, state, ${iso('created_at')} AS sent_at,
                 ${iso('scheduled_at')} AS delivers_at,
                 ${iso('COALESCE(delivered_at, materialized_at)')} AS delivered_at,
-                ${iso('opened_at')} AS opened_at
+                ${iso('opened_at')} AS opened_at, opened_zone, opened_part
            FROM delivery_intent
           WHERE child_id = $1 AND sender_id = $2
           ORDER BY created_at DESC
           LIMIT 50`,
         [c.childId, c.principal.userId]));
-      const ctx = await childCtxFor(pool, c.childId);
+      const needCtx = rows.some((r) => r.state === 'opened' && r.opened_at && !r.opened_zone);
+      const ctx = needCtx ? await childCtxFor(pool, c.childId) : true;
       const messages = rows.map((r) => {
         // 'pending' and 'ready' are the same thing to a sender: not there yet.
         const state = r.state === 'pending' || r.state === 'ready' ? 'waiting' : r.state;
         let receipt = null;
         if (state === 'opened' && r.opened_at && ctx) {
           const at = DateTime.fromISO(r.opened_at, { zone: 'utc' });
-          const first = openReceipt(ctx, at, null);
-          const kind = activeDayPart(ctx, at.setZone(first.zone))?.kind ?? null;
-          receipt = openReceipt(ctx, at, kind);
+          if (r.opened_zone) {
+            // Fixed when she opened it (migration 0050): later edits of her
+            // schedule or zone timeline do not touch this.
+            receipt = openReceipt({ homeTz: r.opened_zone, tzIntervals: [], dayParts: [] },
+              at, r.opened_part ?? null);
+          } else {
+            // Opened before 0050: no snapshot exists, recompute as it always did.
+            const snap = receiptSnapshot(ctx, at);
+            receipt = openReceipt(ctx, at, snap.part);
+          }
         }
         return {
           id: r.id, kind: r.payload_kind, state, sentAt: r.sent_at,
@@ -4155,7 +4188,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: 403, body: { error: 'not_a_child_surface' } };
       }
       const list = c.body?.dayParts;
-      if (!Array.isArray(list) || list.length > MAX_DAY_PARTS) {
+      // An EMPTY schedule is refused: with no bedtime every queued message
+      // would be reset to pending and then wait, undeliverable, until it
+      // expired -- a silent strand. Replace the schedule; do not clear it.
+      if (!Array.isArray(list) || list.length < 1 || list.length > MAX_DAY_PARTS) {
         return { status: 400, body: { error: 'day_parts_required' } };
       }
       const parts = [];
@@ -4183,6 +4219,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
       try {
         const rows = await inSession(c, async (q) => {
+          // One writer per child at a time. Under READ COMMITTED two guardians'
+          // concurrent DELETE-then-INSERT would each miss the other's inserts
+          // and merge into a union of both schedules (two bedtimes), and the
+          // overlap constraint cannot catch parts that do not overlap in time.
+          // Transaction-scoped: released on commit or rollback.
+          await q(`SELECT pg_advisory_xact_lock(hashtext('day_part:' || $1::text))`, [c.childId]);
           await q(`DELETE FROM day_part WHERE child_id = $1`, [c.childId]);
           for (const p of parts) {
             await q(
@@ -4208,8 +4250,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
 
   // G3 -- the child's time-zone TIMELINE. POST means "from this moment she is
   // in <tz>": it closes the interval that was open at that moment and opens a
-  // new one, so history (which receipts and past deliveries read) is never
-  // rewritten. The zone name is checked against the IANA database twice
+  // new one, so history is never rewritten. (Receipts do not read it after the
+  // fact: the zone and day-part are recorded when she opens a message,
+  // migration 0050, so even a back-dated move leaves an opened receipt alone.) The zone name is checked against the IANA database twice
   // (luxon here, olive_valid_tz() in the table's CHECK).
   const TZ_HISTORY_DAYS = 30, TZ_FUTURE_DAYS = 365;
   const tzView = (rows) => ({

@@ -159,6 +159,7 @@ const bedtimeAt = (startsInMin) => {
     .then((r) => check(g, `${name} -> 400 ${err}`, `${r.status}/${r.body.error}`, `400/${err}`));
   await bad('body is not an object with dayParts', { nope: 1 }, 'day_parts_required');
   await bad('dayParts is a string', { dayParts: 'bedtime' }, 'day_parts_required');
+  await bad('an EMPTY schedule would strand every queued message', { dayParts: [] }, 'day_parts_required');
   await bad('more than 24 parts', { dayParts: Array.from({ length: 25 }, () => good) }, 'day_parts_required');
   await bad('unknown kind', { dayParts: [{ ...good, kind: 'nap' }] }, 'bad_day_part_kind');
   await bad('kind is SQL', { dayParts: [{ ...good, kind: "bedtime'; DROP TABLE day_part;--" }] }, 'bad_day_part_kind');
@@ -436,6 +437,105 @@ let M1, ART1;
   await tick();
   const inbox = await call('GET', `/v1/children/${CHILD}/inbox`, childTok);
   check(g, 'her own reply never appears in her own inbox', inbox.body.entries.some((x) => x.id === reply.body.id), false);
+}
+
+// ===========================================================================
+// I . a receipt is fixed when she opens the message; schedule and zone edits
+//     (even a back-dated one) never re-word it
+// ===========================================================================
+{
+  const g = 'I receipts are fixed at open';
+  await admin.query(`DELETE FROM child_tz_interval WHERE child_id = $1`, [CHILD]);
+  check(g, 'bedtime is now', (await putParts(dadTok, [bedtimeAt(0)])).status, 200);
+  const sent = await send(CHILD, dadTok);
+  await tick();
+  check(g, 'delivered', (await dbRow(sent.body.id)).state, 'delivered');
+  check(g, 'she opens it', (await call('POST', `/v1/children/${CHILD}/inbox/${sent.body.id}/opened`, childTok)).status, 200);
+  const snap = (await admin.query(`SELECT opened_zone, opened_part FROM delivery_intent WHERE id = $1`, [sent.body.id])).rows[0];
+  check(g, 'the zone and day-part were recorded at that moment', `${snap.opened_zone}/${snap.opened_part}`, `${NY}/bedtime`);
+  const phrase = async () => (await call('GET', `/v1/children/${CHILD}/sent`, dadTok)).body.messages
+    .find((m) => m.id === sent.body.id).receipt.phrase;
+  const p0 = await phrase();
+  check(g, 'the receipt says it was at bedtime', p0.includes('at bedtime'), true);
+
+  check(g, 'bedtime is then moved to the other side of the day', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+  check(g, 'a schedule edit does not re-word the old receipt', await phrase(), p0);
+  check(g, 'she moves to Tokyo with a move dated ten days back (accepted)',
+    (await call('POST', `/v1/children/${CHILD}/tz-intervals`, dadTok,
+      { tz: 'Asia/Tokyo', effectiveFrom: DateTime.utc().minus({ days: 10 }).toISO() })).status, 201);
+  check(g, 'a back-dated zone move does not change the old receipt either', await phrase(), p0);
+
+  // a row opened before the snapshot existed (both NULL) is recomputed as it always was
+  await admin.query(`UPDATE delivery_intent SET opened_zone = NULL, opened_part = NULL WHERE id = $1`, [sent.body.id]);
+  const legacy = await phrase();
+  check(g, 'an un-snapshotted legacy row still yields a receipt phrase', /^Watched at \d{1,2}:\d{2} (AM|PM) her time/.test(legacy), true);
+  check(g, 'and that fallback follows the current zone (why the snapshot exists)', legacy === p0, false);
+  await admin.query(`DELETE FROM child_tz_interval WHERE child_id = $1`, [CHILD]);
+
+  // the child never sees the snapshot; the database refuses a half-written or invalid one
+  const inbox = await call('GET', `/v1/children/${CHILD}/inbox`, childTok);
+  check(g, 'the snapshot never reaches a child surface', JSON.stringify(inbox.body).match(/opened_zone|opened_part|Asia\/Tokyo/i), 'null');
+  const dbRefuses = async (sql, params) => admin.query(sql, params).then(() => 'accepted', (e) => e.code);
+  check(g, 'an unknown zone name is refused by the table', await dbRefuses(
+    `UPDATE delivery_intent SET opened_zone = 'Mars/Olympus' WHERE id = $1`, [sent.body.id]), '23514');
+  check(g, 'an unknown day-part kind is refused by the table', await dbRefuses(
+    `UPDATE delivery_intent SET opened_zone = $2, opened_part = 'nap' WHERE id = $1`, [sent.body.id, NY]), '23514');
+  check(g, 'a day-part without a zone is refused by the table', await dbRefuses(
+    `UPDATE delivery_intent SET opened_zone = NULL, opened_part = 'bedtime' WHERE id = $1`, [sent.body.id]), '23514');
+}
+
+// ===========================================================================
+// J . two guardians saving the schedule at once get exactly one of the two
+// ===========================================================================
+{
+  const g = 'J concurrent schedule saves';
+  const dad = [{ kind: 'bedtime', startsLocal: '20:00', endsLocal: '21:00', reachable: true },
+    { kind: 'dinner', startsLocal: '17:00', endsLocal: '18:00', reachable: true }];
+  const mom = [{ kind: 'bedtime', startsLocal: '22:00', endsLocal: '23:00', reachable: true },
+    { kind: 'school', startsLocal: '08:00', endsLocal: '15:00', reachable: false }];
+  const key = (parts) => parts.map((p) => `${p.kind}@${p.startsLocal}`).sort().join('|');
+  let bothOk = 0, exactlyOne = 0;
+  const ROUNDS = 8;
+  for (let i = 0; i < ROUNDS; i++) {
+    const [a, b] = await Promise.all([putParts(dadTok, dad), putParts(momTok, mom)]);
+    if (a.status === 200 && b.status === 200) bothOk++;
+    const final = (await call('GET', `/v1/children/${CHILD}/day-parts`, dadTok)).body.dayParts;
+    if ([key(dad), key(mom)].includes(key(final))) exactlyOne++;
+  }
+  check(g, `${ROUNDS} racing pairs: every save succeeded (serialized, not failed)`, bothOk, ROUNDS);
+  check(g, `${ROUNDS} racing pairs: the result was always exactly one guardian's schedule, never a union`, exactlyOne, ROUNDS);
+  check(g, 'and never two bedtimes', (await admin.query(
+    `SELECT count(*)::int n FROM day_part WHERE child_id = $1 AND kind = 'bedtime'`, [CHILD])).rows[0].n, 1);
+}
+
+// ===========================================================================
+// K . a stuck pending row does not make the worker log on every tick
+// ===========================================================================
+{
+  const g = 'K quiet ticks stay quiet';
+  const capture = async (fn) => {
+    const lines = []; const orig = [console.log, console.error];
+    console.log = (...a) => lines.push(a.join(' ')); console.error = (...a) => lines.push(a.join(' '));
+    try { await fn(); } finally { [console.log, console.error] = orig; }
+    return lines.filter((l) => l.includes('job=deliver'));
+  };
+  check(g, 'bedtime is hours away', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+  const sent = await send(CHILD, dadTok);
+  check(g, 'a message waits for it', sent.body.state, 'ready');
+  // the schedule vanishes (a data repair, not the API: an empty PUT is refused): the trigger
+  // resets the row to pending and it cannot be re-timed, so it stays pending
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  check(g, 'the queued row went back to pending', (await dbRow(sent.body.id)).state, 'pending');
+  const q1 = await capture(() => runNamedJob(pool, DATABASE_URL, 'deliver', undefined, { quiet: true }));
+  check(g, 'a tick that only re-scans the stuck row logs nothing', q1.length, 0);
+  const q2 = await capture(() => runNamedJob(pool, DATABASE_URL, 'deliver', undefined, { quiet: true }));
+  check(g, 'and neither does the next', q2.length, 0);
+  check(g, 'the row is still waiting (nothing was lost)', (await dbRow(sent.body.id)).state, 'pending');
+  // once a schedule exists again the same row is re-timed: that tick did something, so it is logged
+  check(g, 'a schedule is defined again', (await putParts(dadTok, [bedtimeAt(0)])).status, 200);
+  const busy = await capture(() => runNamedJob(pool, DATABASE_URL, 'deliver', undefined, { quiet: true }));
+  check(g, 'a tick that re-timed and delivered it logs one line', busy.filter((l) => l.includes('event=end')).length, 1);
+  check(g, 'and it was delivered', (await dbRow(sent.body.id)).state, 'delivered');
 }
 
 function report() {

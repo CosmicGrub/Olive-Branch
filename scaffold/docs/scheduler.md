@@ -57,7 +57,10 @@ Each tick (default every 30 seconds, `DELIVERY_TICK_MS`, floor 5 seconds):
 A message sent while a bedtime exists is stored `ready` with its delivery time
 at send time, so the worker delivers it the moment it is due rather than
 waiting for the nightly sweep. A quiet tick logs nothing; a tick that delivered,
-expired, scanned or failed logs one line (`docker compose logs delivery`).
+expired, re-timed, hit the scan batch limit or failed logs one line
+(`docker compose logs delivery`). Rows that merely stay pending (for example a
+child with no bedtime defined yet) are re-scanned silently each tick and do not
+make a tick "busy".
 A failing step does not stop the next: a stuck rematerialize never blocks
 delivery of rows that are already ready.
 

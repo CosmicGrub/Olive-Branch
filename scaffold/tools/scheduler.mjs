@@ -774,10 +774,16 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
   if (jobName === 'deliver') {
     const r = lockResult.result;
     const ok = r.errors.length === 0;
-    // A quiet tick (nothing delivered, nothing expired, nothing scanned) is the
-    // normal state of a deployment between messages and runs every ~30 s, so
-    // it is not logged -- only ticks that did something, or failed, are.
-    const busy = r.delivered > 0 || r.expired > 0 || (r.rematerialized?.scanned ?? 0) > 0;
+    // A quiet tick is the normal state of a deployment between messages and
+    // runs every ~30 s, so it is not logged -- only ticks that did something,
+    // or failed, are. "Did something" is a CHANGE (delivered, expired, re-timed,
+    // errored), never "looked at": rows that stay pending (no bedtime defined
+    // yet, an on-event row whose event has not happened) are re-scanned every
+    // tick and would otherwise log every tick until they expire. A scan that
+    // hit its batch limit is logged: a backlog that large is worth a line.
+    const rm = r.rematerialized ?? {};
+    const busy = r.delivered > 0 || r.expired > 0 || (rm.materialized ?? 0) > 0 ||
+      (rm.expired ?? 0) > 0 || (rm.errored ?? 0) > 0 || rm.batchLimitHit === true;
     if (busy || !ok) {
       (ok ? logLine : errLine)({
         event: 'end', job: jobName, status: ok ? 'ok' : 'failed', duration_ms: durationMs,
