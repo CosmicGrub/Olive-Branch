@@ -6778,7 +6778,7 @@ drift. Nothing is written that is not in it.
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
-| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
+| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds, and which welcome requests that grown-up asked to see again later and when (a reminder, never an answer). A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
 | `guardian.local-guardian.trust` | On a grown-up's device: which child devices it added and when it last met them, the keys it stopped or forgot, and the plain-language, hash-chained history (added, paused, stopped, forgot). | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
@@ -9571,9 +9571,29 @@ A synthetic multi-family harness, `scaffold/tools/family-sim/` (operator guide `
 - **CI.** `tools/family-sim/test/isolation_ci.test.mjs` (three families, a short flow, isolation probes only, real Postgres and RLS through the in-process Api) runs in `tools/verify.sh`. The large run stays manual.
 - **What it cannot prove.** One process, one machine, loopback only; no real network, TLS, proxy or horizontal scale; compressed single-day schedules only (no DST, no midnight wrap); call and relay checks cover authorisation, not media; sign-in is the dev shortcut, not the passkey ceremony.
 
-## §8.28 Village welcome: adults approving new adults (PLANNED, NOT BUILT)
+## §8.28 Village welcome: adults approving new adults (PARTLY BUILT, headless; NOT REACHABLE FROM THE APP)
 
-**Nothing in this section is built.** It records an owner direction (2026-11-14, "go with your recommendations") so the
+**What is built (headless, tested, not reachable from the running app) and what is not.** Built: the ledger rules for a
+welcome request (§8.5.12: the `member.add` proposal, the electorate, the all-parents floor, silence never a yes, the
+profile table), and now the adult side of asking and answering: `client/lib/welcome_logic.dart` (the service: sign a
+request, sign a yes or a no, list the requests waiting for this parent and the ones this parent sent, "ask me later",
+"yes to something smaller", the limits on asking, and every sentence in adult words) and `client/lib/welcome_screens.dart`
+(**Welcome someone** with its three choices, **How much can they do?**, **Your village** with who has answered in plain
+words, and the **Welcome request** with Yes, Not this time, Ask me later and Yes to something smaller). Every yes, every
+request and every cancel asks for the PIN first. The Adults and helpers screen shows a **Welcome someone** row only when a
+host passes `onWelcome`; **nothing does**, because the family ledger is not wired into pairing (§8.5.12), so the running
+app still shows only the "Invite a co-parent (preview)" row. "Ask me later" is kept on the device under the key
+`welcomeasks` inside the sealed `familyledger` area (§8.16.4): at most three put-offs of 24 hours and two quiet reminders,
+and it signs and sends nothing, so the person who asked cannot tell. The limits on asking (one open request, three in 30
+days, a 7 day wait after a no for the same phone at the same or a wider level, where "smaller" means it gives less on at least one count: a lower level, fewer switches, fewer children, a shorter time or an earlier end, so asking for the same visit again, or the same window moved later, still waits) are checked on the asking phone only; the
+reduce rule does not count them, so a modified phone could ask more. A request, an answer, a cancel or a "yes to something smaller" either happens in full or not at all: if the phone cannot save, the lists in memory are put back, the parent is told in plain words that nothing was changed, and no half-made request or stray "no" is left to be written by a later save. "Ask me later" can be asked only for a request that is waiting for that parent's answer, a put-off is dropped once its request is no longer open, and resetting the family record on a device also removes `welcomeasks`. **Parent with limits (an unresolved tension, not a fix):** the welcome screen and service keep the two switches that bundle seeing with doing (see and add expenses, write care notes and log a dose) on for every parent-level welcome, offering to limit only what a parent does (pair a device, start a welcome); the ledger's own profile table (§8.5.12) still lets those two be off, so §2.6 and the village design are not yet reconciled at the ledger level (`GAP-REGISTER.md` G-35). The "Who has to agree" box says only what is built: pausing a carer and an instant notice to the other parents are **not built**, so the screen does not promise them. **Not built:** the in-person meet that gives the new
+person's phone (the new phone's own name, and the new person's yes on their phone), the settle-in and "Welcome with
+limits" cards, pause, resume and end, the limits agreement and its 24 hour think-it-over, Standing OK, the 72 hour hold
+for a family of one parent (the screen says "your yes is the whole vote" and does not claim a hold), the "Who must agree"
+settings screen, the family history screen as a separate page, the child-side release, and server mode. The three
+dependants below are unchanged.
+
+It records an owner direction (2026-11-14, "go with your recommendations") so the
 spec and the code do not drift; the detail lives in `docs/planning/VILLAGE-WELCOME-DESIGN.md` (design, edge cases, test
 plan, build order W1 to W11), `docs/planning/FAMILY-IDENTITY-DESIGN.md` (the family object it needs) and
 `docs/planning/GAP-REGISTER.md` (every gap and gate). The name "Village" is already suite D (§8.22); the verb is
@@ -9612,8 +9632,8 @@ uses for them, through the existing label rules (§8.5.7); background roles neve
 hold that no child file mentions any of this. P3, P6, P7 and P11 stand unchanged: no location, no expense surface for a
 child, no access to the journal, no remote control.
 
-**What it depends on.** A real family object (§22.2 "Simple pairing: what is left" says a second grown-up's phone is
-still a separate pairing). Until then: no member kinds, no proposals, no profiles, no limits, no time boxes, no pause.
+**What it depends on.** A real family object wired into pairing (§22.2 "Simple pairing: what is left" says a second grown-up's phone is
+still a separate pairing). Until then the ledger rules and the welcome screens above exist and are tested but nothing in the app creates a request; limits, time boxes and pause have no effect.
 **Gates before real families:** external cryptographic review of the key exchange and the family ledger, a real
 two-device run, and a usability read of the wording with real parents. No lawyer has read the limits agreement; the
 app cannot verify guardianship and an agreement signed in it is not a legal instrument.
