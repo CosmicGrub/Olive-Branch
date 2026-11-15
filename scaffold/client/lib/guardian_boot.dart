@@ -38,6 +38,8 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'device_identity.dart';
 import 'device_role.dart';
+import 'family_account_entry.dart';
+import 'family_account_store.dart';
 import 'guardian_home_live.dart';
 import 'app_lock.dart';
 import 'screen_share_ui.dart';
@@ -83,10 +85,10 @@ void _returnToPairing() {
 /// The theme half of session bootstrap — same fail-closed discipline as main_live.dart's
 /// `_fetchInitialTheme`: any failure resolves to [defaultAppTheme], never a thrown
 /// exception before the first frame.
-Future<AppTheme> _fetchInitialTheme(String guardianId) async {
+Future<AppTheme> _fetchInitialTheme(String guardianId, String childId) async {
   try {
     final api = await apiFor(kLiveBaseUrl, userId: guardianId);
-    final wire = await api.fetchTheme(kLiveChildId);
+    final wire = await api.fetchTheme(childId);
     api.close();
     return AppTheme.fromWire(wire['theme'] as Map<String, dynamic>?);
   } on DeviceRevokedException {
@@ -156,7 +158,8 @@ Future<void> bootLiveGuardian({required String guardianId, required AuthSession 
   // connecting.
   await _openLocalStorage(guardianId);
   final GuardianLocalServices local = GuardianLocalServices.from(LocalServices.current);
-  final initialTheme = await _fetchInitialTheme(guardianId);
+  final String childId = await _liveChildId();
+  final initialTheme = await _fetchInitialTheme(guardianId, childId);
   final bool? serverHasPin = await _fetchServerHasPin(guardianId);
   final bool localPinSet = await _safe(local.pin.isSet, false);
   final GuardianEntry entry = resolveGuardianEntry(serverHasPin: serverHasPin, localPinSet: localPinSet);
@@ -170,6 +173,7 @@ Future<void> bootLiveGuardian({required String guardianId, required AuthSession 
   runApp(OliveLiveGuardian(
     initialTheme: initialTheme,
     guardianId: guardianId,
+    childId: childId,
     session: session,
     hasPin: entry != GuardianEntry.serverPinSetup,
     entry: entry,
@@ -207,6 +211,15 @@ Future<void> completeGuardianRedeem(Map<String, dynamic> result) async {
     targetId: result['targetId'] as String,
     deviceCredential: result['deviceCredential'] as String?,
   );
+  // A different grown-up replacing the stored sign-in must not inherit the previous account's child or half-finished
+  // join. The same grown-up connecting again keeps both.
+  DeviceIdentity? previous;
+  try {
+    previous = await DeviceIdentityStore().load();
+  } catch (_) {
+    previous = null;
+  }
+  if (previous != null && previous.targetId != identity.targetId) await forgetAccountOnThisPhone();
   await DeviceIdentityStore().save(identity);
   await bootLiveGuardian(guardianId: identity.targetId, session: _deviceSession(identity));
 }
@@ -221,7 +234,7 @@ Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) asyn
   final bool pinSet = await _safe(local.pin.isSet, false);
   if (family != null && pinSet) {
     final GuardianLocalController controller =
-        GuardianLocalController(local, family: family, onConnect: _openConnect);
+        GuardianLocalController(local, family: family, onConnect: _openConnect, onAccount: _openAccount);
     runApp(OliveLocalGuardian(initialTheme: defaultAppTheme, controller: controller));
     return;
   }
@@ -240,6 +253,20 @@ void _openConnect(BuildContext context) {
     ),
   ));
 }
+
+/// Settings > Account > Family account: the optional account page (make an account, sign in, add a child, invite another
+/// grown-up). Everything on this phone keeps working whatever happens there.
+void _openAccount(BuildContext context) => openFamilyAccount(context,
+    baseUrl: kLiveBaseUrl, onCodeRedeemed: completeGuardianRedeem);
+
+/// The child the connected shell looks at. A development build names one; otherwise it is the child added to this
+/// phone's account; otherwise the seeded default (which is the case for a phone paired with a code, whose child is
+/// not known to the build).
+Future<String> _liveChildId() => resolveLiveChildId(
+      fallback: kLiveChildId,
+      buildNamesChild: kHasChildIdDartDefine,
+      record: accountRecordStoreFor(LocalServices.current),
+    );
 
 /// The pairing screen alone, for a device that was connected and has been cut off and has no
 /// local family to fall back to.
@@ -324,12 +351,16 @@ Widget _guardianApp({
 class OliveLiveGuardian extends StatefulWidget {
   const OliveLiveGuardian({super.key, this.initialTheme = defaultAppTheme,
     required this.guardianId, required this.session, required this.hasPin,
-    this.entry, this.local});
+    this.entry, this.local, this.childId});
   final AppTheme initialTheme;
 
   /// Resolved BEFORE this widget is constructed — either the dart-define value, or a
   /// redeemed/stored identity's own targetId.
   final String guardianId;
+
+  /// The child this shell looks at: the one named by the build, else the one added to this phone's account
+  /// ([resolveLiveChildId]). Null means the seeded default [kLiveChildId] (widget tests, older callers).
+  final String? childId;
 
   /// The installed [AuthSession] ([bootLiveGuardian] installs it process-wide BEFORE
   /// constructing this widget) — real for a paired device and for the explicit dev path; null
@@ -369,7 +400,7 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
         return LiveGuardianHomeScreen(
           baseUrl: kLiveBaseUrl,
           guardianId: widget.guardianId,
-          childId: kLiveChildId,
+          childId: widget.childId ?? kLiveChildId,
         );
       case GuardianEntry.serverPinSetup:
         return GuardianSetupScreen(

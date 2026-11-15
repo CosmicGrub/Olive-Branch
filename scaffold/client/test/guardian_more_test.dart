@@ -16,12 +16,14 @@ import 'package:olive_client/emergency_card.dart';
 import 'package:olive_client/exchange_screen.dart';
 import 'package:olive_client/expenses_screen.dart';
 import 'package:olive_client/family_agreement_screen.dart';
+import 'package:olive_client/family_account_store.dart';
 import 'package:olive_client/game_picker.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/invitation_screen.dart';
 import 'package:olive_client/guardian_setup.dart';
 import 'package:olive_client/handover_notes.dart';
 import 'package:olive_client/live_game_picker.dart';
+import 'package:olive_client/local_services.dart' show LocalServices;
 import 'package:olive_client/meds_care.dart';
 import 'package:olive_client/adults_helpers_screen.dart';
 
@@ -613,6 +615,24 @@ void main() {
       // the same posture as _endRealCall's own established one. If that
       // catch were ever removed or narrowed, this is what would catch it:
       // a leaked exception here, not just a stuck screen.
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('signing out also forgets the account note on this phone, so the next grown-up does not open on this '
+        "one's child", (t) async {
+      LocalServices.resetForTest();
+      addTearDown(LocalServices.resetForTest);
+      final AccountRecordStore rec = accountRecordStoreFor(LocalServices.current);
+      await rec.save(AccountRecord(
+          stage: AccountStage.childAdded, childId: '3f2a9c1e-4b7d-4c1a-9e3f-0a1b2c3d4e5f', at: DateTime.utc(2026)));
+      await pumpPushed(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final signOutTile = find.text('Sign out');
+      await t.ensureVisible(signOutTile);
+      await t.pumpAndSettle();
+      await t.tap(signOutTile);
+      await t.pumpAndSettle();
+      expect(await rec.load(), isNull);
+      expect(find.text('root screen'), findsOneWidget);
       expect(t.takeException(), isNull);
     });
 

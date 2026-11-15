@@ -94,13 +94,17 @@ ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
 /// optional "connect this device" action.
 class GuardianLocalController extends ChangeNotifier {
   // ignore: prefer_initializing_formals
-  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect}) : _family = family;
+  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount}) : _family = family;
 
   final GuardianLocalServices services;
 
   /// Opens the connect step. Null when this device is already connected, or when the
   /// build has no server to connect to.
   final void Function(BuildContext context)? onConnect;
+
+  /// Opens the optional family account page (make an account, sign in, add a child, invite another grown-up). Null
+  /// when the build has no server to reach. A phone with no account is the normal phone: nothing waits on this.
+  final void Function(BuildContext context)? onAccount;
 
   LocalFamily? _family;
   LocalFamily? get family => _family;
