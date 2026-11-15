@@ -7,9 +7,11 @@
 #  Restores a `pg_dump -Fc` archive into a TARGET database that must already
 #  exist and already be reachable — this script creates dumps' worth of
 #  objects, never databases or roles. `--clean --if-exists` means the target
-#  does not need to be empty first: existing objects are dropped and
-#  recreated, so restoring twice in a row (or restoring on top of a partially
-#  broken database) is safe. `--no-owner` + `--role` reassigns everything to
+#  does not need to be empty first: objects that are IN the dump are dropped
+#  and recreated, so restoring twice in a row is safe. Objects the dump does
+#  not contain are left alone, so this is NOT a rollback of a database whose
+#  schema has moved forward since the dump: restore into a freshly created
+#  database for that (docs/backup-and-restore.md, "Restore from a backup"). `--no-owner` + `--role` reassigns everything to
 #  one role explicitly rather than trusting the dump's recorded owner to
 #  still exist/match on the target — the same app_owner-not-postgres
 #  discipline tools/docker-dev/init-db.sql documents for migrations applies

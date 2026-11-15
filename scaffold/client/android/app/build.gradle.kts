@@ -70,7 +70,7 @@ android {
         // Verified against this repo's own pinned toolchain, not assumed:
         // Flutter 3.44.8 (the exact version CI pins in
         // .github/workflows/verify.yml and the exact version installed at
-        // C:/Users/Obliv/flutter on this machine) sets
+        // <flutter sdk> on this machine) sets
         // FlutterExtension.targetSdkVersion = 36
         // (packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt),
         // so this is a no-op today -- both modules already resolve to 36 --

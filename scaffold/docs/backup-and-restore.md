@@ -161,9 +161,16 @@ PG_RESTORE_CMD="docker exec -i <prod-db-container> pg_restore -U postgres" \
   bash tools/restore-db.sh <dump-file> <target-db-name>
 ```
 
-`--clean --if-exists` means the target does not need to be empty first —
-restoring on top of a partially broken database is safe, not just restoring
-into a fresh one. `--no-owner --role=app_owner` (both scripted in already)
+`--clean --if-exists` means the target does not need to be empty first, but
+it only drops objects that are IN the dump. Restoring over a database that
+has since gained objects the dump does not know (a later migration's tables,
+functions, columns or constraints) does not roll it back: those objects stay,
+a table that depends on one of them cannot be dropped, and the result is a
+half-restored database that is not the backup. To go back to an older dump
+after the schema has moved forward, restore into a freshly created database:
+with everything that connects stopped, as `postgres` terminate the
+connections, `DROP DATABASE` and `CREATE DATABASE ... OWNER app_owner`, then
+run the restore, and list the tables afterwards to confirm. `--no-owner --role=app_owner` (both scripted in already)
 means every restored object ends up owned by `app_owner` regardless of
 which role the connection itself used, so the server's normal connection
 keeps working immediately afterward with no manual `ALTER TABLE ... OWNER
