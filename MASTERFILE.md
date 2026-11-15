@@ -5337,6 +5337,79 @@ short PIN. A device on the same Wi-Fi can burn a window's five attempts (denial 
 online relay of windows through the server is **not
 built**; the server pairing routes are unchanged and still work. No device has run this yet.
 
+### 8.5.12 The family ledger: one family across several devices (foundation; built and headless-tested; **not used by anything yet**)
+
+Owner request 2026-11-14 (design: `docs/planning/FAMILY-IDENTITY-DESIGN.md` and `docs/planning/VILLAGE-WELCOME-DESIGN.md`).
+Today a "family" on a device is only the string `local-<fingerprint>` computed from whichever grown-up phone opens the
+pairing window, so a tablet connected by one parent is a stranger to the other parent's phone. This section is the first
+three build steps of the identity design: **the pure logic and the stored state, with no screen and no change to how
+pairing behaves.** Every client file keeps the UNVERIFIED header; nothing here has run on a device.
+
+**Built (`client/lib/family_*.dart`, tests `client/test/family_*_test.dart`).**
+- **A signed, append-only ledger** (`family_ledger.dart`, `family_ledger_state.dart`). A family is a random 128-bit id plus the
+  hash of its signed genesis entry (both pinned; a second genesis with the same id is ignored). Entries are signed by an
+  Ed25519 device key, hash-linked to the entries they follow, in one canonical byte encoding that an independent Node
+  implementation reproduces byte for byte (`tools/family_ledger.mjs`, `client/test/vectors/family_ledger_vectors.json`).
+  Entry types: `genesis`, `member.add` (a grown-up or a carer, with tier, preset, capabilities, children, time box and a
+  proposal with its electorate, rule and expiry), `device.add` (a child device, a grown-up's extra phone, or a legacy tablet),
+  `device.revoke` and its cancel, `guardian.leave`, `guardian.remove`, `policy.set`, `key.rotate`. Six more are **reserved**
+  (valid and recorded, no effect): `access.pause`, `access.resume`, `access.end`, `limits.agree`, `limits.tighten`,
+  `standing.ok`.
+- **Approvals are separate signed votes** that name one entry by its hash, so a yes cannot be replayed onto another entry,
+  position or proposal. Silence is never yes: an unanswered request lapses at its expiry and a late yes is ignored. Any
+  no from a required person (or the candidate, or the proposer's withdrawal) ends the proposal for good, **but only if it
+  is dated before the last required yes: once an approval is complete it is final, and a later no or withdrawal changes
+  nothing** (taking a grown-up out is `guardian.remove`, which needs that grown-up's own yes).
+- **The rules, tested on hostile input:** a forked ledger is reported and never silently resolved; removal beats a
+  concurrent add (what a revoked phone did on another branch is void, a mutual revoke voids both, a device key claimed twice
+  goes to the earlier claim); a wrong signer, a child key or a carer key can never sign an entry; a pending person holds
+  nothing (no listed key, no authority, no wrapped key); loosening a family rule needs the other grown-ups while the rule is
+  "all", tightening needs nobody, and no entry can express a rule below the floor; **a new parent (with or without limits)
+  needs ALL existing parents whatever the family's own setting says**; a new phone settles in and cannot shape the family
+  until it has; another grown-up's phone is revoked only after a visible 72 hour notice its owner can cancel; one grown-up
+  cannot remove the other without their yes; a revoked key or a departed person can never be added back.
+- **The permission table** of the village design as data (`family_profiles.dart`): tiers, six presets, C1 to C13, fixed versus
+  settable cells, reach computed (Look, Act, Parent), proposal lifetimes. A cell test is generated from the table.
+- **Two keys on purpose** (`family_keys.dart`): the family key (every device including a child's) and the grown-up-only key
+  (grown-up devices only). A child device's keyring cannot store the grown-up-only key, the sealed store refuses it and drops
+  one found on load, and a key rotation never wraps it to a non-grown-up's device. A key reaches one device as an X25519 +
+  HKDF + ChaCha20-Poly1305 wrap whose associated data binds family, epoch, kind and recipient; each device's agreement key
+  is certified by its own signing key so no one can substitute theirs.
+- **Founding and migration** (`family_state.dart`): a family can be founded on a grown-up's device, and an existing
+  `local-<fingerprint>` family can be carried into a ledger without changing pairing: the genesis records the old id, each
+  paired tablet becomes a flagged `device.add` with its original issue time, and every version-1 certificate is still
+  recognised (`acceptsLegacyCert`), a tampered family id or another key's signature is not. It only reads the paired-tablets
+  list. Stored in the new sealed area `familyledger` (§8.16.4).
+- **The pure parts of pairing channel v2** (`family_channel_v2.dart`): the identifier that binds the family, mode and ledger
+  head into the PAKE, a per-window family commitment (nothing stable names the family on the Wi-Fi), the member claim, a
+  member's silent refusal of a foreign window, the post-join key-confirmation tag, and the version rules.
+
+**Not built (read this before saying "families work across phones").**
+- **Nothing is wired.** The live pairing flow, the connect screens, onboarding and every screen are unchanged and do not call
+  any of this: `connect_child_screen.dart` still computes `local-<fingerprint>`, the PAKE channel identifier still carries the
+  family id in the clear, a tablet still pins exactly one grown-up key, and no device has founded a ledger. A child device does
+  not hold the ledger yet, and a tablet connected by one parent is still a stranger to the other parent's phone.
+- Identity steps 4 to 10 and the village steps W2 to W11: a tablet that trusts every grown-up in the ledger and the in-place
+  upgrade of version-1 tablets; the second-grown-up join (window, one-time code, role choice, offline approval travelling by
+  gossip); the combined device list, forgetting, leaving and revoking screens and the plain sentence for a fork with its
+  one-tap accept; rekey on contact and the "not yet updated" list; the Welcome screens, profile picker, rate limits and
+  cooldown, the 72 hour hold for a family of one, pause, resume, end, limits agreements, standing OK, time-box enforcement;
+  the Helper page (it has no key and is never a ledger member); narrowing a limited parent's voice on Look-reach welcomes.
+- **No server side.** No family table, tenant lock, routes, sync or countersignature (identity steps 8 and 9). No server
+  migration was needed or written. Question 5 (who decides who is a guardian in server mode) is still open.
+- **The merge rule is provisional** (design section 11): a first model, hostile-tested, not fuzzed or mutation-tested at
+  scale. Times are the signers' own claims checked against the verifying device's clock; a stolen phone can claim a time
+  inside a notice window. **Known limit: a revoke is not final against someone who still holds the revoked key.** That
+  key can sign with a claimed time between the revoke and its effective time, naming the revoke as its parent, and the
+  reducer cannot tell it from an honest entry (it has no record of when an entry reached the device). Closing it needs a
+  receipt time or a witness, which is not built; until then, treat a lost phone as compromised for the notice period.
+- **Sizes and defaults are recommendations awaiting the owner:** 6 grown-ups, 12 child devices, 8 carers, 4 phones per
+  grown-up, a 72 hour notice, a 24 hour settle-in, "all" as the default for carers who can act. The limits are applied
+  where an entry takes effect (in the one canonical order), so proposing many before any is accepted cannot pass them.
+  Where several entries race for the last place on different branches, the later one in canonical order is the one skipped.
+- **NEEDS EXTERNAL CRYPTOGRAPHIC REVIEW BEFORE FAMILIES RELY ON IT** (decision D2, now covering the ledger, the wraps and
+  channel v2). No device, network or real two-phone behaviour has been checked.
+
 ## §8.6 Her colour
 
 She picks a colour. It is hers, it appears in the app, and her father can see it.
@@ -6617,6 +6690,7 @@ drift. Nothing is written that is not in it.
 | `device.childpairing` | On a child's device: the certificate a grown-up's device signed (which child, which family), that grown-up's public key and first name, and the child's first name. No PIN. | **Yes** |
 | `device.adultunlock` | On a child's device: a salted slow hash of the grown-up's PIN (so a grown-up can type it there) and the count toward a 15 minute lock. Never the PIN; a child cannot create or change it. | **Yes** |
 | `guardian.local-guardian.pairedkids` | On a grown-up's device: the child devices it approved (certificate id, device name, date), so one can be forgotten. | **Yes** |
+| `guardian.local-guardian.familyledger` | On a grown-up's device: the family's signed ledger of which grown-ups and which child devices belong (public keys and typed names, no PIN), the votes on pending changes, and the two family keys that device holds. A child device never holds the grown-ups-only key. Nothing is uploaded; **not used by the app yet** (see the "not built" list under §8.5.12). | **Yes** |
 | `child.pending-device.onboarding` | The welcome answers she gave before the device was connected (§8.5.6): name, age, whether the age was locked (§8.5.10), a boy-or-girl tap, colour, birthday month and day, each optional, and that the questions are finished. Deleted once the server has them or already had its own. No score or count. | No |
 | `device.role` | Who is using this device (§8.5.8): one word, kid, mom, dad or other. Not a name, not personal data; the only area not owned by a child or a grown-up. A wipe removes it and the device asks again. | No |
 | `guardian.local-guardian.localfamily` | The family a grown-up set up on the device with no server (§8.5.9): their name and label, her first name, age (locked) and home time zone. Never uploaded. | **Yes** |
@@ -8147,7 +8221,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **43 areas, 23 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **44 areas, 24 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
 
 ### 22.2 Not built yet
 
