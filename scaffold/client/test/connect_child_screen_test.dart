@@ -80,6 +80,10 @@ void main() {
       },
     )));
 
+    // The instructions describe what actually happens: a nameless picture to tap, not letters to read out.
+    expect(find.textContaining('This phone will then show a picture'), findsOneWidget);
+    expect(find.textContaining('tap the same picture'), findsOneWidget);
+    expect(find.textContaining('letters'), findsNothing);
     await t.enterText(find.byKey(const Key('connectPinField')), '1111');
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectMessage')), findsOneWidget);
@@ -91,6 +95,8 @@ void main() {
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
     expect(find.byKey(const Key('connectLabel')), findsNothing, reason: 'no letters to read out: the child picks a picture');
+    expect(find.textContaining('tap the picture shown here'), findsOneWidget);
+    expect(find.textContaining('letters'), findsNothing);
     expect(opened!.label, isIn(<String>['Player one', 'Player two']));
     expect(opened!.qrPayload(), isNotNull);
 
@@ -101,6 +107,7 @@ void main() {
     await _settle(t);
     // Match first: four sets, the grown-up picks the one on the child's device. Approve is not even offered yet.
     expect(find.byKey(const Key('connectMatchStep')), findsOneWidget);
+    expect(find.textContaining('three pictures and a colour'), findsOneWidget);
     expect(find.byKey(const Key('connectApprove')), findsNothing);
     await t.tap(find.byKey(Key('connectMatch_${opened!.matchChoices!.correct}')));
     await t.pump();
@@ -149,7 +156,7 @@ void main() {
 
   testWidgets('child screen end to end: pick the nameless window, type the PIN, match shown, paired', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
-    final AdultWindow w = await t.runAsync(() => AdultWindow.open(
+    final AdultWindow w = await t.runAsync(() => AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap)) as AdultWindow;
     w.addListener(() async {
       if (w.state == WindowState.awaitingApproval) await w.approve();
@@ -167,6 +174,7 @@ void main() {
     await t.tap(find.byKey(const Key('adultGateGrownUp')));
     await _settle(t);
     expect(find.byKey(const Key('childConnectWhich')), findsOneWidget);
+    expect(find.textContaining('then tap the same picture here'), findsOneWidget, reason: 'the first-run instruction matches the nameless picture tile');
     finder.emit(NearbyWindow(label: w.label, handle: w.discoveryHandle, host: 'x', port: 1));
     await _settle(t);
     // Nothing identifying is listed: a nameless picture tile, never a name, a label or a session id.
@@ -186,7 +194,7 @@ void main() {
 
   testWidgets('child screen: a wrong PIN ends on a calm try-again, with no error words and no counts', (t) async {
     final DeviceKey ak = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
-    final AdultWindow w = await t.runAsync(() => AdultWindow.open(
+    final AdultWindow w = await t.runAsync(() => AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap)) as AdultWindow;
     final _FakeFinder finder = _FakeFinder();
     bool paired = false;

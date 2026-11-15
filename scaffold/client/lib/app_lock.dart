@@ -33,6 +33,7 @@ import 'package:flutter/services.dart';
 import 'local_pin.dart';
 import 'local_services.dart';
 import 'local_store.dart';
+import 'olive_tokens.dart' show kBodyFont;
 
 /// How long a grown-up can be away before the app asks for the PIN again.
 enum AppLockDelay {
@@ -297,13 +298,27 @@ class _AppLockGuardState extends State<AppLockGuard> {
               // Overlay for its selection handles (tapping the PIN field threw "Null check operator" on a real device), so
               // each cover brings its own.
               if (c.hidden)
-                Positioned.fill(child: _ownOverlay(QuickHideCover(controller: c)))
+                Positioned.fill(child: _ownOverlay(_coverTheme(context, QuickHideCover(controller: c))))
               else if (c.locked)
-                Positioned.fill(child: _ownOverlay(AppLockScreen(controller: c))),
+                Positioned.fill(child: _ownOverlay(_coverTheme(context, AppLockScreen(controller: c)))),
             ]);
           },
         ),
       );
+}
+
+/// The covers sit above the app's own screens (and above the AnimatedTheme the screens are wrapped in), so they
+/// would otherwise draw in the system font. This gives them the app theme's colours and Atkinson Hyperlegible, the
+/// same face as everywhere else. [kBodyFont] is bundled in assets/fonts, so no network is involved.
+Widget _coverTheme(BuildContext context, Widget cover) {
+  final ThemeData base = Theme.of(context);
+  return Theme(
+    data: base.copyWith(
+      textTheme: base.textTheme.apply(fontFamily: kBodyFont),
+      primaryTextTheme: base.primaryTextTheme.apply(fontFamily: kBodyFont),
+    ),
+    child: cover,
+  );
 }
 
 Widget _ownOverlay(Widget cover) => Overlay(initialEntries: <OverlayEntry>[OverlayEntry(builder: (BuildContext _) => cover)]);

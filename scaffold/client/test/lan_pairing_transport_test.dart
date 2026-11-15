@@ -32,7 +32,7 @@ void main() {
   test('a full pairing over a real local HTTP hop; a non-LAN source gets nothing', () async {
     final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
     final DeviceKey ck = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-    final AdultWindow w = await AdultWindow.open(
+    final AdultWindow w = await AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
     w.addListener(() async {
       if (w.state == WindowState.awaitingApproval) await w.approve();
@@ -54,7 +54,7 @@ void main() {
 
   test('garbage, wrong paths and oversized bodies get no answer', () async {
     final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-    final AdultWindow w = await AdultWindow.open(
+    final AdultWindow w = await AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
     final LanPairingHost host = LanPairingHost(w, allowLoopback: true);
     await host.start(advertise: false);
@@ -74,7 +74,7 @@ void main() {
   group('the advertisement is neutral', () {
     test('it carries a generic type, a neutral seat name and a random handle: no adult name, no session id, no fingerprint', () async {
       final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-      final AdultWindow w = await AdultWindow.open(
+      final AdultWindow w = await AdultWindow.open(requireMatch: false,
           adultKey: ak, adultName: 'Margaret Okafor', familyId: 'the-okafor-family', childId: 'c', childName: 'Ivy',
           pin: '4829', makeUnlockVerifier: _cheap);
       final LanPairingHost host = LanPairingHost(w);
@@ -100,7 +100,7 @@ void main() {
 
     test('two windows for the same adult advertise nothing in common', () async {
       final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-      Future<AdultWindow> open() => AdultWindow.open(
+      Future<AdultWindow> open() => AdultWindow.open(requireMatch: false,
           adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
       final AdultWindow a = await open(), b = await open();
       final s1 = LanPairingHost(a).advertisedService(1, await a.windowTag());
@@ -134,7 +134,7 @@ void main() {
     test('a full pairing over a real local HTTP hop that starts from the handle alone', () async {
       final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
       final DeviceKey ck = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-      final AdultWindow w = await AdultWindow.open(
+      final AdultWindow w = await AdultWindow.open(requireMatch: false,
           adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
       w.addListener(() async {
         if (w.state == WindowState.awaitingApproval) await w.approve();
@@ -172,7 +172,7 @@ void main() {
   test('the host hands the window the real source: one address cannot burn the five confirmations over HTTP', () async {
     final DeviceKey ak = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
     final DeviceKey ck = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
-    final AdultWindow w = await AdultWindow.open(
+    final AdultWindow w = await AdultWindow.open(requireMatch: false,
         adultKey: ak, adultName: 'Mom', familyId: 'f', childId: 'c', childName: 'Ivy', pin: '4829', makeUnlockVerifier: _cheap);
     final LanPairingHost host = LanPairingHost(w, allowLoopback: true);
     await host.start(advertise: false);
