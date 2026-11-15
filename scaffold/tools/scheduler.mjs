@@ -47,11 +47,14 @@
  *   - Does not touch `materialize.ts`'s or `health-alert.mjs`'s own logic.
  *     Both are called exactly as they already exist.
  *   - Does not call `claim_due_intents()` or `expire_stale_intents()`
- *     (`db/migrations/0002_delivery_sweep.sql`) — those are a SEPARATE,
- *     still-open gap (a real delivery/send worker that actually pushes a
- *     `ready` intent to a device, and a retention-expiry sweep), not named by
- *     either of the two disclosed gaps this file was asked to close. Wiring
- *     either in is real, scoped future work, not silently folded in here.
+ *     (`db/migrations/0002_delivery_sweep.sql`). The caller of those two is
+ *     `server/delivery_tick.mjs` (server audit G1), which runs INSIDE the server
+ *     process every 15 s, reuses `runRematerializeSweep` below, claims what is
+ *     due, expires what is stale and sends the content-free `message_ready` push.
+ *     It takes this file's own advisory lock (`withJobLock`, key `deliver`), so it
+ *     and this nightly loop can run side by side. This file stays the
+ *     materialise/reap/backup/alert runner; the nightly `rematerialize` job is now
+ *     a safety net behind the worker rather than the only thing that ever ran it.
  *   - Does not resolve `on_event` targets. `childCtxFor()`
  *     (`packages/db/src/pool.ts`) never populates `ChildCtx.eventInstants`
  *     (no caller anywhere in this repo does), so an `on_event` intent's

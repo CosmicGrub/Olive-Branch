@@ -4339,7 +4339,37 @@ export async function revokeGuardianInvite(
 
 export type BootstrapInviteError =
   | 'not_found' | 'expired' | 'revoked' | 'not_accepted'
-  | 'already_bootstrapped' | 'email_already_registered';
+  | 'already_bootstrapped' | 'email_already_registered' | 'family_full';
+
+/**
+ * Caps adopted in docs/planning/DECISIONS.md (G-37): at most 4 parents and 8
+ * carers per child. A "parent" is the role family of someone who raises the
+ * child (guardian, step_parent, foster_parent); every other role is a carer.
+ * Enforced where an edge is CREATED (bootstrapGuardianInvite), under a lock on
+ * the child row so two invites accepted at the same moment cannot both pass.
+ */
+export const MAX_PARENT_EDGES_PER_CHILD = 4;
+export const MAX_CARER_EDGES_PER_CHILD = 8;
+const PARENT_ROLES: readonly string[] = ['guardian', 'step_parent', 'foster_parent'];
+export const isParentRole = (role: string): boolean => PARENT_ROLES.includes(role);
+
+/**
+ * Counts the LIVE edges to one child by class, for the cap check. Runs inside
+ * the caller's transaction (its `q`), after the caller has locked the child
+ * row, so the answer cannot go stale before the INSERT that follows it.
+ */
+async function liveEdgeCounts(q: Query, childId: string): Promise<{ parents: number; carers: number }> {
+  const rows = await q(
+    `SELECT role, count(*)::int AS n FROM guardianship
+      WHERE child_id = $1 AND closed_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())
+      GROUP BY role`, [childId]);
+  let parents = 0, carers = 0;
+  for (const r of rows as any[]) {
+    if (isParentRole(r.role)) parents += r.n; else carers += r.n;
+  }
+  return { parents, carers };
+}
 
 /**
  * The gap CHANGELOG v0.49.9 found and explicitly declined to invent an
@@ -4371,7 +4401,7 @@ export type BootstrapInviteError =
 export async function bootstrapGuardianInvite(
   pool: pg.Pool, inviteId: string, displayName: string, now: Date,
 ): Promise<
-  | { ok: true; userId: string; childId: string }
+  | { ok: true; userId: string; childId: string; role: InvitableRole }
   | { ok: false; reason: BootstrapInviteError }
 > {
   return withSystemSession(pool, async (q) => {
@@ -4416,7 +4446,15 @@ export async function bootstrapGuardianInvite(
     // handler already falls back to child.home_tz the same way, per its own
     // file header), not an invented one — no route anywhere in this
     // codebase yet lets a guardian set her OWN home_tz, first-time or not.
-    const child = await q(`SELECT home_tz FROM child WHERE id = $1`, [row.child_id]);
+    // Lock the child row, THEN count: two invites for the same child that are
+    // bootstrapped at the same instant serialise here, so the cap below cannot
+    // be passed by both (each holds FOR UPDATE on its OWN invite row only).
+    const child = await q(`SELECT home_tz FROM child WHERE id = $1 FOR UPDATE`, [row.child_id]);
+    const live = await liveEdgeCounts(q, row.child_id);
+    if (isParentRole(row.role) ? live.parents >= MAX_PARENT_EDGES_PER_CHILD
+                               : live.carers >= MAX_CARER_EDGES_PER_CHILD) {
+      return { ok: false, reason: 'family_full' };
+    }
 
     let userId: string;
     try {
@@ -4439,11 +4477,24 @@ export async function bootstrapGuardianInvite(
       throw e;
     }
 
+    // THE EDGE (audit G3). Until this line an accepted invite produced an account
+    // that every edge-checking route refused, so a second guardian could sign
+    // in and see nothing. The edge is the invite's own role and scope, nothing
+    // more: not restricted, not observer-only, never a blanket "guardian can do
+    // everything" -- what the role may do is still authorize.ts's ROLE_CAPS.
+    // Same transaction as the user insert, so there is never an account without
+    // its edge or an edge without its account; UNIQUE (child_id, user_id) makes
+    // a replay impossible. `system` writes guardianship by 0040's own policy.
+    await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, $3, $4::jsonb, tstzrange(now(), null))`,
+      [row.child_id, userId, row.role, JSON.stringify(row.scope ?? {})],
+    );
     await q(
       `UPDATE guardian_invite SET bootstrapped_at = $2, bootstrap_user_id = $3 WHERE id = $1`,
       [inviteId, now.toISOString(), userId],
     );
-    return { ok: true, userId, childId: row.child_id };
+    return { ok: true, userId, childId: row.child_id, role: row.role };
   });
 }
 
@@ -5200,6 +5251,150 @@ export async function houseRulesFor(
       mine: all.filter((r) => r.authorGuardianId === guardianId),
       others: all.filter((r) => r.authorGuardianId !== guardianId),
     };
+  });
+}
+
+// ============================================================ family creation ==
+// Audit G2. Until now the only runtime path that made an app_user, a child or a
+// guardianship edge was server/seed-dev.mjs, so a real first family could not
+// exist. There is deliberately NO `family` table: a family is the set of
+// children and adults joined by guardianship edges, which is what every RLS
+// policy since 0040 already keys on. A table with no policy attached would be
+// a second, unenforced notion of "family" (and docs/planning/GAP-REGISTER.md
+// G-02 warns about FORCE-RLS recursion if one is bolted onto guardianship).
+
+export interface NewChild { displayName: string; birthDate: string; homeTz: string }
+
+/**
+ * A child's day, until a grown-up edits it: she is reachable in the morning,
+ * after school, at dinner and at bedtime, and not while asleep. Without ANY
+ * day_part row materialize() answers `daypart_undefined` and a banked message
+ * for that child stays `pending` forever, so a freshly made family could never
+ * be delivered to. `asleep` wraps midnight (gate.ts's own start-day semantics).
+ */
+export const DEFAULT_DAY_PARTS: ReadonlyArray<{ kind: string; starts: string; ends: string; reachable: boolean }> = [
+  { kind: 'wake',         starts: '06:30', ends: '08:00', reachable: true },
+  { kind: 'after_school', starts: '15:30', ends: '17:30', reachable: true },
+  { kind: 'dinner',       starts: '17:30', ends: '19:00', reachable: true },
+  { kind: 'bedtime',      starts: '19:30', ends: '20:30', reachable: true },
+  { kind: 'asleep',       starts: '20:30', ends: '06:30', reachable: false },
+];
+
+/** Inside the caller's transaction: the child row, her tz interval, her default day. */
+async function insertChild(q: Query, c: NewChild): Promise<string> {
+  const rows = await q(
+    `INSERT INTO child (display_name, birth_date, home_tz) VALUES ($1, $2::date, $3) RETURNING id`,
+    [c.displayName, c.birthDate, c.homeTz]);
+  const childId = rows[0].id as string;
+  await q(
+    `INSERT INTO child_tz_interval (child_id, tz, valid, source)
+     VALUES ($1, $2, tstzrange(now() - interval '1 day', null), 'manual')`,
+    [childId, c.homeTz]);
+  for (const d of DEFAULT_DAY_PARTS) {
+    await q(
+      `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+       VALUES ($1, $2, $3::time, $4::time, '{0,1,2,3,4,5,6}', $5, daterange(current_date - 1, null))`,
+      [childId, d.kind, d.starts, d.ends, d.reachable]);
+  }
+  return childId;
+}
+
+/**
+ * Creates the first guardian and her first child in ONE transaction and joins
+ * them with a full `guardian` edge. The guardian has no email and no credential
+ * yet: the route mints her an ordinary session, from which she sets a PIN and
+ * registers a passkey exactly as an invite-bootstrapped guardian does. Runs as
+ * `system` (no session exists to scope by); the route's setup code is the gate.
+ */
+export async function createFamily(
+  pool: pg.Pool, g: { displayName: string; homeTz: string }, child: NewChild,
+): Promise<{ userId: string; childId: string }> {
+  return withSystemSession(pool, async (q) => {
+    const u = await q(
+      `INSERT INTO app_user (display_name, home_tz) VALUES ($1, $2) RETURNING id`,
+      [g.displayName, g.homeTz]);
+    const userId = u[0].id as string;
+    const childId = await insertChild(q, child);
+    await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now(), null))`,
+      [childId, userId]);
+    return { userId, childId };
+  });
+}
+
+/** A guardian may hold at most this many children (a sanity bound, not a product tier). */
+export const MAX_CHILDREN_PER_GUARDIAN = 8;
+export type AddChildError = 'not_a_guardian' | 'account_deactivated' | 'too_many_children';
+
+/**
+ * Adds another child for an EXISTING guardian. The second lock behind the
+ * route's edge check: this re-derives, in SQL and under a lock on the
+ * guardian's own app_user row (so two parallel calls cannot both slip under
+ * the bound), that she is a live, unrestricted `guardian` of at least one
+ * child. The new child gets an edge for HER ONLY: a co-parent is not
+ * silently granted a child she was never invited to.
+ */
+export async function addChildForGuardian(
+  pool: pg.Pool, userId: string, child: NewChild,
+): Promise<{ ok: true; childId: string } | { ok: false; reason: AddChildError }> {
+  return withSystemSession(pool, async (q) => {
+    const u = await q(`SELECT deactivated_at FROM app_user WHERE id = $1 FOR UPDATE`, [userId]);
+    if (!u.length) return { ok: false, reason: 'not_a_guardian' };
+    if (u[0].deactivated_at) return { ok: false, reason: 'account_deactivated' };
+    const edges = await q(
+      `SELECT count(*)::int AS n FROM guardianship
+        WHERE user_id = $1 AND role = 'guardian' AND restricted = false
+          AND observer_only = false AND closed_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+          AND valid @> now()`, [userId]);
+    if (!edges[0].n) return { ok: false, reason: 'not_a_guardian' };
+    if (edges[0].n >= MAX_CHILDREN_PER_GUARDIAN) return { ok: false, reason: 'too_many_children' };
+    const childId = await insertChild(q, child);
+    await q(
+      `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now(), null))`,
+      [childId, userId]);
+    return { ok: true, childId };
+  });
+}
+
+// ============================================================ delivery worker ==
+// Audit G1. claim_due_intents() / expire_stale_intents() (0002) are the only
+// code that moves a banked message from `ready` to `delivered`, and before this
+// no process in the repository called either. These are thin, system-role
+// callers; the loop that calls them is server/delivery_tick.mjs.
+
+export interface ClaimedIntent { id: string; childId: string; payloadKind: string; payloadRef: string }
+
+/** Claims up to `limit` due `ready` intents -> `delivered` (a compare-and-swap in SQL). */
+export async function claimDueIntents(pool: pg.Pool, limit = 100): Promise<ClaimedIntent[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT id, child_id, payload_kind, payload_ref FROM claim_due_intents($1)`, [limit]);
+    return rows.map((r: any): ClaimedIntent => ({
+      id: r.id, childId: r.child_id, payloadKind: r.payload_kind, payloadRef: r.payload_ref }));
+  });
+}
+
+/** Expires intents whose retention window closed before delivery. */
+export async function expireStaleIntents(pool: pg.Pool): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT expire_stale_intents() AS n`);
+    return Number(rows[0]?.n ?? 0);
+  });
+}
+
+/** Counts for the log line and /readyz: how much is waiting, and how old the oldest is. */
+export async function deliveryBacklog(pool: pg.Pool): Promise<{
+  pending: number; ready: number; oldestReadyAgeSec: number | null }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT count(*) FILTER (WHERE state = 'pending')::int AS pending,
+              count(*) FILTER (WHERE state = 'ready')::int AS ready,
+              EXTRACT(EPOCH FROM (now() - min(scheduled_at) FILTER (WHERE state = 'ready' AND scheduled_at <= now())))::int AS oldest
+         FROM delivery_intent WHERE state IN ('pending','ready')`);
+    const r = rows[0];
+    return { pending: r.pending ?? 0, ready: r.ready ?? 0, oldestReadyAgeSec: r.oldest ?? null };
   });
 }
 

@@ -444,6 +444,15 @@ class OliveApi {
   // backs.
   static const guardianInviteBootstrap = '/v1/guardian-invites/:inviteId/bootstrap';
 
+  // --- family creation (server audit G2) -----------------------------------
+  // Before these, only server/seed-dev.mjs could make a guardian, a child or the
+  // edge between them. [families] needs no session (nobody has one yet): the
+  // operator's setup code is the credential, and it answers 404 when the
+  // operator has not switched sign-up on. [children] adds another child for an
+  // existing guardian; the new child's edge is hers alone.
+  static const families = '/v1/families';
+  static const children = '/v1/children';
+
   // --- device pairing & provisioning (docs/superpowers/specs/2026-09-12-
   // device-pairing-provisioning-design.md) --------------------------------
   // Replaces the build-time --dart-define=OLIVE_CHILD_ID/OLIVE_GUARDIAN_ID
@@ -1859,6 +1868,43 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
     Uri.parse('$baseUrl${OliveApi.guardianInviteBootstrap.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'displayName': displayName}),
+  );
+  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  if (res.statusCode >= 400) {
+    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+  }
+  return body;
+}
+
+/// Creates a family -- POST [OliveApi.families], server/routes.mjs's real
+/// handler. No session: the operator's [setupCode] stands in for one, and the
+/// reply carries the first guardian's ordinary session `token`, from which she
+/// sets a PIN and registers a passkey exactly as an invite-bootstrapped
+/// guardian does. [birthDate] is `YYYY-MM-DD`, [homeTz] an IANA zone name.
+/// Real [ApiException]s: not_found (sign-up is off on this server),
+/// setup_code_invalid, signup_rate_limited, and 400 reasons such as
+/// child_birth_date_invalid. No client screen calls this yet -- same "route and
+/// wiring are real and tested regardless" convention [bootstrapGuardianInvite]
+/// above already states.
+Future<Map<String, dynamic>> createFamily(
+  String baseUrl, {
+  required String setupCode,
+  required String guardianName,
+  required String guardianTz,
+  required String childName,
+  required String childBirthDate,
+  required String childTz,
+  http.Client? client,
+}) async {
+  final c = client ?? OliveTransport.clientFor(baseUrl);
+  final res = await c.post(
+    Uri.parse('$baseUrl${OliveApi.families}'),
+    headers: {'content-type': 'application/json'},
+    body: jsonEncode({
+      'setupCode': setupCode,
+      'guardian': {'displayName': guardianName, 'homeTz': guardianTz},
+      'child': {'displayName': childName, 'birthDate': childBirthDate, 'homeTz': childTz},
+    }),
   );
   final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
   if (res.statusCode >= 400) {

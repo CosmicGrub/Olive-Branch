@@ -8,6 +8,15 @@ import { hashPin } from '../packages/auth/src/auth.mjs';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
+// Server audit G2: this script plants accounts with FIXED, publicly documented ids and a
+// throwaway PIN ('1234'). Run against a real family's database it would hand anyone who has
+// read this repository a known guardian id on that deployment. A production process is
+// refused outright; a real first family is made through POST /v1/families instead.
+if (process.env.NODE_ENV === 'production') {
+  console.error('seed-dev refuses to run with NODE_ENV=production: it creates well-known accounts with a throwaway PIN. '
+    + 'Make a real family with POST /v1/families (FAMILY_SETUP_CODE).');
+  process.exit(2);
+}
 
 export const IVY = 'aaaaaaaa-0000-4000-8000-000000000001';
 export const DAD = 'aaaaaaaa-0000-4000-8000-000000000002';

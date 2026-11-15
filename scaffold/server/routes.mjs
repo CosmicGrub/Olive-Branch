@@ -53,6 +53,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          INVITABLE_ROLES, passkeysFor, deletePasskey, hasSecondFactorSetup,
          recordSecurityEvent, securityEventsVia, reserveMediaUpload, mediaUploadFor,
          storageKeyInUse, releaseMediaUpload,
+         createFamily, addChildForGuardian,
          webauthnCredentialById, updateWebauthnSignCount } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
 import { sleepsUntilSideChange, sideOn, sideAtInstant, freeGuardianNow } from '../packages/custody/src/schedule.mjs';
@@ -70,7 +71,8 @@ import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
-import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { createPairingMissBudget, createUploadLimiter, MissBudget } from './rate_limit.mjs';
+import { parseFamilyBody, parseChild, setupCodeConfig, setupCodeMatches } from './family_input.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
 
@@ -437,6 +439,16 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   const pairingMissBudget = opts.pairingMissBudget ?? createPairingMissBudget();
   // S-B6: per-principal cap on concurrent media/homework body decodes.
   const uploadLimiter = opts.uploadLimiter ?? createUploadLimiter();
+  // G2: sign-up is invite-only. FAMILY_SETUP_CODE (operator-held, >= 16 chars) turns
+  // POST /v1/families on; removing it is the kill switch. Two GLOBAL budgets (no
+  // per-IP key is kept, server-snoop rule 4.3): wrong codes, and total creations.
+  const setupCode = opts.setupCode ?? setupCodeConfig();
+  const signupMissBudget = opts.signupMissBudget ?? new MissBudget({ limit: 10 });
+  const signupCreateBudget = opts.signupCreateBudget ?? new MissBudget({
+    limit: Number(process.env.FAMILY_SIGNUPS_PER_HOUR) > 0 ? Number(process.env.FAMILY_SIGNUPS_PER_HOUR) : 30,
+    windowMs: 60 * 60_000 });
+  // G1: called after a message is banked so anything already due is delivered at once.
+  const afterMessageBanked = opts.afterMessageBanked ?? (() => {});
   const mediaQuotaBytes = opts.mediaChildQuotaBytes ?? mediaQuotaFromEnv();
   /** Best-effort security-event write: the audited action already happened, the trail must not fail it. */
   const audit = async (userId, kind, o) => {
@@ -700,14 +712,76 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           : result.reason === 'expired' ? 410 : 409;
         return { status, body: { error: result.reason } };
       }
-      // Mints exactly what guardian_setup.dart's real passkey registration
-      // needs and nothing else: an ordinary guardian session with NO
-      // guardianship edge to any child (none was created — see above), so
-      // every OTHER route that checks edgesFor() still refuses this
-      // session exactly as it would refuse any guardian with zero edges.
+      // Mints an ordinary guardian session. Since audit G3 the bootstrap also created
+      // this person's guardianship edge (the invite's own role and scope, in the same
+      // transaction), so the routes that check edgesFor() now answer for HER child
+      // within what that role may do; they still refuse every other child.
       const token = api.issueSessionToken(
         { userId: result.userId, roleName: 'guardian', childId: null, escalated: false });
-      return { status: 201, body: { ok: true, token, userId: result.userId, childId: result.childId } };
+      return { status: 201, body: { ok: true, token, userId: result.userId,
+                                     childId: result.childId, role: result.role } };
+    },
+  });
+
+  // ===========================================================================
+  // FAMILY CREATION — audit G2. Before this nothing in the running server could make
+  // an account, a child or a guardianship edge (only server/seed-dev.mjs and tests),
+  // so the first real family could not exist. A family here is the children and adults
+  // joined by guardianship edges (see pool.ts's createFamily for why there is no
+  // `family` table).
+  // ===========================================================================
+
+  // POST /v1/families -- NO SESSION (nobody has one yet). The operator's setup code is
+  // the credential. Creates the first guardian + her first child + their edge in one
+  // transaction and returns the same kind of session an invite bootstrap does, from
+  // which she sets a PIN and registers a passkey. 404 when sign-up is off, so a probe
+  // cannot tell a disabled server from a missing route.
+  api.register({
+    method: 'POST', path: '/v1/families', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      if (!setupCode.enabled) return { status: 404, body: { error: 'not_found' } };
+      const miss = signupMissBudget.check();
+      if (miss.blocked) {
+        return { status: 429, body: { error: 'signup_rate_limited', retryAfterSec: miss.retryAfterSec } };
+      }
+      if (!setupCodeMatches(c.body?.setupCode, setupCode.digest)) {
+        signupMissBudget.hit();
+        return { status: 403, body: { error: 'setup_code_invalid' } };
+      }
+      const parsed = parseFamilyBody(c.body);
+      if (!parsed.ok) return { status: 400, body: { error: parsed.reason } };
+      const made = signupCreateBudget.check();
+      if (made.blocked) {
+        return { status: 429, body: { error: 'signup_rate_limited', retryAfterSec: made.retryAfterSec } };
+      }
+      signupCreateBudget.hit();
+      const { userId, childId } = await createFamily(
+        pool, parsed.value.guardian, parsed.value.child);
+      const token = api.issueSessionToken(
+        { userId, roleName: 'guardian', childId: null, escalated: false });
+      return { status: 201, body: { ok: true, token, userId, childId } };
+    },
+  });
+
+  // POST /v1/children -- an existing guardian adds another child. The new child's edge
+  // is HERS ONLY; a co-parent is never silently granted a child she was not invited to.
+  api.register({
+    method: 'POST', path: '/v1/children', action: null,
+    skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      const child = parseChild(c.body);
+      if (!child.ok) return { status: 400, body: { error: child.reason } };
+      const r = await addChildForGuardian(pool, c.principal.userId, child.value);
+      if (!r.ok) {
+        const status = r.reason === 'too_many_children' ? 409 : 403;
+        return { status, body: { error: r.reason } };
+      }
+      return { status: 201, body: { ok: true, childId: r.childId } };
     },
   });
 
@@ -3842,6 +3916,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
 
       const persisted = await persistCapturedMessage(pool, result);
+      // Best effort and never awaited: delivery is the worker's job, this only nudges it.
+      try { afterMessageBanked(); } catch { /* a nudge must never fail the send */ }
       return { status: 201, body: {
         id: persisted.intentId, artifactId: persisted.artifactId, state: 'pending' } };
     },

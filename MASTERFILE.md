@@ -1518,10 +1518,9 @@ POST   /v1/auth/dev-login                       DEV_LOGIN=1 only — never produ
 Closes half of `invitation_screen.dart`'s own named gap ("the API surface
 names `POST /v1/children/:id/guardianships`, but no such route exists") —
 create/read/accept-decision/revoke, all real and RLS-backed
-(`db/migrations/0014_guardian_invite.sql`). Does NOT create a `guardianship`
-row: that needs an app_user row for the invited party, and this codebase has
-no account-creation route for one, for a first OR an invited guardian — see
-this section's own note below and the migration's own header.
+(`db/migrations/0014_guardian_invite.sql`). *(As first shipped it did not create a
+`guardianship` row. That is superseded: the bootstrap route now creates the edge and
+`POST /v1/families` creates a first family; see "The live chain on the server" below.)*
 
 ```
 POST   /v1/children/:childId/guardianships      a real guardian invites a
@@ -1557,6 +1556,82 @@ account, including why no existing test had caught this
 `contract.test.mjs` never calls `api.handle()`; `routes.test.mjs` had zero
 guardian-invite coverage) and the new tests that now do, at both the `Api`
 mechanism level and against these real routes end to end.
+
+**The live chain on the server (server audit G1, G2, G3, G7; migration 0049).**
+Before this pass the server could not carry a first family: nothing made a
+family, an accepted invite gave the second guardian no access, and nothing
+delivered a banked message to the child. All three are now built and proved
+against a real Postgres through the real routes (`server/test/live_chain.test.mjs`,
+plus the pure half `live_chain_pure.test.mjs`, and `tools/smoke-stack.mjs` against a
+running stack).
+
+```
+POST   /v1/families          no session; the operator's FAMILY_SETUP_CODE is the credential.
+                             Creates the first guardian, her first child and a full guardian
+                             edge in ONE transaction, with the child's time-zone interval and
+                             a default day (wake, after school, dinner, bedtime reachable;
+                             asleep not) so a first message can be scheduled. Returns the
+                             guardian's ordinary session token. 404 while FAMILY_SETUP_CODE is
+                             unset (the kill switch); 403 setup_code_invalid; 429 once the
+                             wrong-code budget (10 per minute, global) or the creation budget
+                             (FAMILY_SIGNUPS_PER_HOUR, default 30) is spent; 400 with one
+                             reason code per bad field.
+POST   /v1/children          an existing guardian adds another child. The new edge is HERS
+                             ONLY: a co-parent is never silently granted a child she was not
+                             invited to. At most 8 children per guardian (409 too_many_children);
+                             restricted, observer-only and closed edges do not count as a
+                             guardian (403 not_a_guardian).
+POST   /v1/guardian-invites/:inviteId/bootstrap
+                             now ALSO creates the guardianship edge, in the same transaction as
+                             the account: the invite's own role and scope, not restricted, not
+                             observer-only (so a sitter invite is a sitter edge, never a
+                             promoted one). Caps (G-37): at most 4 parent-class edges (guardian,
+                             step_parent, foster_parent) and 8 carer edges per child, counted
+                             under a lock on the child row; 409 family_full beyond that.
+GET    /readyz               readiness, as distinct from /healthz liveness (below).
+```
+
+A family is the set of children and adults joined by guardianship edges, which is
+what every RLS policy since 0040 keys on. There is deliberately no `family` table:
+one with no policy attached would be a second, unenforced notion of "family", and
+GAP-REGISTER G-02 warns about FORCE-RLS recursion if one is bolted onto
+`guardianship`. The text of audit item S-D26 (the family tenant) is still not in the
+repository, so this is fitted to the schema, not to that finding.
+
+**The delivery worker (`server/delivery_tick.mjs`).** `GET .../inbox` returns only
+`delivered` and `opened`, and the only code that moves `ready` to `delivered`
+(`claim_due_intents()`, migration 0002) had no caller. The server now runs a worker
+every `DELIVERY_TICK_MS` (default 15 000; 0 turns it off): rematerialize pending
+intents, expire intents past their retention window, claim what is due, then send one
+content-free `message_ready` push per child that received something. One tick holds
+a session advisory lock (key `deliver`), so two replicas or a `scheduler run` never
+double-deliver; every write is also a compare-and-swap. Banking a message nudges the
+worker (debounced 400 ms) so anything already due is not left to the interval. The
+push carries the kind and an opaque intent id only (no sender, count, caption or time);
+`notifyDevices()` still applies the asleep/school gate, so a sleeping child's lock screen
+stays dark and the message waits in her inbox. A push failure never undoes a delivery.
+A tick that throws is counted (`delivery_tick_errors_total`), logged as one line and
+retried; it never takes the server down. Shutdown waits for the in-flight pass before
+the pool is ended. The nightly scheduler loop is unchanged and remains a safety net.
+`/internal/metrics` carries the worker's status and counters.
+
+**`/readyz` (migration 0049).** `GET /healthz` stays a pure liveness check. `GET /readyz`
+answers 200 `{status:"ready"}` only when the database answers, its schema is at or past
+the newest migration baked into the image, the media volume accepts a write, and the
+process is not draining; otherwise 503 `{status:"not_ready", failing:[...]}` naming a
+category and nothing else. A stalled delivery worker is reported as `degraded` and does
+not make the process unready (the app must keep serving). `app_runtime` cannot read
+`schema_migration`, so migration 0049 adds `schema_migration_level()`, a SECURITY DEFINER
+function returning only the newest applied filename. On SIGTERM `/readyz` flips to 503
+first and the listener closes after `READYZ_DRAIN_MS` (default 2 s in production, 0
+otherwise). Both compose files point the server healthcheck at `/readyz`.
+
+Sign-up configuration: `FAMILY_SETUP_CODE` (at least 16 characters, operator-held, in
+`.env` outside the repository; a shorter non-empty value is a boot failure) turns
+`POST /v1/families` on, and clearing it is the kill switch; `server/seed-dev.mjs` now
+refuses `NODE_ENV=production` because it plants well-known accounts with a throwaway PIN.
+`INTERNAL_METRICS_TOKEN` is now passed through both compose files so a scraper on the
+docker network can reach `/internal/metrics` (it is loopback-only otherwise).
 
 No dedicated `escalate` server route exists, and none was needed — **as of
 v0.49.7, §8.3's PIN+biometric escalation ceremony has a real UI surface**
@@ -8250,8 +8325,9 @@ Each row is something this document or the product's own screens might lead a re
 | **The care profile: what is left** (owner request 2026-11-14, §8.24.8) | Built: the sealed on-device profile (Keep her safe, her everyday, what helps, today's heads-up, health history and moods behind the PIN, medicines from the existing log), who sees what with time boxes enforced by "Show as" on this phone, both versions, the tone guard, review prompts, the doctor sheet, sealed photos of a doctor's plan, the binder copied in, a teen sheet preview behind a flag that is off. | Sharing between phones, a helper page and the carer's own screens (need a connected family); the "For <child>" strip beside the care guides (needs clinician review); a teen's own view and consent step (owner decision); writing prompts (need clinical and child-development review). Never run on a device. |
 | **Calls** (1:1 and group audio and video; games played during a call) | Client call screen and the server's token and room logic on LiveKit Cloud (§5.19, §5.23, §16.2 #6); the server half runs against a local `livekit-server` in CI. | Never run against a real LiveKit Cloud project or on real devices since the move back from Jitsi. **Needs a LiveKit Cloud project and its URL, API key and secret, then a two-device test.** Parked by owner direction. |
 | **Push notifications** | FCM v1 and APNs senders, the `device_token` table, `push_channel.dart`: tested against mocks and Postgres. | Never sent through a live endpoint. **Needs a Firebase project (`google-services.json` and a service-account key) and an Apple push key**; there is no iOS client. |
-| **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, tested. | No message has been delivered end to end to a real device; this depends on push and calls above. |
-| **Invites** (a second guardian joining) | Invite create, read, decide and revoke routes (`0014_guardian_invite.sql`) and `invitation_screen.dart`. | Accepting an invite does **not** create an account or a guardianship, and a guardian on a fresh device still has to pair with a code (§7.1c). |
+| **Delivery of a message to her device on time** | The delivery-intent engine, gate, schema and routes, and the server's delivery worker (`server/delivery_tick.mjs`): a banked message becomes ready, is claimed when due and appears in the child's inbox, proved through the real routes against a real Postgres with no hand-inserted row, and by `tools/smoke-stack.mjs` against a running stack. | Not run on a real device. The `message_ready` push is built, content-free and tested against a fake sender only: **it needs a Firebase project** (see Push notifications). The default day (§7) is the same for every new child and there is no screen or route to edit a child's day-parts yet, so a family cannot yet tune when messages arrive. |
+| **Invites** (a second guardian joining) | Invite create, read, decide and revoke routes (`0014_guardian_invite.sql`) and `invitation_screen.dart`; the bootstrap route now creates the account **and** the guardianship edge (the invite's role and scope, 4 parent and 8 carer caps), proved end to end including sitter, revoked, expired, duplicate-e-mail and simultaneous-invite cases. | Revoking an accepted invite does not close the edge (the only route that closes an edge is the child's majority hand-over); no client screen calls the bootstrap route; what a *restricted* guardian may do versus a full one needs the owner's rule; a guardian on a fresh device still has to pair with a code (§7.1c). |
+| **Server sign-up and the live chain: what is left** (server audit, 2026-11-15) | `POST /v1/families`, `POST /v1/children`, the delivery worker, `/readyz`, `tools/smoke-stack.mjs` (§7). | (1) No client screen calls `POST /v1/families`; the Dart function exists. (2) No family cap beyond the setup code and the per-hour budget; no waitlist. (3) The sealed mailbox and ledger endpoints of `FAMILY-SYNC-DESIGN` (S10, S12) are not built. (4) `docker-compose.prod.yml` is still never booted in CI and the repository ships no TLS proxy for it (`docs/operators/proxy-and-tls.md`). (5) Backups have no scheduled restore drill. (6) Push credentials are not wired into either compose file. (7) Recovery for a guardian who loses her only device is undecided. (8) No route lets a guardian close a co-guardian's edge. |
 | **Two-device play: what is left** | War, Connect 4 and Uno run on the shared play envelope, game contract, session controller and dealer's save (§9.2); the TypeScript reference, the Dart port, the golden vectors and the in-memory two-device tests are CI-verified. | Not run on a Fold 5 or a Tab S9 FE (the plan is in the pull request). War is not saved across an app kill. The calm away and ended wording is a draft awaiting the owner. |
 | **Networked games** | Live checkers through the server's table relay (`packages/game-sync`, `networked_checkers_*`): tests and a server-side end-to-end run. | No two-device run over a real network is recorded. The games played during a call need calls. |
 | **Read together and Watch together, server and transports** (§8.26) | The pure core (`packages/co-view`), its Dart port, `CoViewLeader` and `CoViewFollower` over an abstract transport (a loopback in tests) and the screens. | No real transport (neither the call data channel nor a game-sync table is connected), no server route or storage for sessions or the daily-time total, the screens are not reachable from the app's navigation, and there is no Watch together. |

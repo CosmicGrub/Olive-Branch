@@ -105,7 +105,7 @@ export function requestIsSecure(req, env = process.env) {
 
 /**
  * In production every request must have come over TLS. The only exemption is a
- * direct loopback /healthz (Docker's in-container probe). The answer is a
+ * direct loopback /healthz or /readyz (Docker's in-container probe). The answer is a
  * generic 400, never a redirect: redirecting an API call to https would make a
  * client re-send a POST body (and its bearer token) after it already crossed
  * the wire in cleartext.
@@ -113,7 +113,8 @@ export function requestIsSecure(req, env = process.env) {
 export function httpsRequired(req, env = process.env, pathname = '') {
   if (!isProd(env) || env.ALLOW_INSECURE_TRANSPORT === '1') return false;
   if (requestIsSecure(req, env)) return false;
-  if ((pathname === '/healthz' || pathname === '/internal/metrics') && isDirectLoopback(req)) return false;
+  if ((pathname === '/healthz' || pathname === '/readyz' || pathname === '/internal/metrics')
+      && isDirectLoopback(req)) return false;
   return true;
 }
 

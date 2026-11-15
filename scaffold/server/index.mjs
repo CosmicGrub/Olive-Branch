@@ -32,6 +32,12 @@ import { checkRuntimeRole } from './db_role.mjs';
 import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
 import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
+import { createDeliveryTick, tickIntervalFromEnv } from './delivery_tick.mjs';
+import { checkReadiness } from './readiness.mjs';
+import { setupCodeConfig } from './family_input.mjs';
+import { checkPushConfig } from './push_config.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PORT = Number(process.env.PORT ?? 8080);
@@ -69,6 +75,23 @@ if (bootCalls.problems.length) {
 }
 console.log(`calls: ${JSON.stringify(describeCallConfig(bootCalls))}`);
 
+// G2: FAMILY_SETUP_CODE turns POST /v1/families on. Set-but-too-short is a typo that
+// would silently leave sign-up OFF while the operator believes it is on, so it is a
+// boot failure like every other malformed secret.
+const bootSetup = setupCodeConfig(process.env);
+if (bootSetup.problem) { console.error(`family sign-up check failed: ${bootSetup.problem}`); process.exit(2); }
+console.log(`family sign-up: ${bootSetup.enabled ? 'on (setup code required)' : 'off'}`);
+
+// G4: push credentials are checked ONCE here instead of failing silently at the first send.
+// Unset is fine (the inbox still fills, the child's app polls); set-but-malformed is not.
+const bootPush = checkPushConfig(process.env);
+if (bootPush.problems.length) {
+  for (const p of bootPush.problems) console.error(`push check failed: ${p}`);
+  process.exit(2);
+}
+if (bootPush.json) process.env.FCM_SERVICE_ACCOUNT_JSON = bootPush.json;
+console.log(`push: fcm ${bootPush.fcm}${bootPush.fcm === 'off' ? ' (no FCM_SERVICE_ACCOUNT_JSON or _FILE: message_ready pushes are skipped, inboxes still fill)' : ''}`);
+
 // Server-snoop hardening: a production process must be configured as the HTTPS
 // back end of a TLS-terminating proxy (PUBLIC_BASE_URL, TRUST_PROXY and
 // TRUST_PROXY_HOPS) or it refuses to start. See server/transport.mjs.
@@ -95,7 +118,9 @@ const sessionKeys = { current: secret, previous: boot.previousSessionSecret };
 // cast error (500). S-B6 writeLimiter: per-principal throttle on authenticated writes.
 const api = new Api(sessionKeys, dbPort(pool), () => Date.now(),
   { strictIds: true, writeLimiter: createWriteLimiter() });
-registerRoutes(api, pool);
+// G1: the delivery worker. Declared before the routes so a banked message can nudge it.
+let deliveryTick = null;
+registerRoutes(api, pool, defaultMediaStorage, { afterMessageBanked: () => deliveryTick?.kick() });
 
 // ---- network play (checkers, live) — MASTERFILE §5.14, §5.17, §5.19 ------
 // In-memory only (packages/game-sync/src/table.ts's T7): no table, token, or
@@ -279,6 +304,13 @@ async function webauthnLoginVerify(rawBody) {
 
 // ---- observability + abuse limits (audit P-07 server half, P-08) ----------
 const metrics = new Metrics();
+deliveryTick = createDeliveryTick({
+  pool, intervalMs: tickIntervalFromEnv(process.env), metrics,
+  log: (line) => console.log(line),
+});
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(SERVER_DIR, '..', 'db', 'migrations');
+let draining = false;
 const authLimiter = createAuthLimiter();
 const ACCESS_LOG = process.env.ACCESS_LOG !== '0';
 const ACCESS_LOG_HEALTHZ = process.env.ACCESS_LOG_HEALTHZ === '1';
@@ -292,6 +324,7 @@ const RAW_AUTH_PATHS = new Set([
 /** Fixed, attacker-proof label for the access log / counters. */
 function routeLabel(method, pathname, url) {
   if (pathname === '/healthz') return '/healthz';
+  if (pathname === '/readyz') return '/readyz';
   if (pathname === '/internal/metrics') return '/internal/metrics';
   if (pathname.startsWith('/media/')) return '/media/:key';
   if (RAW_AUTH_PATHS.has(url)) return url;
@@ -378,6 +411,21 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // Readiness (audit G7). /healthz above stays a pure liveness probe. This one says
+    // whether to hand this process traffic: database reachable, schema at the level this
+    // image expects, media volume writable, not draining. A stalled delivery worker shows
+    // as `degraded` and does not make the process unready (the app must keep serving).
+    // The body names a category and nothing else.
+    if (method === 'GET' && url === '/readyz') {
+      const r = await checkReadiness({
+        pool, migrationsDir: MIGRATIONS_DIR,
+        mediaRoot: defaultMediaStorage.root ?? process.env.MEDIA_STORAGE_ROOT ?? '',
+        delivery: deliveryTick, isDraining: () => draining,
+      });
+      return send({ status: r.ready ? 200 : 503,
+        body: { status: r.ready ? 'ready' : 'not_ready', failing: r.failing, degraded: r.degraded } });
+    }
+
     // In-process counters — internal callers only (see isInternalRequest).
     // A refused caller gets the same 404 any unknown path would.
     if (method === 'GET' && pathname === '/internal/metrics') {
@@ -385,6 +433,8 @@ const server = createServer(async (req, res) => {
       return send({ status: 200, body: metrics.snapshot({
         pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount },
         game_tables_open: gameTables.size,
+        delivery: deliveryTick.status(),
+        sign_up: bootSetup.enabled ? 'on' : 'off',
       }) });
     }
 
@@ -400,7 +450,8 @@ const server = createServer(async (req, res) => {
     // and DB-amplification surfaces of their own: same per-IP throttle.
     const isAuthPath = pathname.startsWith('/v1/auth/')
       || pathname.startsWith('/v1/device-pairing/')
-      || pathname.startsWith('/v1/guardian-invites/');
+      || pathname.startsWith('/v1/guardian-invites/')
+      || (method === 'POST' && pathname === '/v1/families');
     if (isAuthPath) {
       const ip = authLimiter.checkIp(netId.anonKey(req));
       if (!ip.ok) {
@@ -461,18 +512,31 @@ const { wss, stopSweep } = attachGameSocketServer(server, {
 
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));
+  deliveryTick.start();
+  console.log(deliveryTick.status().enabled
+    ? `delivery worker: every ${deliveryTick.status().intervalMs} ms`
+    : 'delivery worker: off (DELIVERY_TICK_MS=0)');
 });
 
 // ---- graceful shutdown (audit P-14) -----------------------------------------
 // See shutdown.mjs for the full why. Idempotent: signals arriving while a
 // shutdown is already running share its promise, so pool.end() runs once.
 const shutdown = createShutdown({
-  server, wss, pool, stopTimers: [stopSweep],
+  server, wss, pool, stopTimers: [stopSweep, () => deliveryTick.stop()],
   deadlineMs: Number(process.env.SHUTDOWN_DEADLINE_MS) > 0
     ? Number(process.env.SHUTDOWN_DEADLINE_MS) : DEFAULT_SHUTDOWN_DEADLINE_MS,
   log: (line) => console.log(line),
 });
-const onSignal = (sig) => {
+// Audit G7: flip /readyz to 503 FIRST, give the orchestrator a moment to stop routing here,
+// then close the listener. Production defaults to 2 s (inside the 8 s shutdown deadline and
+// the 10 s docker grace); development and tests default to 0 so Ctrl-C stays instant.
+const DRAIN_MS = Number.isFinite(Number(process.env.READYZ_DRAIN_MS)) && process.env.READYZ_DRAIN_MS !== undefined
+  && process.env.READYZ_DRAIN_MS !== ''
+  ? Math.max(0, Number(process.env.READYZ_DRAIN_MS))
+  : (process.env.NODE_ENV === 'production' ? 2000 : 0);
+const onSignal = async (sig) => {
+  draining = true;
+  if (DRAIN_MS > 0) await new Promise((r) => setTimeout(r, DRAIN_MS));
   shutdown(sig).then(() => process.exit(0), (e) => { console.error(errorLine(e, { msg: 'shutdown failed' })); process.exit(1); });
 };
 process.on('SIGINT', () => onSignal('SIGINT'));

@@ -43,7 +43,15 @@ export function createShutdown({
     if (inFlight) return inFlight;
     inFlight = (async () => {
       log(`shutdown: begin (${reason})`);
-      for (const stop of stopTimers) { try { stop(); } catch { /* best effort */ } }
+      // A stopper may return a promise (the delivery worker's stop() waits for the pass
+      // it is in the middle of). Those are awaited before pool.end() below so a claim is
+      // never cut half-way, but only up to the deadline: a stuck pass must not hold the
+      // process past the orchestrator's SIGKILL.
+      const stopping = [];
+      for (const stop of stopTimers) {
+        try { const r = stop(); if (r && typeof r.then === 'function') stopping.push(r); }
+        catch { /* best effort */ }
+      }
 
       const closed = new Promise((resolve) => server.close(() => resolve('closed')));
       if (wss) {
@@ -67,6 +75,14 @@ export function createShutdown({
         server.closeAllConnections?.();
       }
       if (wss) await new Promise((resolve) => wss.close(() => resolve()));
+      if (stopping.length) {
+        let t;
+        await Promise.race([
+          Promise.allSettled(stopping),
+          new Promise((resolve) => { t = setTimeout(resolve, Math.max(1000, deadlineMs)); t.unref?.(); }),
+        ]);
+        clearTimeout(t);
+      }
       if (pool) {
         try { await pool.end(); }
         catch (e) { log(`shutdown: pool.end failed: ${e?.message ?? e}`); }
