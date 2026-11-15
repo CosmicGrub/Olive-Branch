@@ -200,20 +200,21 @@ void main() {
     });
   });
 
-  group('C-23 / C-24 — no developer banner, and an unread DOT not a number', () {
+  group('C-23 / C-24 — no developer banner, and NO unread dot or number (receive path, MASTERFILE 7.19)', () {
     testWidgets('the live banner is gone', (t) async {
       await pumpLive(t, liveServer());
       expect(find.textContaining('Live:'), findsNothing);
       expect(find.textContaining('fetched from the server'), findsNothing);
     });
 
-    testWidgets('unread messages show a dot with no number', (t) async {
+    testWidgets('unread messages show NO dot and no number: the Messages tile looks the same', (t) async {
       await pumpLive(t, liveServer(unread: 3));
-      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      expect(find.byKey(const Key('newDot')), findsNothing);
       expect(find.text('3'), findsNothing);
+      expect(find.byWidgetPredicate((Widget w) => w is Semantics && w.properties.label == 'Something new'), findsNothing);
     });
 
-    testWidgets('only already-opened messages: no dot (she has seen them all)', (t) async {
+    testWidgets('only already-opened messages: no dot either', (t) async {
       await pumpLive(t, liveServer(unread: 0, opened: 4));
       expect(find.byKey(const Key('newDot')), findsNothing);
       expect(find.text('4'), findsNothing);

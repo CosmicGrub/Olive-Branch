@@ -112,6 +112,7 @@ void main() {
       for (final String id in (v['flutterOnly']! as List<Object?>).cast<String>()) {
         if (id == 'connect') continue; // only when the build can connect
         if (id == 'phones') continue; // only where the guardian shell supplied the local recovery services
+        if (id == 'familyaccount') continue; // only where the build can reach a server (optional account)
         expect(built.contains(id), isTrue, reason: id);
       }
     });

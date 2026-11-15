@@ -40,6 +40,11 @@ const item = (kind, id, createdAt) =>
   check('A enqueue', 'NOT_QUEUEABLE really names ping and only ping (the exact "meaningless '
     + 'late" case the module\'s own header describes)', NOT_QUEUEABLE.join(','), 'ping');
 
+  // A receipt ("she opened it") is a courtesy owed to the sender, safe to deliver late: it IS banked.
+  const rr = enqueue([], item('receipt', 'receipt:r1', '2026-01-01T00:00:00Z'));
+  check('A enqueue', 'a receipt is queueable (late is fine, and it keeps its payload)',
+    rr.outbox.length + ':' + rr.dropped, '1:false');
+
   const r3 = enqueue(r1.outbox, item('message', 'm1', '2026-01-02T00:00:00Z'));
   check('A enqueue', 'enqueueing onto an existing non-empty outbox appends, not replaces',
     r3.outbox.length, 2);

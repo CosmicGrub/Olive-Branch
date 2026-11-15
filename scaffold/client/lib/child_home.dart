@@ -105,7 +105,7 @@ import 'weeks_screen.dart';
 
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
-    required this.sleepsUntilHandover, required this.unreadCount,
+    required this.sleepsUntilHandover, this.unreadCount = 0,
     this.baseUrl, this.childId, this.sessionToken, this.httpClient,
     this.childAge = 7, this.overrides, this.dayParts, this.guardianName,
     this.family, this.speak, this.growth, this.clock, this.nicknames, this.teenRepository, this.handoverPurge});
@@ -117,6 +117,8 @@ class ChildHome extends StatelessWidget {
   // child_home_live.dart), and a fabricated number would look exactly as
   // real as the two fields that genuinely are. Absent, not guessed.
   final int? sleepsUntilHandover;
+  /// Kept so existing callers compile; NEVER drawn. A child's home shows no unread dot, badge or count (the receive
+  /// path, MASTERFILE 7.19): the Messages tile looks the same whether or not anything has arrived.
   final int unreadCount;
 
   // Real homework-capture wiring (§9.1, §20.2b) — optional and additive, so
@@ -253,9 +255,14 @@ class ChildHome extends StatelessWidget {
     }
   }
 
+  /// The Messages screen. The example messages are for the preview build only (no server address at all); a connected
+  /// or locally paired device is handed none, so it shows what the server delivered or nothing.
   Widget _inbox() => InboxScreen(
-        childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
+        childName: childName, messages: _exampleMessages,
         baseUrl: baseUrl, childId: childId, sessionToken: sessionToken, httpClient: httpClient);
+
+  List<InboxMessage> get _exampleMessages =>
+      baseUrl == null ? List<InboxMessage>.of(demoInboxMessages) : <InboxMessage>[];
 
   /// Where each band-home tile goes. Null = no destination (the tile is not drawn anywhere).
   Widget? _bandDestination(BuildContext context, String id, FamilyChildSnapshot f, String band) {
@@ -387,7 +394,7 @@ class ChildHome extends StatelessWidget {
       band: band, age: childAge, childName: childName,
       tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIdsFor(context)),
       destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
-      unreadDot: unreadCount > 0, clock: clock,
+      clock: clock,
       presence: presence == null ? null : _PresenceCard(presence!, childName: childName),
       // Sleeps fade at 11 (§21.5): the 13 to 17 home counts nothing for her.
       footer: sleepsUntilHandover == null || band == 't1317' ? null : _Sleeps(sleepsUntilHandover!),
@@ -569,12 +576,8 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => _playScreen(context)))),
             if (isTileVisible(overrides, 'tile:messages') && _fam('messages'))
               TieredTile(icon: Icons.mail_outline, label: 'Messages', featured: true,
-                unreadDot: unreadCount > 0,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => InboxScreen(
-                    childName: childName, messages: List<InboxMessage>.of(demoInboxMessages),
-                    baseUrl: baseUrl, childId: childId, sessionToken: sessionToken,
-                    httpClient: httpClient)))),
+                  builder: (_) => _inbox()))),
             if (isTileVisible(overrides, 'tile:storyteller') && _fam('stories'))
               TieredTile(icon: Icons.auto_stories_outlined, label: 'Storyteller', featured: true,
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(

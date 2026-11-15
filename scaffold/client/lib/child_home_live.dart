@@ -23,21 +23,18 @@
 // onto ChildHome's existing constructor field unchanged (ChildHome itself is
 // untouched -- its `_PresenceCard` already renders nothing when `presence`
 // is null, an honest absence, not a guess, exactly as before).
-// sleepsUntilHandover, unreadCount, and childName are ALL real too.
+// sleepsUntilHandover and childName are real too.
 // sleepsUntilHandover (v0.49.15): a prior pass found the real custody
 // endpoint (db/migrations/0007_custody_order.sql, packages/db/src/pool.mjs's
 // activeCustodyOrderFor, routes.mjs's /now calling schedule.mjs's real
 // sleepsUntilSideChange) had landed and stayed landed, but this screen never
 // called it -- OliveApi.fetchNow() existed, contract-checked, with zero
 // callers anywhere in this client. `_load()` now calls it alongside
-// fetchMe()/fetchInbox() and reads its real `sleepsUntilHandover` key
+// fetchMe() and reads its real `sleepsUntilHandover` key
 // (honestly `null` when the child has no active custody_order row -- /now's
 // own documented absence, not this screen inventing a second one).
-// unreadCount (v0.49.15): was counting EVERY row /inbox returns, but that
-// route deliberately includes both `'delivered'` (unwatched) and `'opened'`
-// (already watched) messages (server/routes.mjs's own query) -- a child who
-// had watched every message still saw a badge claiming all of them were new.
-// Now filtered to `state == 'delivered'` before counting.
+// The unread count this screen once derived from /inbox is gone (MASTERFILE 7.19): a child's home carries no
+// unread dot, badge or count, and it no longer reads her inbox at all (inbox_screen.dart does, itself).
 //
 // Phone -> watch sync (§21.5): this screen is the one real place a live
 // `sleepsUntilHandover` reaches wear_sync_channel.dart's WearSyncChannel,
@@ -80,10 +77,12 @@ import 'package:http/http.dart' as http;
 import 'activity_overrides.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
-import 'call_knock_screen.dart' show buildCallIncomingHandler;
+import 'call_knock.dart' show KnockEnd;
+import 'call_knock_screen.dart' show CallKnockScreen;
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
+import 'child_receive.dart' show drainOpenedReceipts;
 import 'child_home_bands_ui.dart' show LocalMidnightWatch;
 import 'child_home_growth.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
@@ -93,7 +92,11 @@ import 'access_shell.dart' show sharedReadAloud;
 import 'game_logic.dart' show neutralGrownUp;
 import 'local_repositories.dart';
 import 'local_services.dart';
+import 'incoming_call.dart';
+import 'incoming_call_channel.dart';
 import 'push_channel.dart';
+import 'push_config.dart';
+import 'push_service.dart';
 import 'wear_sync_channel.dart';
 
 enum _LoadState { loading, error, ready }
@@ -106,6 +109,8 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.httpClient,
     this.wearSync,
     this.pushChannel,
+    this.pushService,
+    this.incomingCallChannel,
     this.navigatorKey,
     this.familyService,
     this.clock,
@@ -130,6 +135,13 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// `_syncWear` piggybacks on it), so push registration lives here rather
   /// than inventing a second, parallel session concept.
   final PushChannel? pushChannel;
+
+  /// Injectable for tests: the guarded door to push (push_service.dart). Null = the real one, which does
+  /// nothing at all unless the build was given Firebase settings and this device has a signed-in session.
+  final PushService? pushService;
+
+  /// Injectable for tests: the phone's own ring surface (incoming_call_channel.dart). Null = the real bridge.
+  final IncomingCallChannel? incomingCallChannel;
   /// The real, previously-missing wire call_knock_screen.dart's own header
   /// named directly: "a `call_incoming` push carries only kind/ref/
   /// callHandle — buildCallIncomingHandler is real, tested wiring ready to
@@ -171,7 +183,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   // What this device remembers of her, for the no-signal home (see _load()).
   ProfileCache? _cache;
   String _childName = '';
-  int _unreadCount = 0;
   // C-05: her real age in whole years, from GET /v1/me's `yearsOld` (the
   // server computes it from birth_date; a birthdate never reaches her
   // device). Fail-closed: if the server somehow omits it, assume the youngest
@@ -208,6 +219,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   String? _sessionToken;
   late final WearSyncChannel _wearSync = widget.wearSync ?? WearSyncChannel();
   PushChannel? _pushChannel;
+  PushService? _pushService;
+  IncomingCallController? _calls;
   // Her derived home (age band, My people, birthday line) from the local family structure.
   // Null (never loaded, or the local read failed) renders the home exactly as before.
   FamilyChildSnapshot? _family;
@@ -265,12 +278,15 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     super.initState();
     // Registered before `_load()` resolves on purpose -- see file header.
     _wearSync.listenForCallDad(_handleWatchCallDad);
+    _attachCalls();
     _load();
   }
 
   @override
   void dispose() {
     _pushChannel?.dispose();
+    _pushService?.dispose();
+    _calls?.dispose();
     super.dispose();
   }
 
@@ -326,7 +342,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       final api = await apiFor(widget.baseUrl,
           childId: widget.childId, client: widget.httpClient);
       final me = await api.fetchMe();
-      final inbox = await api.fetchInbox(widget.childId);
       final now = await api.fetchNow(widget.childId);
       // Fetched in its own try/catch, deliberately NOT alongside the three
       // awaits directly above: presence is a supplementary signal, not core
@@ -366,22 +381,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
-      // `entries`, not `messages` -- server/routes.mjs's own GET .../inbox
-      // handler renamed its response key: `messages` collided with
-      // packages/globalaudit/src/globalaudit.ts's GLOBAL_CHILD_FORBIDDEN
-      // list (banned there for an unrelated reason), which meant every real
-      // child session hitting this exact call 500'd in production, silently
-      // -- see that handler's own comment for the full account. This
-      // screen's own header already disclosed why nothing caught it: it has
-      // never been run against a real deployed backend.
-      final List<dynamic> messages = inbox['entries'] as List;
+      // Her inbox is NOT read here any more: the Messages screen (inbox_screen.dart) reads it itself, so a broken or
+      // hostile inbox answer can never trap her home, and this home carries no unread dot or count (MASTERFILE 7.19).
       setState(() {
         _childName = (me['displayName'] as String?) ?? 'there';
-        // Only 'delivered' (unwatched) messages count toward the badge --
-        // /inbox itself returns BOTH 'delivered' and 'opened' rows (see
-        // server/routes.mjs's own query, `state IN ('delivered','opened')`),
-        // so counting the raw list length double-counted every message
-        // she had already watched as still unread. See file header.
         final int served = (me['yearsOld'] as num?)?.toInt() ?? _failClosedAge;
         final DateTime today = _now();
         // A birthday this device already applied today is not undone by an answer that was computed before it.
@@ -392,14 +395,12 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         _ageDay = today;
         sharedAccess.setAge(_childAge);
         _dayParts = _decodeDayParts(now['dayParts']);
-        _unreadCount = messages.where(
-            (dynamic m) => (m as Map<String, dynamic>)['state'] == 'delivered').length;
         // Real, fetched from /now -- see file header. Honestly null when
         // the child has no active custody_order row (/now's own absence).
         _sleepsUntilHandover = (now['sleepsUntilHandover'] as num?)?.toInt();
         // §1's own disclosure lives at the server computation site
         // (server/routes.mjs), not here -- this is a pure wire-shape decode,
-        // matching how `now`/`inbox` are decoded immediately above.
+        // matching how `now` is decoded immediately above.
         final free = presenceJson?['free'] as Map<String, dynamic>?;
         _presence = free == null ? null : ParentPresence(
           free['name'] as String,
@@ -418,6 +419,10 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           displayName: me['displayName'] as String?,
           yearsOld: (me['yearsOld'] as num?)?.toInt(),
           overrides: overridesJson));
+      // Receipts she made while the server could not be reached go now, silently (the offline outbox).
+      unawaited(drainOpenedReceipts(
+          baseUrl: widget.baseUrl, childId: widget.childId, sessionToken: api.sessionToken,
+          httpClient: widget.httpClient));
       await _syncWear();
       await _initPush(api.sessionToken);
     } catch (e) {
@@ -507,41 +512,71 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
       builder: (_) => CallScreen(who: 'ivy', displayName: _childName)));
   }
 
-  // Real permission request + token registration (§11) using the exact
-  // session token this screen just fetched for itself above -- the only
-  // place this client currently holds a live, authenticated session. Never
-  // allowed to fail this screen's own readiness: PushChannel.initialize()
-  // throws a real, named PushInitializationError (push_channel.dart) the
-  // overwhelming majority of the time this runs, because no real Firebase
-  // project config exists in this repo (see pubspec.yaml) -- that failure
-  // is real and logged, not hidden, but it stays confined to push. A child
-  // or guardian opening this screen must still see their name and inbox
-  // count even on a checkout with zero push configuration.
-  Future<void> _initPush(String token) async {
-    final channel = widget.pushChannel ??
-        PushChannel(
-          OliveApi(widget.baseUrl, token,
-              client: widget.httpClient, session: AuthSession.current),
-          onForegroundPointer: widget.navigatorKey == null ? null : buildCallIncomingHandler(
-            navigatorKey: widget.navigatorKey!,
-            // Hardcoded, matching every other call site in this client
-            // (CallScreen's own constructors, local-call-room-server.mjs) —
-            // a real call_incoming push carries no caller identity by
-            // design (push.ts's content-free PushInput shape), so there is
-            // nothing to resolve 'from'/'who'/'displayName' from even if
-            // this screen wanted to.
-            // C-13: the real name when a parent is known to be free, else
-            // a neutral phrase — never a hard-coded "Dad".
+  // The knock, wired as soon as this screen opens and NOT behind the server load. A ring that opened the app from
+  // a closed state (the phone posted it natively) is waiting in IncomingCallBridge for exactly one "attach"; if
+  // that waited for fetchMe/inbox/presence to succeed, a slow or unreachable server would lose the ring (it ages
+  // past the knock's ninety seconds, or the load fails and attach never runs). Only the push-token registration
+  // (_initPush) needs a session. Same gates as before: a connected device (not a locally paired tablet), a build
+  // with push on, no injected test channel, and a navigator to knock on.
+  void _attachCalls() {
+    if (widget.localOnly || widget.pushChannel != null) return;
+    final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
+    if (navKey == null) return;
+    if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
+    Future<OliveApi> freshApi() => apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
+    final IncomingCallController calls = IncomingCallController(
+      navigatorKey: navKey,
+      channel: widget.incomingCallChannel ?? IncomingCallChannel(),
+      childId: widget.childId,
+      apiProvider: freshApi,
+      // The caller's name is not in the push (it is content-free); a neutral phrase until the home knows who is free.
+      buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
+          CallKnockScreen(
             from: _presence?.name ?? neutralGrownUp, who: 'ivy',
             displayName: _childName.isEmpty ? 'there' : _childName,
-          ),
-        );
-    _pushChannel = channel;
-    try {
-      await channel.initialize();
-    } catch (e) {
-      debugPrint('[olive.push] not registered this run: $e');
+            sessionId: ref, childId: widget.childId,
+            apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
+    );
+    _calls = calls;
+    unawaited(calls.attach());
+  }
+
+  // Push and calls for a CONNECTED child device (§11, §7.18). Runs after this screen has a real session, and is
+  // never allowed to fail this screen's own readiness or to show her anything:
+  //  * a build with no Firebase settings does nothing here at all (push_service.dart, push_config.dart);
+  //  * a locally paired tablet never reaches this method (it has no session, `_load` returns early);
+  //  * an injected [PushChannel] (tests) is used exactly as it always was.
+  // What each push means once it arrives is push_service.dart's PushDispatcher: a ring becomes a knock
+  // (incoming_call.dart decides if it is shown), a hang-up quietly removes the knock, "something new" is not
+  // wired to her home at all (it has no dot or count to refresh; the Messages screen reads the inbox itself). The system's "allow notifications" box is never shown to her: a grown-up answers it from
+  // Guardian mode (alerts_card.dart).
+  Future<void> _initPush(String token) async {
+    final injected = widget.pushChannel;
+    if (injected != null) {
+      _pushChannel = injected;
+      try {
+        await injected.initialize();
+      } catch (e) {
+        debugPrint('[olive.push] not registered this run: ${e.runtimeType}');
+      }
+      return;
     }
+    final PushService service = widget.pushService ?? PushService();
+    if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
+    // A reload of this screen starts push again: put the earlier listener away first. The knock controller is NOT
+    // recreated: it was attached when the screen opened (_attachCalls), so a reload cannot knock twice.
+    _pushService?.dispose();
+    _pushService = service;
+    final IncomingCallController? calls = _calls;
+    final PushDispatcher dispatcher = PushDispatcher(
+      onCallIncoming: calls == null ? null : (String ref) => calls.onRing(ref),
+      onCallCancelled: calls == null ? null : (String ref) => calls.onCancel(ref),
+      // message_ready is deliberately not wired here (MASTERFILE 7.19 and 7.20): her home carries no dot or count,
+      // so there is nothing for it to refresh. The Messages screen reads her inbox itself, on open, on return to
+      // the app and every minute, and the system banner has already told a closed app that something is waiting.
+    );
+    final OliveApi api = OliveApi(widget.baseUrl, token, client: widget.httpClient, session: AuthSession.current);
+    await service.start(api: api, onPointer: dispatcher.handle);
   }
 
   /// The no-signal home. See the file header: pictures only, never raw text.
@@ -584,7 +619,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
         childName: name,
         presence: null,
         sleepsUntilHandover: null,
-        unreadCount: 0,
         baseUrl: widget.baseUrl,
         childId: widget.childId,
         sessionToken: null,
@@ -614,7 +648,6 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             childName: _childName,
             presence: _presence, // real, from GET .../presence
             sleepsUntilHandover: _sleepsUntilHandover, // still null -- see header and _load()
-            unreadCount: _unreadCount,
             // Real homework-capture wiring (§9.1, §20.2b) — the same
             // session _load() already minted, reused rather than each
             // child-facing screen calling devLoginFor() again on its own.

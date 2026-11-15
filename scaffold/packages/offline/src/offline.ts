@@ -9,7 +9,7 @@
 
 export type OutboxKind =
   | 'show' | 'drawing' | 'message' | 'voice' | 'colouring' | 'journal'
-  | 'list_item' | 'story_star' | 'ping';
+  | 'list_item' | 'story_star' | 'ping' | 'receipt';
 
 export interface OutboxItem {
   id: string;

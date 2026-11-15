@@ -82,8 +82,8 @@ void main() {
       await t.pumpAndSettle();
     });
 
-    testWidgets('renders real fetched name and a real UNREAD-ONLY count '
-        'through the real ChildHome', (t) async {
+    testWidgets('renders the real fetched name through the real ChildHome, with no unread dot or count '
+        'whatever the inbox holds', (t) async {
       final mock = MockClient((req) async {
         if (req.url.path == '/v1/auth/dev-login') {
           return http.Response(jsonEncode({'token': 'tok'}), 200);
@@ -116,11 +116,9 @@ void main() {
       await t.pumpAndSettle();
 
       expect(find.text('Hi, Ivy'), findsOneWidget);
-      // The unread signal is a dot (C-24: no number for a child): 2 delivered
-      // and 1 already opened -> there IS something new, and no count is
-      // ever painted at her. The opened-excluded count itself is
-      // proven by the all-opened case in child_wiring_test.dart.
-      expect(find.byKey(const Key('newDot')), findsOneWidget);
+      // 2 delivered and 1 already opened: she is shown no dot and no count (MASTERFILE 7.19). The home does not
+      // even read her inbox; the Messages screen does.
+      expect(find.byKey(const Key('newDot')), findsNothing);
       expect(find.text('2'), findsNothing);
       expect(find.text('3'), findsNothing);
       // No active custody order in this fixture (/now's own honest null) —

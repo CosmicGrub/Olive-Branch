@@ -9,6 +9,7 @@
 // guardian side, family setup) that don't have their own top-level tile, so
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
+import 'dart:async' show unawaited;
 import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -56,6 +57,8 @@ import 'emergency_card_local.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
+import 'family_account_entry.dart';
+import 'family_account_store.dart' show forgetAccountOnThisPhone;
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
 import 'ui/olive_ui_gallery.dart';
@@ -83,6 +86,7 @@ import 'clear_local_data_screen.dart';
 import 'maturation_ladder.dart';
 import 'meds_care.dart';
 import 'palette_logic.dart';
+import 'call_lifecycle.dart' show CallAvailability, availabilityLine, ringStateLine, ringStateOf;
 import 'push_channel.dart';
 import 'compass_repositories.dart';
 import 'compass_screens.dart';
@@ -341,12 +345,38 @@ class GuardianMoreScreen extends StatelessWidget {
     try {
       final api = await apiFor(url, userId: gid, client: availabilityHttpClient);
       final Map<String, dynamic> started;
+      String? heads;
       try {
+        // Ask first (call_lifecycle.dart): calls are switched on by the operator, and "off" is better said before
+        // the grown-up taps than found out from a refusal. An answer that cannot be read changes nothing, and the
+        // server still has the last word when the call is started.
+        CallAvailability? availability;
+        try {
+          availability = CallAvailability.tryParse(await api.fetchCallAvailability(childId));
+        } catch (_) {
+          availability = null;
+        }
+        heads = availabilityLine(availability);
+        if (availability != null && !availability.available) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(heads!), duration: const Duration(seconds: 5)));
+          }
+          return;
+        }
         started = await api.startCall(childId);
       } finally {
         if (availabilityHttpClient == null) api.close();
       }
       onCallStarted?.call(started);
+      // Why her tablet may stay quiet (quiet time, not set up for rings, no pop-up alerts, a send that failed).
+      // The call is open and joinable either way; this is only the honest reason, in a grown-up's words.
+      final String? ringLine = ringStateLine(ringStateOf(started['ringState']), childName: childName);
+      final String note = <String?>[heads, ringLine].whereType<String>().join(' ');
+      if (note.isNotEmpty && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(note), duration: const Duration(seconds: 6)));
+      }
       final sessionId = started['sessionId'] as String?;
       // The grant says which engine carries this call (jitsi or livekit).
       final grant = CallGrant.fromJson(started);
@@ -655,6 +685,9 @@ class GuardianMoreScreen extends StatelessWidget {
     // installed (the offline demo build, a dev-login run) there is nothing
     // stored to clear and this stays the pop it always was.
     await AuthSession.current?.signOut();
+    // The optional account's note about this phone (its child, a half-finished join) ends with the sign-in.
+    // Not awaited: leaving the screen never waits on the phone's secure storage.
+    unawaited(forgetAccountOnThisPhone());
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -838,6 +871,14 @@ class GuardianMoreScreen extends StatelessWidget {
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
       ]),
       SettingsGroup('Account', [
+        // Optional, like everything online: shown only where the build can reach a server (a connected shell, or a
+        // local one that was given the way to open it). A phone with no account is the normal phone.
+        if (live || local?.onAccount != null)
+          SettingsRow(id: 'familyaccount', icon: Icons.family_restroom_outlined, title: 'Family account',
+            subtitle: 'Optional. Make an account, add $childName, and invite another grown-up',
+            onTap: () => live
+              ? openFamilyAccount(context, baseUrl: baseUrl!)
+              : local!.onAccount!(context)),
         if (local?.onConnect != null)
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',

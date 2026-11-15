@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Bundle
 import android.view.WindowManager
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.flutter.embedding.android.FlutterActivity
@@ -59,6 +60,30 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // The two notification channels the server's pushes name (`calls`, `reminders`) exist before any push can
+        // need them, and a ring that opened the app (the knock notification, or the full-screen intent) is
+        // picked up. See OliveNotifications.kt and IncomingCallBridge.kt.
+        OliveNotifications.ensureChannels(this)
+        IncomingCallBridge.handleIntent(this, intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        IncomingCallBridge.handleIntent(this, intent)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        IncomingCallBridge.onPermissionResult(this, requestCode, grantResults)
+    }
+
+    override fun onDestroy() {
+        IncomingCallBridge.onDestroyed()
+        super.onDestroy()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -103,6 +128,9 @@ class MainActivity : FlutterActivity() {
         // discoverable-credential requirement this bridge is built around.
         WebAuthnBridge.register(this, MethodChannel(messenger, WebAuthnBridge.METHOD_CHANNEL))
 
+        // The phone's own ring surface (incoming calls) and the grown-up's alerts card. See IncomingCallBridge.kt.
+        IncomingCallBridge.register(this, MethodChannel(messenger, IncomingCallBridge.METHOD_CHANNEL))
+
         // Opens THIS app's page in the phone's settings, so a grown-up whose camera permission was refused can allow
         // it again (scanner_unavailable.dart). The activity is the app's own; nothing is sent anywhere.
         MethodChannel(messenger, "olive/app_settings").setMethodCallHandler { call, result ->
@@ -131,6 +159,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onStop() {
         super.onStop()
+        // A ring that lit the screen over the lock screen lets go of it as soon as the app leaves the front.
+        IncomingCallBridge.onActivityStopped(this)
         val current = KioskBridge.currentMode(this)
         val wasLocked = lastKnownMode == "pinned" || lastKnownMode == "locked"
         if (wasLocked && current == "none") {

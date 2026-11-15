@@ -5,8 +5,25 @@ Research and decisions, snapshot 2026-11-14. Sources are third-party where noted
 ## Chosen direction (now)
 
 - **Server:** the dev stack runs in Docker on the owner's PC (project `olive-fresh`, loopback port with `adb reverse` to the test devices). This is the default until the owner says otherwise.
-- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. The server can now send the ring push (FCM sender, delivery wake-up, call_incoming and call_cancelled, with call_log written first and an honest ringState), but it has only run against an HTTP stand-in for Google: it needs the owner's Firebase project, and a closed Android app still cannot ring until the client has the native full-screen-call UI (gap G4, not built; see OPERATIONS-RUNBOOK "Server lane").
+- **Calls:** the owner's self-hosted Jitsi stack (`scaffold/tools/jitsi-selfhost`), started on demand, behind a call-provider switch. LiveKit stays selectable. Calls work on the home network only while the PC is on and calls are switched on. The server can now send the ring push (FCM sender, delivery wake-up, call_incoming and call_cancelled, with call_log written first and an honest ringState), but it has only run against an HTTP stand-in for Google and needs the owner's Firebase project. The Android client side is now built and ships no credential (MASTERFILE 7.20): the guarded token registration, the `calls` and `reminders` channels, a native receiver that rings a closed app with a full-screen knock, silent `call_cancelled`, the availability and call-log client. It has not run on a device; see "What the owner must provide for push and calls" below.
 - **Scrapped for much later:** Oracle Always Free, any VPS, the Cloudflare tunnel, and self-hosted LiveKit hosting. Their partial work is kept on branches (`feat/vps-deploy-kit`, `feat/live-server-bake`).
+
+## What the owner must provide for push and calls
+
+The Android client is built so that nothing below changes any code: it only adds build values and server settings. Without any of it the app works exactly as before (offline-first). Nothing is committed: no key, no project id, no `google-services.json`.
+
+| # | What | Where it comes from | Where it goes | Needed for |
+|---|---|---|---|---|
+| 1 | A Firebase project with an Android app registered under the exact application id `com.olivebranch.olive_client` | Firebase console, Project settings, "Add app" | nowhere (it is the source of 2 and 3) | everything below |
+| 2 | `google-services.json` for that app | Firebase console, Project settings, Your apps, download | anywhere outside the repository; then `node tools/fcm-defines.mjs <that file>` writes the four build values to `scaffold/secrets/fcm.defines.json` (git-ignored; prints names only). Do not put the JSON in `client/android` and do not paste it into chat. | the app getting a token |
+| 3 | A service-account private key for the server | Firebase console, Project settings, Service accounts, "Generate new private key" | `scaffold/secrets/` (git-ignored), then `FCM_SERVICE_ACCOUNT_FILE=/run/olive-secrets/<file name>` in `scaffold/.env` and recreate only the `olive-fresh` server and delivery services (runbook "Server lane", step 3) | the server sending pushes |
+| 4 | A build that carries the values from step 2 | `bash tools/device-sync.sh` uses `scaffold/secrets/fcm.defines.json` by itself when it exists; for a hand build add `--dart-define-from-file=scaffold/secrets/fcm.defines.json` | the installed app on each device | the app starting Firebase |
+| 5 | Calls switched on at the server | `tools/jitsi-selfhost/calls-on.sh`, then recreate the server (runbook step 4) | server environment | `GET .../calls/availability` saying `available` |
+| 6 | On each child tablet, once: allow alerts | A grown-up opens Guardian mode on the tablet (PIN and biometric), then "Alerts on this tablet": Allow, and on Android 14 and later "Open settings" for full-screen notifications | the tablet | the knock appearing over the lock screen (without the second switch it is an ordinary heads-up notification) |
+| 7 | For a Google Play release only | Play Console: the full-screen-intent declaration for the app; the Data Safety form naming Firebase as a processor of a child's device token | Play Console | store distribution; not needed for sideloaded test builds |
+
+Checks to run on the two devices after steps 1 to 6 (none has been run): the server logs `push: {"androidRing":"ready",...}` and the loopback metrics show it; the tablet registers (a `device_token` row appears for the child); a delivered message makes the system banner "Something new is waiting for you." appear with the app closed (this is the first thing to look at, see MASTERFILE 7.20, "The settings come from the build"); a call from the guardian phone rings the tablet with the screen off; the caller hanging up first clears it; "Not now" and doing nothing both leave the tablet calm.
+
 
 ## Hosting options researched
 

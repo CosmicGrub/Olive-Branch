@@ -1,44 +1,42 @@
-// OLIVE BRANCH — child shell, inbox. No longer UNVERIFIED — verified by CI (a Flutter toolchain
-// now runs for real in tools/verify.sh's automated pipeline — CHANGELOG
-// v0.49.61). MASTERFILE §8.2, §9.5. Renders
-// MARKUP screen 'inbox': "Async messages materialised by the delivery
+// OLIVE BRANCH — child shell, inbox. No longer UNVERIFIED — verified by CI (client/test/inbox_screen_test.dart).
+// MASTERFILE §8.2, §9.5, §7.19. Renders MARKUP screen 'inbox': "Async messages materialised by the delivery
 // engine; receipts render in her frame."
 //
-// Opening an unwatched message is the one real mutation this screen makes
-// (marks it watched, in-memory) and the one place it hands off to
-// receipt_screen.dart — classifying "right now" against the SAME
-// `demoDayParts` schedule my_day.dart renders, rather than guessing a
-// day-part independently. Two lookups drifting apart is exactly the failure
-// phase3.ts's DAY_PART_META already guards against for label/glyph; using
-// one shared classification here extends that same discipline across files.
+// WHAT SHE SEES. A quiet list of what has arrived: one tile per message, "<her word for the grown-up> sent a video".
+// A message she has not opened is a filled tile; one she has opened is a plain one. That is all: no dot, no "New",
+// no greeting that counts or comforts, no number anywhere. When nothing has arrived the screen is simply empty, and
+// it is exactly as empty when the server cannot be reached or answers with something unreadable: she is never shown
+// an error, a retry button or a cloud, and nothing here ever says "no signal". The cause goes to the debug log.
 //
-// An already-watched message still opens its receipt — showing what was
-// already recorded, never re-deriving "now" for something that already
-// happened. No settings affordance exists at any depth (matches
-// child_home.dart), and nothing here is a score: `watched`/unread state is
-// informational, not a streak.
+// WHAT IT DOES. On a server-connected device it asks for its inbox (OliveApi.fetchInbox) when it opens, whenever the
+// app returns to the front, and about once a minute while it is open (the delivery worker moves a due message into
+// the inbox every half minute; a wake-up push, once one exists on this client, only makes the next ask sooner).
+// What the server returns is exactly what it decided is ready: the bedtime, the day-part and the custody rules run
+// on the server, so this screen has no clock logic of its own for deciding what to show. [parseInbox]
+// (child_receive.dart) whitelists what is drawn.
 //
-// LIVE WIRING (baseUrl/childId/sessionToken/httpClient, all optional and
-// additive — same convention HomeworkScreen/ReceiptScreen already use):
-// when supplied, this screen fetches its OWN real inbox via
-// OliveApi.fetchInbox() on init, mirroring HomeworkScreen's own self-
-// fetching pattern rather than requiring a caller to pre-fetch and pass
-// down a messages list. `deliveredAtLabel` for a real fetched entry is
-// ALREADY formatted in her real frame server-side (server/routes.mjs's own
-// relativeInboxLabel()) — this screen never does its own timezone math, the
-// same "conversion belongs on the server side of the wire" discipline every
-// other live-wired screen in this client already follows (no timezone
-// package exists in client/pubspec.yaml). `dayPartKind` is honestly left
-// null for a real fetched entry (the server route does not compute one —
-// a separate, still-open gap, matching ChildHome's own presence field) —
-// receipt_screen.dart's own dayPartKind is already nullable and handles
-// that absence honestly, same as it always has for the demo path.
+// OPENING. Opening a tile she has not opened marks it opened here at once, tells the server through
+// POST .../inbox/:id/opened, and opens its receipt. If the server cannot be told, the receipt waits in the offline
+// outbox ([ReceiptQueue]) and goes later; the tile stays opened for her either way. It never delays the screen she
+// asked for and she is never told it is waiting.
+//
+// A LOCALLY PAIRED TABLET has no server session: it is not "live" here, it is handed no messages, and so this
+// screen is empty. The demo build (the preview with no server address at all) is the only caller that passes the
+// example messages below.
+//
+// `deliveredAtLabel` for a real fetched entry is ALREADY formatted in her real frame server-side (server/routes.mjs'
+// relativeInboxLabel()); this screen never does its own time-zone math. `dayPartKind` is honestly left null for a
+// real fetched entry (the server does not compute one): receipt_screen.dart handles that absence.
+//
+// Not built: playing the picture or the recording (no player exists in this client; the signed media URL route
+// GET .../inbox/:id/media-url is declared in api_client.dart and unused). Until it is, "opened" is recorded when she
+// opens the tile, and the receipt sentence is the one receipt_screen.dart has always shown.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
-import 'auth_session.dart';
 import 'calendar_day_logic.dart';
+import 'child_receive.dart';
 import 'form_factors.dart' as ff;
 import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject, neutralGrownUp;
 import 'receipt_screen.dart';
@@ -51,6 +49,7 @@ class InboxMessage {
     this.dayPartKind,
     this.watched = false,
     this.senderId,
+    this.kind = 'video_msg',
   });
 
   /// A real fetched message's id is a real database UUID, not a small int —
@@ -70,14 +69,17 @@ class InboxMessage {
   final String? dayPartKind;
   final bool watched;
 
+  /// The delivery kind ('video_msg', 'voice_note', 'drawing', 'photo', 'nudge', ...): chooses the words and the picture.
+  final String kind;
+
   InboxMessage markWatched() => InboxMessage(
     id: id, senderName: senderName, deliveredAtLabel: deliveredAtLabel,
-    dayPartKind: dayPartKind, watched: true, senderId: senderId,
+    dayPartKind: dayPartKind, watched: true, senderId: senderId, kind: kind,
   );
 }
 
-/// Demo-only inbox contents. No live delivery-engine backend exists yet (see
-/// api_client.dart / packages/delivery-engine) — this stands in for it.
+/// Demo-only inbox contents, for the preview build that has no server at all. A server-connected or locally paired
+/// device never shows these.
 const List<InboxMessage> demoInboxMessages = <InboxMessage>[
   InboxMessage(id: '1', senderName: neutralGrownUp, deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
   InboxMessage(id: '2', senderName: neutralGrownUp, deliveredAtLabel: 'Yesterday, 7:58 PM',
@@ -91,8 +93,6 @@ const List<InboxMessage> demoInboxMessages = <InboxMessage>[
 String _senderLabel(GrownupLabels labels, InboxMessage m) =>
     m.senderId != null && labels.contact(m.senderId) != null ? labels.nameFor(m.senderId) : m.senderName;
 
-enum _LoadState { ready, loading, error }
-
 class InboxScreen extends StatefulWidget {
   const InboxScreen({
     super.key,
@@ -102,10 +102,11 @@ class InboxScreen extends StatefulWidget {
     this.childId,
     this.sessionToken,
     this.httpClient,
+    this.receiptQueue,
+    this.refreshEvery = const Duration(seconds: 60),
   });
   final String childName;
-  /// The demo/offline fixture — also what renders for one frame before a
-  /// live fetch (below) resolves, when live params are supplied.
+  /// The preview build's example messages. Ignored when the screen is live (it shows only what the server sent).
   final List<InboxMessage> messages;
   final String? baseUrl;
   final String? childId;
@@ -113,6 +114,10 @@ class InboxScreen extends StatefulWidget {
   /// Injectable for tests (package:http/testing.dart's MockClient) — matches
   /// HomeworkScreen/ReceiptScreen/child_home_live.dart's own convention.
   final http.Client? httpClient;
+  /// Injectable for tests. Defaults to this device's queue for the child.
+  final ReceiptQueue? receiptQueue;
+  /// How often an open screen asks again. Null turns the timer off (tests).
+  final Duration? refreshEvery;
 
   bool get _isLive => baseUrl != null && childId != null && sessionToken != null;
 
@@ -120,79 +125,66 @@ class InboxScreen extends StatefulWidget {
   State<InboxScreen> createState() => _InboxScreenState();
 }
 
-class _InboxScreenState extends State<InboxScreen> {
+class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
   late List<InboxMessage> _messages;
-  _LoadState _loadState = _LoadState.ready;
+  Timer? _timer;
+  bool _loading = false;
+  ReceiptQueue? _queueOrNull;
+  /// Ids she opened on this screen. A fetch that raced her tap can come back 'delivered'; these stay opened.
+  final Set<String> _openedHere = <String>{};
+
+  ReceiptQueue get _queue => _queueOrNull ??= widget.receiptQueue ?? ReceiptQueue.forChild(widget.childId!);
 
   @override
   void initState() {
     super.initState();
-    _messages = List<InboxMessage>.of(widget.messages);
-    if (widget._isLive) _load();
-  }
-
-  /// The ONLY place this screen calls the network — mirrors HomeworkScreen's
-  /// own self-fetching pattern rather than requiring a pre-fetched list from
-  /// a caller. A failure here is a real, honest error state with a retry
-  /// affordance (child_home_live.dart's own established shape), never a
-  /// silent fall-back to the demo fixture and never an unhandled exception.
-  Future<void> _load() async {
-    setState(() => _loadState = _LoadState.loading);
-    final OliveApi api =
-        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
-    try {
-      final Map<String, dynamic> result = await api.fetchInbox(widget.childId!);
-      final List<dynamic> raw = result['entries'] as List<dynamic>? ?? <dynamic>[];
-      final List<InboxMessage> fetched = raw.map((dynamic e) {
-        final Map<String, dynamic> row = e as Map<String, dynamic>;
-        return InboxMessage(
-          id: row['id'] as String,
-          senderName: row['sender_name'] as String,
-          senderId: row['sender_id'] as String?,
-          // Already formatted in her real frame, server-side — see this
-          // file's own header for why no client-side timezone math happens
-          // here.
-          deliveredAtLabel: row['deliveredAtLabel'] as String? ?? '',
-          // Not returned by the real route yet — a separate, still-open gap
-          // (see this file's header); left honestly null, same as
-          // receipt_screen.dart already handles for the demo path.
-          dayPartKind: null,
-          watched: row['state'] == 'opened',
-        );
-      }).toList();
-      if (!mounted) return;
-      setState(() {
-        _messages = fetched;
-        _loadState = _LoadState.ready;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loadState = _LoadState.error);
-    } finally {
-      if (widget.httpClient == null) api.close();
+    // A live screen never starts from example messages: it shows what the server sent, or nothing.
+    _messages = widget._isLive ? <InboxMessage>[] : List<InboxMessage>.of(widget.messages);
+    if (widget._isLive) {
+      WidgetsBinding.instance.addObserver(this);
+      final Duration? every = widget.refreshEvery;
+      if (every != null) _timer = Timer.periodic(every, (_) => unawaited(_load()));
+      unawaited(_load());
     }
   }
 
-  /// Best-effort — mirrors [OliveApi.endCall]'s own posture exactly (see
-  /// that method's own doc comment): record-keeping only, never allowed to
-  /// block or delay the real screen transition [_open] is already mid-tap
-  /// on, and never surfaced to the child as an error. A real gap this
-  /// closes, found by this project's own post-tier audit: MASTERFILE §7.3
-  /// declared POST .../inbox/:id/opened as part of the API surface for as
-  /// long as this document has had an API reference section, but nothing
-  /// anywhere ever called it — this screen only ever flipped `watched` in
-  /// LOCAL widget state, invisible to the server past this one screen
-  /// instance, so a fresh [_load] on the next visit re-showed every
-  /// previously-watched message as "New."
-  Future<void> _markOpenedRemote(String messageId) async {
-    final OliveApi api =
-        OliveApi(widget.baseUrl!, widget.sessionToken!, client: widget.httpClient, session: AuthSession.current);
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget._isLive) unawaited(_load());
+  }
+
+  /// The ONLY place this screen reads the network. First the receipts that are waiting go out, then the inbox is
+  /// asked for. A failure at any point changes nothing she sees (what is already on the screen stays, an empty
+  /// screen stays empty) and is only logged.
+  Future<void> _load() async {
+    if (_loading || !mounted) return;
+    _loading = true;
     try {
-      await api.markInboxOpened(widget.childId!, messageId);
+      await withChildApi<void>(
+        baseUrl: widget.baseUrl!, sessionToken: widget.sessionToken!, httpClient: widget.httpClient,
+        body: (OliveApi api) async {
+          await _queue.drain((String id) => api.markInboxOpened(widget.childId!, id));
+          final List<InboxMessage> fetched = parseInbox(await api.fetchInbox(widget.childId!));
+          // A receipt still waiting to go is already opened as far as she is concerned.
+          final Set<String> waiting = await _queue.pendingIds();
+          if (!mounted) return;
+          setState(() => _messages = <InboxMessage>[
+            for (final InboxMessage m in fetched)
+              (waiting.contains(m.id) || _openedHere.contains(m.id)) ? m.markWatched() : m,
+          ]);
+        },
+      );
     } catch (e) {
-      debugPrint('[olive.inbox] markInboxOpened failed (best-effort, not shown to her): $e');
+      debugPrint('[olive.inbox] not loaded this time (nothing is shown to her): $e');
     } finally {
-      if (widget.httpClient == null) api.close();
+      _loading = false;
     }
   }
 
@@ -206,23 +198,20 @@ class _InboxScreenState extends State<InboxScreen> {
       watchedAtLabel = formatTimeOfDay(nowHhmm);
       // demoDayParts is a fixed DEMO schedule — real for the offline/demo
       // path, but classifying a REAL live-fetched message against it would
-      // present a fabricated day-part as if it were hers. No real day-part
-      // source exists server-side yet for a live message (the same gap
-      // ChildHome's own `presence` field discloses) — honestly left null
-      // there, same as receipt_screen.dart's own dayPartKind already
-      // handles a genuine absence for.
+      // present a fabricated day-part as if it were hers. Honestly left null
+      // for a live message (the server does not send one).
       if (!widget._isLive) {
         final List<StripSegment> segments = scheduleStrip(demoDayParts, nowHhmm);
         dayPartKind = currentSegment(segments)?.kind;
       } else {
         dayPartKind = null;
       }
+      _openedHere.add(m.id);
       final int i = _messages.indexWhere((InboxMessage x) => x.id == m.id);
-      setState(() => _messages[i] = m.markWatched());
-      // Fire-and-forget — not awaited, deliberately: see _markOpenedRemote's
-      // own doc comment for why this must never delay the Navigator.push
-      // just below, which happens unconditionally either way.
-      if (widget._isLive) unawaited(_markOpenedRemote(m.id));
+      if (i >= 0) setState(() => _messages[i] = m.markWatched());
+      // Fire-and-forget — not awaited, deliberately: it must never delay the Navigator.push just below. A failure
+      // leaves the receipt in the offline outbox and is never shown to her.
+      if (widget._isLive) unawaited(_recordOpened(m.id));
     }
 
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ReceiptScreen(
@@ -237,34 +226,19 @@ class _InboxScreenState extends State<InboxScreen> {
     )));
   }
 
+  Future<void> _recordOpened(String messageId) async {
+    try {
+      await withChildApi<void>(
+        baseUrl: widget.baseUrl!, sessionToken: widget.sessionToken!, httpClient: widget.httpClient,
+        body: (OliveApi api) => _queue.record(messageId, (String id) => api.markInboxOpened(widget.childId!, id)),
+      );
+    } catch (e) {
+      debugPrint('[olive.inbox] receipt not sent (kept for later, not shown to her): $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Loading/error UI mirrors child_home_live.dart's own established
-    // shape (same icon, same wording pattern, same real retry action) —
-    // both only ever reachable when this screen is live-wired; the pure
-    // demo path (no live params) never enters either state.
-    if (_loadState == _LoadState.loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (_loadState == _LoadState.error) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Messages')),
-        body: Center(child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.cloud_off, size: 40,
-              color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text("Couldn't reach the server",
-              style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _load, child: const Text('Try again')),
-          ]),
-        )),
-      );
-    }
-    final int unread = _messages.where((InboxMessage m) => !m.watched).length;
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
       body: SafeArea(child: LayoutBuilder(builder: (BuildContext context, BoxConstraints constraints) {
@@ -277,21 +251,10 @@ class _InboxScreenState extends State<InboxScreen> {
         final double textScale = MediaQuery.textScalerOf(context).scale(1);
         final bool capWidth = ff.columnsAt(
             ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight), textScale) >= 2;
+        // Empty is nothing: no icon, no sentence, no greeting.
         final Widget content = _messages.isEmpty
-            ? Center(child: Padding(padding: const EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.inbox_outlined, size: 40,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(height: 12),
-                  Text('Nothing here yet.', style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                ])))
+            ? const SizedBox.expand()
             : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-                Text(unread == 0
-                  ? 'Hi ${widget.childName}, all caught up'
-                  : 'Hi ${widget.childName}, something new for you',
-                  style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 16),
                 for (final InboxMessage m in _messages) _InboxTile(message: m, onTap: () => _open(m)),
               ]);
         return capWidth
@@ -305,6 +268,14 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 }
 
+IconData _iconFor(String kind) => switch (kind) {
+      'voice_note' => Icons.graphic_eq_rounded,
+      'drawing' => Icons.brush_outlined,
+      'photo' => Icons.photo_outlined,
+      'nudge' => Icons.favorite_border,
+      _ => Icons.play_arrow_rounded,
+    };
+
 class _InboxTile extends StatelessWidget {
   const _InboxTile({required this.message, required this.onTap});
   final InboxMessage message;
@@ -313,6 +284,8 @@ class _InboxTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final String phrase = kReceivedPhrase[message.kind] ?? kReceivedPhrase['video_msg']!;
+    final String line = '${asSubject(_senderLabel(GrownupLabelScope.of(context), message))} $phrase';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -329,19 +302,11 @@ class _InboxTile extends StatelessWidget {
           child: Row(children: <Widget>[
             CircleAvatar(radius: 22,
               backgroundColor: message.watched ? scheme.outlineVariant : scheme.primary,
-              child: Icon(Icons.play_arrow_rounded,
+              child: Icon(_iconFor(message.kind),
                 color: message.watched ? scheme.onSurfaceVariant : scheme.onPrimary)),
             const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              Text('${asSubject(_senderLabel(GrownupLabelScope.of(context), message))} sent a video',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(message.watched ? 'Watched · ${message.deliveredAtLabel}' : 'New — tap to watch',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-            ])),
-            if (!message.watched)
-              Container(width: 10, height: 10,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: scheme.error)),
+            Expanded(child: Text(line,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
           ]),
         ),
       ),

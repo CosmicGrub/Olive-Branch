@@ -22,11 +22,18 @@ URL="http://127.0.0.1:${PORT}"
 OUT="${OUT:-$(mktemp -d)}"
 cd "$(dirname "$0")/../client"
 
+# Push: when the owner has turned their google-services.json into settings (node tools/fcm-defines.mjs), every build
+# below carries them; without the file nothing changes and the app simply has no push. The file lives in the
+# git-ignored scaffold/secrets/ folder and is never printed.
+FCM_DEFINES="${FCM_DEFINES:-../secrets/fcm.defines.json}"
+FCM_ARGS=()
+if [ -f "$FCM_DEFINES" ]; then FCM_ARGS=(--dart-define-from-file="$FCM_DEFINES"); echo "push: using the Firebase settings in the secrets folder"; fi
+
 build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
   flutter build apk --release --target-platform android-arm64 -t "lib/$entry.dart" \
-    --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true "$@" \
+    --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true ${FCM_ARGS[@]+"${FCM_ARGS[@]}"} "$@" \
     --android-project-arg=olive.allowDebugSignedRelease=true >"$OUT/$name.log" 2>&1 || { tail -20 "$OUT/$name.log"; exit 1; }
   cp build/app/outputs/flutter-apk/app-release.apk "$OUT/$name.apk"
 }

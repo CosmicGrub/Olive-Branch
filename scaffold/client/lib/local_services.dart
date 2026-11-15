@@ -133,7 +133,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'outbox', scope: LocalScope.child, maxBytes: 2 * _mib,
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
-          'them. Never shown to her as a queue.'),
+          'them, and the notes that she opened a message, waiting to tell the sender (just the message id). '
+          'Never shown to her as a queue.'),
   LocalDataEntry(
       area: 'growing', scope: LocalScope.child, encrypted: true, maxBytes: 8 * _mib,
       what: 'Growing (grown-up side): time capsules a guardian sealed (a note, the opening date, '
@@ -326,6 +327,12 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'dropped, and one quiet line of family history for each share (who shared a screen with whom, never the '
           'picture). Never on a child\'s device and never shown in her app. Sealed on the device; nothing is '
           'uploaded.'),
+  LocalDataEntry(
+      area: 'account', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
+      what: 'Whether this phone has an optional Olive account, how far setting it up got, and which child was added '
+          'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
+          '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
+          'needed to use Olive on this phone, and a device wipe removes it.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a
