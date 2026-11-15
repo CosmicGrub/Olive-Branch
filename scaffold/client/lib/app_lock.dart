@@ -70,16 +70,20 @@ class AppLockPrefs {
         'lock': lockOnLeave,
         'delay': delay.name,
         'recents': hideRecents,
+        // Written only when the grown-up confirmed 'Screenshots allowed' with the PIN on this phone.
+        'shots': !hideRecents,
       };
 
-  /// Anything unreadable is the safe default (lock on, hide on), never "off".
+  /// Anything unreadable is the safe default (lock on, hide on), never "off". A saved "screenshots allowed" with no
+  /// confirmation mark (an older build let the plain switch turn it off) is read as Private: the grown-up has to say yes
+  /// again, with the PIN, before the window can be captured.
   static AppLockPrefs fromJson(Object? raw) {
     if (raw is! Map) return const AppLockPrefs();
-    final Object? l = raw['lock'], d = raw['delay'], r = raw['recents'];
+    final Object? l = raw['lock'], d = raw['delay'], r = raw['recents'], confirmed = raw['shots'];
     return AppLockPrefs(
       lockOnLeave: l is bool ? l : true,
       delay: AppLockDelay.values.where((AppLockDelay e) => e.name == d).firstOrNull ?? AppLockDelay.oneMinute,
-      hideRecents: r is bool ? r : true,
+      hideRecents: r is bool ? (r || confirmed != true) : true,
     );
   }
 }
@@ -207,7 +211,26 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  DateTime? _allowGrantUntil;
+
+  /// Checks the PIN for 'Screenshots allowed'. On success the controller will accept one change to allowed during the
+  /// next two minutes; nothing else (no caller, no stored value) can switch the secure flag off without it.
+  Future<PinCheck> confirmAllowScreenshots(String code) async {
+    final PinCheck c = await pin.verify(code);
+    if (c.ok) _allowGrantUntil = _now().add(const Duration(minutes: 2));
+    return c;
+  }
+
+  /// Saves and applies [next]. Going from Private to 'Screenshots allowed' needs a [confirmAllowScreenshots] just
+  /// before, whoever the caller is; otherwise this throws and nothing changes.
   Future<void> update(AppLockPrefs next) async {
+    if (!next.hideRecents && _prefs.hideRecents) {
+      final DateTime? until = _allowGrantUntil;
+      _allowGrantUntil = null; // one change per confirmation
+      if (until == null || _now().isAfter(until)) {
+        throw StateError('Screenshots allowed needs the PIN just before.');
+      }
+    }
     await repo.save(next);
     _prefs = next;
     _pushSecure(force: true);

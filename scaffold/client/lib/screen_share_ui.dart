@@ -245,6 +245,8 @@ class _ShareScreenPreviewState extends State<ShareScreenPreview> {
   late ShareRecipient _to = widget.recipients.first;
   final TextEditingController _note = TextEditingController();
   Uint8List? _png;
+  bool _pngHidden = false; // whether the bytes in [_png] were drawn with names hidden
+  int _renderSeq = 0; // only the newest render may fill [_png]
   String? _result;
   bool _sentOk = false;
 
@@ -261,8 +263,16 @@ class _ShareScreenPreviewState extends State<ShareScreenPreview> {
   }
 
   Future<void> _render() async {
-    final Uint8List? p = await renderShare(widget.capture, hideNames: _hide);
-    if (mounted) setState(() => _png = p);
+    final int seq = ++_renderSeq;
+    final bool hide = _hide && widget.capture.hideRects.isNotEmpty;
+    // Send stays off until the newest picture is ready, so the picture and the 'hidden' flag always agree.
+    if (_png != null) setState(() => _png = null);
+    final Uint8List? p = await renderShare(widget.capture, hideNames: hide);
+    if (!mounted || seq != _renderSeq) return; // a newer render has started: this result is stale
+    setState(() {
+      _png = p;
+      _pngHidden = hide;
+    });
   }
 
   Future<void> _send() async {
@@ -271,7 +281,7 @@ class _ShareScreenPreviewState extends State<ShareScreenPreview> {
     setState(() => _working = true);
     try {
       final ShareSendOutcome o = await widget.service.send(
-          png: p, to: _to, namesHidden: _hide, note: _note.text.trim(), expiryDays: _days);
+          png: p, to: _to, namesHidden: _pngHidden, note: _note.text.trim(), expiryDays: _days);
       if (!mounted) return;
       setState(() {
         _sentOk = true;

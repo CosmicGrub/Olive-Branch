@@ -13,6 +13,16 @@ import 'package:olive_client/screen_privacy.dart';
 
 const MethodChannel _ch = MethodChannel('olive/secure_screen');
 
+/// A repository that hands back a stored document through the real reader, as the sealed store does.
+class _JsonRepo implements AppLockPrefsRepository {
+  _JsonRepo(this._doc);
+  Map<String, Object?> _doc;
+  @override
+  Future<AppLockPrefs> load() async => AppLockPrefs.fromJson(_doc);
+  @override
+  Future<void> save(AppLockPrefs prefs) async => _doc = prefs.toJson();
+}
+
 /// Records every value sent to the native flag.
 List<Object?> _record(WidgetTester t) {
   final List<Object?> calls = <Object?>[];
@@ -79,7 +89,61 @@ void main() {
       for (final Object? junk in <Object?>[null, 7, 'x', <String, Object?>{'recents': 'no'}, <String, Object?>{'recents': null}]) {
         expect(AppLockPrefs.fromJson(junk).screenshotsAllowed, isFalse, reason: '$junk');
       }
-      expect(AppLockPrefs.fromJson(<String, Object?>{'recents': false}).screenshotsAllowed, isTrue);
+      expect(AppLockPrefs.fromJson(<String, Object?>{'recents': false, 'shots': true}).screenshotsAllowed, isTrue);
+    });
+
+    testWidgets('a saved allowed choice with no PIN confirmation mark (an older build) reads as Private', (t) async {
+      for (final Object? shots in <Object?>[null, false, 'yes', 1]) {
+        final Map<String, Object?> raw = <String, Object?>{'lock': false, 'recents': false, 'shots': ?shots};
+        expect(AppLockPrefs.fromJson(raw).screenshotsAllowed, isFalse, reason: 'shots=$shots');
+      }
+      // Through a controller whose repository really holds the old document: the window is secured at start.
+      final List<Object?> calls = _record(t);
+      final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1000);
+      final AppLockController c = AppLockController(
+          pin: pin, repo: _JsonRepo(<String, Object?>{'v': 1, 'lock': false, 'recents': false}),
+          secure: SecureScreen(_ch), allowScreenshots: false, observe: false);
+      await t.runAsync(c.start);
+      expect(c.prefs.screenshotsAllowed, isFalse);
+      expect(calls, <Object?>[true]);
+      c.dispose();
+    });
+
+    testWidgets('the controller itself refuses Screenshots allowed without a PIN check just before', (t) async {
+      final List<Object?> calls = _record(t);
+      final AppLockController c = await _controller(t, prefs: const AppLockPrefs(lockOnLeave: false));
+      // No confirmation at all.
+      await expectLater(c.update(c.prefs.copyWith(hideRecents: false)), throwsStateError);
+      expect(c.prefs.screenshotsAllowed, isFalse);
+      // A wrong PIN does not open the door either.
+      final PinCheck bad = await t.runAsync(() => c.confirmAllowScreenshots('0000')) as PinCheck;
+      expect(bad.ok, isFalse);
+      await expectLater(c.update(c.prefs.copyWith(hideRecents: false)), throwsStateError);
+      // The right PIN allows exactly one change.
+      await t.runAsync(() => c.confirmAllowScreenshots('4829'));
+      await t.runAsync(() => c.update(c.prefs.copyWith(hideRecents: false)));
+      expect(c.prefs.screenshotsAllowed, isTrue);
+      await t.runAsync(() => c.update(c.prefs.copyWith(hideRecents: true)));
+      await expectLater(c.update(c.prefs.copyWith(hideRecents: false)), throwsStateError,
+          reason: 'the confirmation was used up');
+      expect(calls.last, isTrue);
+      c.dispose();
+    });
+
+    testWidgets('a confirmation goes stale after two minutes', (t) async {
+      DateTime now = DateTime(2026, 11, 14, 9);
+      final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1000);
+      await t.runAsync(() => pin.setPin('4829'));
+      _record(t);
+      final AppLockController c = AppLockController(
+          pin: pin, repo: MemoryAppLockPrefsRepository(const AppLockPrefs(lockOnLeave: false)),
+          secure: SecureScreen(_ch), allowScreenshots: false, observe: false, now: () => now);
+      await t.runAsync(c.start);
+      await t.runAsync(() => c.confirmAllowScreenshots('4829'));
+      now = now.add(const Duration(minutes: 3));
+      await expectLater(c.update(c.prefs.copyWith(hideRecents: false)), throwsStateError);
+      expect(c.prefs.screenshotsAllowed, isFalse);
+      c.dispose();
     });
 
     testWidgets('Screenshots allowed clears the flag; a sensitive screen turns it back on and releases it again', (t) async {
@@ -303,15 +367,40 @@ void main() {
       expect(touching, <String>['lib/app_lock.dart', 'lib/screen_privacy.dart']);
     });
 
-    test('structure: the child side never imports the app lock or the settings that could allow screenshots', () {
+    test('structure: only an explicit list of grown-up files imports the app lock or screen sharing', () {
+      // Every lib file is checked, whatever its name, in both the relative and the package: import forms.
+      const Set<String> grownUp = <String>{
+        'lib/app_lock_screen.dart',
+        'lib/care_local_screens.dart',
+        'lib/guardian_boot.dart',
+        'lib/guardian_home.dart',
+        'lib/guardian_local_scope.dart',
+        'lib/guardian_more.dart',
+        'lib/local_guardian_home.dart',
+        'lib/screen_privacy.dart',
+        'lib/screen_share_ui.dart',
+      };
+      final RegExp imp = RegExp(r'''import\s+['"](?:package:olive_client/)?(?:\.{1,2}/)*(?:[\w/]*/)?(app_lock|screen_share)\w*\.dart''');
       final List<String> bad = <String>[];
       for (final File f in Directory('lib').listSync(recursive: true).whereType<File>().where((File f) => f.path.endsWith('.dart'))) {
-        final String name = f.uri.pathSegments.last;
-        if (!(name.startsWith('child_') || name.startsWith('kid_') || name == 'kiosk_shell.dart')) continue;
-        final String s = f.readAsStringSync();
-        if (s.contains("import 'app_lock") || s.contains("import 'screen_share")) bad.add(name);
+        final String path = f.path.replaceAll('\\', '/');
+        if (imp.hasMatch(f.readAsStringSync()) && !grownUp.contains(path)) bad.add(path);
       }
       expect(bad, isEmpty);
+    });
+
+    test('structure: the import pattern catches relative and package forms', () {
+      final RegExp imp = RegExp(r'''import\s+['"](?:package:olive_client/)?(?:\.{1,2}/)*(?:[\w/]*/)?(app_lock|screen_share)\w*\.dart''');
+      for (final String s in <String>[
+        "import 'app_lock.dart';",
+        "import 'package:olive_client/app_lock.dart';",
+        "import '../app_lock_screen.dart' show X;",
+        'import "screen_share_ui.dart";',
+        "import 'package:olive_client/screen_share.dart' as s;",
+      ]) {
+        expect(imp.hasMatch(s), isTrue, reason: s);
+      }
+      expect(imp.hasMatch("import 'child_home.dart';"), isFalse);
     });
 
     test('structure: every root a child device can show installs the shield', () {

@@ -252,6 +252,54 @@ void main() {
       c.dispose();
     });
 
+    testWidgets('flipping Hide names quickly never leaves the sent picture and its flag disagreeing, and Send waits', (t) async {
+      for (final bool endOn in <bool>[true, false]) {
+        view(t);
+        final _Road road = _Road()..open = true;
+        final ScreenShareService s = svc(mom, road: road);
+        final ScreenShareService sam = svc(dad);
+        final AppLockController c = await lock(t);
+        await t.pumpWidget(app(c, s));
+        await settle(t);
+        final Rect r = t.getRect(find.byKey(const Key('name')));
+        final int x = (r.left + 60).round(), y = (r.top + 15).round();
+        await openPreview(t);
+        final Finder hide = find.byKey(const Key('shareHideNames'));
+        // Three quick flips with no waiting in between; the last one decides.
+        final List<bool> flips = endOn ? <bool>[true, false, true] : <bool>[true, false, true, false];
+        for (int i = 0; i < flips.length; i++) {
+          await t.tap(hide);
+          await t.pump();
+        }
+        expect(t.widget<FilledButton>(find.byKey(const Key('shareSend'))).onPressed, isNull,
+            reason: 'no sending while a picture is still being drawn');
+        for (int i = 0; i < 60 && find.byType(CircularProgressIndicator).evaluate().isNotEmpty; i++) {
+          await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+          await t.pump(const Duration(milliseconds: 50));
+        }
+        await t.pumpAndSettle();
+        expect(t.widget<FilledButton>(find.byKey(const Key('shareSend'))).onPressed, isNotNull);
+        await sendAndWait(t);
+        final ReceivedShare? got = await t.runAsync(() async {
+          await sam.receive(road.sent.single);
+          return (await sam.inbox()).single;
+        });
+        expect(got!.namesHidden, endOn, reason: 'flag follows the last switch position');
+        // The bytes are the ones drawn for that position: the marked place is a solid block only when hidden.
+        final List<int>? px = await t.runAsync<List<int>>(() async {
+          final ui.Codec codec = await ui.instantiateImageCodec(got.png);
+          final ui.Image img = (await codec.getNextFrame()).image;
+          final ByteData d = (await img.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+          final int o = (y * img.width + x) * 4;
+          return <int>[d.getUint8(o), d.getUint8(o + 1), d.getUint8(o + 2)];
+        });
+        expect(px![0] == 255 && px[1] == 255 && px[2] == 0, !endOn,
+            reason: 'yellow shows through only when names are not hidden');
+        c.dispose();
+        await t.pumpWidget(const SizedBox());
+      }
+    });
+
     testWidgets('with nothing marked the switch is off and says so, rather than promise what it cannot do', (t) async {
       view(t);
       final AppLockController c = await lock(t);

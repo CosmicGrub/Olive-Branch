@@ -169,7 +169,7 @@ class _AllowScreenshotsDialogState extends State<_AllowScreenshotsDialog> {
   Future<void> _go() async {
     if (_working) return;
     setState(() => _working = true);
-    final PinCheck r = await widget.controller.pin.verify(_pin.text);
+    final PinCheck r = await widget.controller.confirmAllowScreenshots(_pin.text);
     if (!mounted) return;
     _pin.clear();
     if (r.ok) {

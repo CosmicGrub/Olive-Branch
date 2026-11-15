@@ -122,9 +122,10 @@ void main() {
       });
       addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(ch, null));
       // No PIN, so the app is not covered by the lock screen: only the grown-up's own choice decides the flag.
-      final AppLockController c = await _controller(tester, withPin: false, secure: SecureScreen(ch));
+      final AppLockController c = await _controller(tester, prefs: const AppLockPrefs(lockOnLeave: false), secure: SecureScreen(ch));
       await tester.runAsync(c.start);
       expect(calls, <Object?>[true]);
+      await tester.runAsync(() => c.confirmAllowScreenshots('4829'));
       await tester.runAsync(() => c.update(c.prefs.copyWith(hideRecents: false)));
       expect(calls, <Object?>[true, false]);
       c.dispose();

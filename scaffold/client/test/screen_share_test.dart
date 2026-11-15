@@ -9,6 +9,9 @@ import 'package:olive_client/device_keys.dart';
 import 'package:olive_client/family_ledger.dart';
 import 'package:olive_client/family_ledger_state.dart';
 import 'package:olive_client/family_profiles.dart';
+import 'package:olive_client/local_pin.dart' show kLocalGuardianScope;
+import 'package:olive_client/local_services.dart';
+import 'package:olive_client/local_store.dart' show LocalStoreFull;
 import 'package:olive_client/screen_share.dart';
 
 import 'family_test_support.dart';
@@ -553,4 +556,68 @@ void main() {
       expect(entry.contains('Never on a child'), isTrue);
     });
   });
+
+  group('a full box in the sealed store', () {
+    // The biggest picture allowed (just under 1 MiB of near-random bytes, so nothing shrinks it).
+    Uint8List bigPng(int seed) {
+      final Uint8List head = pngOf();
+      final Uint8List out = Uint8List(kShareMaxImageBytes);
+      out.setRange(0, head.length, head);
+      int x = seed * 2654435761 + 1;
+      for (int i = head.length; i < out.length; i++) {
+        x = (x * 1103515245 + 12345) & 0x7fffffff;
+        out[i] = (x >> 16) & 255;
+      }
+      return out;
+    }
+
+    test('three biggest pictures held and three biggest waiting all fit, and every save works', () async {
+      final LocalServices ls = LocalServices.memory();
+      final ShareBoxRepository repo = LocalStoreShareBoxRepository(ls.area('screenshares', ownerId: kLocalGuardianScope));
+      final ScreenShareService dadSvc = ScreenShareService(
+        box: repo,
+        identity: () async => ShareIdentity(device: dad.key, agreement: dad.agree, state: state),
+        nowMs: () => now,
+      );
+      final ScreenShareService momSvc = svc(mom);
+      final ShareRecipient toDad = eligibleShareRecipients(state, mom.key.publicKey, now).single;
+      final ShareRecipient toMom = eligibleShareRecipients(state, dad.key.publicKey, now).single;
+      for (int i = 0; i < kShareMaxHeld; i++) {
+        await momSvc.send(png: bigPng(i), to: toDad, namesHidden: false, note: 'n' * kShareMaxNoteChars);
+      }
+      for (final OutgoingShare o in await momSvc.sent()) {
+        expect(await dadSvc.receive(o.sealed!), ShareReceiveOutcome.kept);
+      }
+      for (int i = 0; i < kShareMaxHeld; i++) {
+        await dadSvc.send(png: bigPng(10 + i), to: toMom, namesHidden: true, note: 'n' * kShareMaxNoteChars);
+      }
+      expect((await dadSvc.inbox()), hasLength(kShareMaxHeld));
+      expect((await dadSvc.sent()), hasLength(kShareMaxHeld));
+      expect((await dadSvc.inbox()).first.png.length, kShareMaxImageBytes);
+    });
+
+    test('receive answers full instead of throwing when the store is full', () async {
+      final ScreenShareService momSvc = svc(mom);
+      final ShareRecipient toDad = eligibleShareRecipients(state, mom.key.publicKey, now).single;
+      await momSvc.send(png: pngOf(pad: 300), to: toDad, namesHidden: false);
+      final Uint8List sealed = (await momSvc.sent()).single.sealed!;
+      final ScreenShareService dadSvc = ScreenShareService(
+        box: _FullBox(),
+        identity: () async => ShareIdentity(device: dad.key, agreement: dad.agree, state: state),
+        nowMs: () => now,
+      );
+      expect(await dadSvc.receive(sealed), ShareReceiveOutcome.full);
+      // Not stored, so the box is still empty and the sender's copy can be offered again later.
+      expect(await dadSvc.inbox(), isEmpty);
+    });
+  });
+}
+
+class _FullBox implements ShareBoxRepository {
+  @override
+  Future<ShareBoxState> load() async => ShareBoxState();
+  @override
+  Future<void> save(ShareBoxState s) async {
+    if (s.held.isNotEmpty) throw const LocalStoreFull('screenshares', 1);
+  }
 }

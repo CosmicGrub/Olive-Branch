@@ -637,7 +637,11 @@ class ScreenShareService {
         final String me = _grownUpName(id.state, id.device.publicKey) ?? 'A grown-up';
         s.log.add(ShareLogLine(now, r.fromName, me));
         if (s.log.length > 50) s.log.removeRange(0, s.log.length - 50);
-        await box.save(s);
+        try {
+          await box.save(s);
+        } on LocalStoreFull {
+          return ShareReceiveOutcome.full; // nothing was written; the sender keeps it waiting
+        }
         return ShareReceiveOutcome.kept;
       });
 

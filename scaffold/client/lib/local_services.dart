@@ -312,7 +312,7 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'their reflections and own rules list. Sealed on the device; default private; '
           'turning a setting off forgets what it stored.'),
   LocalDataEntry(
-      area: 'screenshares', scope: LocalScope.guardian, encrypted: true, maxBytes: 8 * _mib,
+      area: 'screenshares', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * _mib,
       what: 'Screens shared between grown-ups, on a grown-up\'s device only: the pictures of a screen another '
           'grown-up sent here (at most three, each until it expires or is put away), what this phone sent and is '
           'still waiting to hand over or take back, a mark for each one put away or taken back so a late copy is '
