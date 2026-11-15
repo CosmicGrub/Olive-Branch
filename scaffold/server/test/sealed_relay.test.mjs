@@ -277,9 +277,16 @@ check('D token', '...and a missing header', tokenFromSubprotocol(undefined), 'nu
 // ---- G · nothing is kept or logged ----------------------------------------
 {
   const secretCt = ct(256);
-  const line = accessLogLine({ id: 'r1', method: 'GET', route: '/v1/game-tables/:tableId/socket', status: 101, ms: 3 });
-  check('G logs', 'the access log line carries no body, query, token or address',
-    /ct|token|10\.|127\.|::1|sec-websocket/i.test(line) || line.includes(secretCt), 'false');
+  const rec = { id: 'r1', method: 'GET', route: '/v1/game-tables/:tableId/socket', status: 101, ms: 3 };
+  const line = accessLogLine(rec);
+  // The line carries a wall-clock `ts`; a leak detector must not read that as a leak. The old
+  // pattern had a bare `10\.`, which matched any timestamp whose seconds were 10 (".. :10.605Z")
+  // and failed this test ~1 run in 60. The detector now looks for real address shapes only, and
+  // the check also runs against a timestamp built to trip every old fragment (10. and 127.).
+  const leaks = (l) => /ct|token|\b\d{1,3}(?:\.\d{1,3}){3}\b|::1|sec-websocket/i.test(l) || l.includes(secretCt);
+  const poisonTs = accessLogLine({ ...rec, now: Date.parse('2026-11-08T18:00:10.127Z') });
+  check('G logs', 'the access log line carries no body, query, token or address (and the detector still catches an address)',
+    [leaks(line), leaks(poisonTs), leaks('{"ip":"127.0.0.1"}'), leaks('{"ip":"::1"}')].join(), 'false,false,true,true');
   const ctx = await start(); const t = await openTable(ctx);
   t.wsKid.send(JSON.stringify({ v: 1, t: 'sealed', seq: 0, ct: secretCt })); await t.qDad.next();
   const stored = JSON.stringify([...ctx.tables.values()].map((e) => e.state));
