@@ -1,5 +1,5 @@
 /**
- * Identity lane (db/migrations/0049_identity_signup.sql): the core live chain,
+ * Identity lane (db/migrations/0050_identity_signup.sql): the core live chain,
  * end to end, against a REAL Postgres through the REAL Api (strict ids ON, as in
  * production), with NO SQL-seeded family. Everything below is created by the
  * routes under test:

@@ -443,7 +443,7 @@ class OliveApi {
   // [bootstrapGuardianInvite] below, the real free function this constant
   // backs.
   static const guardianInviteBootstrap = '/v1/guardian-invites/:inviteId/bootstrap';
-  // --- identity lane (db/migrations/0049_identity_signup.sql) ---------------
+  // --- identity lane (db/migrations/0050_identity_signup.sql) ---------------
   // The first account, the first child, and the inviter's confirm step that
   // finally turns an accepted invite into a real guardianship edge. All are
   // free functions below (sign-up has no session yet; the rest take the

@@ -4879,7 +4879,7 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
 }
 
 // ===========================================================================
-// IDENTITY LANE — db/migrations/0049_identity_signup.sql.
+// IDENTITY LANE — db/migrations/0050_identity_signup.sql.
 //
 // The first account, the first child and a real second grown-up. Until this
 // block the only ways to get an app_user, a child or a guardianship edge were

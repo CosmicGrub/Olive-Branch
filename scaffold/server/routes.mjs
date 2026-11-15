@@ -735,7 +735,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   });
 
   // ===========================================================================
-  // IDENTITY LANE — db/migrations/0049_identity_signup.sql.
+  // IDENTITY LANE — db/migrations/0050_identity_signup.sql.
   // A first account, a first child, a second grown-up who actually gets
   // access. Until these routes existed the only way to any of the three was
   // raw SQL (server/seed-dev.mjs), so a fresh production server (DEV_LOGIN is
