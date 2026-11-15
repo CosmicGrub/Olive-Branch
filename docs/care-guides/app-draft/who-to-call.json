@@ -1,0 +1,1085 @@
+{
+  "schemaVersion": 1,
+  "id": "who-to-call",
+  "title": "Who to call and what to say",
+  "category": "emergency",
+  "region": "US",
+  "status": "DRAFT_UNREVIEWED",
+  "revision": 4,
+  "lastResearched": "2026-11-14",
+  "disclaimer": "DRAFT, not reviewed, not medical or legal advice. Needs review by a qualified paediatric reviewer before any use in an app. Scope: children from about 1 year to puberty; infant (under 1) steps differ and are not covered here.",
+  "review": {
+    "reviewedOn": null,
+    "reviewedBy": null,
+    "regions": []
+  },
+  "notes": [],
+  "blocks": [
+    {
+      "kind": "emergency",
+      "legacyKey": "callEmergencyNow",
+      "items": [
+        {
+          "text": "Breathing has stopped or is laboured, or the child has trouble speaking.",
+          "sources": [
+            0,
+            20
+          ]
+        },
+        {
+          "text": "Lips or skin turn blue, purple or grey, or look pale or blotchy.",
+          "sources": [
+            0,
+            20
+          ]
+        },
+        {
+          "text": "The child cannot be roused, is limp and floppy, or seems unaware of what is going on; or alertness is dropping, or behaviour is strange or withdrawn.",
+          "sources": [
+            0,
+            20
+          ]
+        },
+        {
+          "text": "Any seizure (rhythmic jerking with loss of responsiveness).",
+          "sources": [
+            0,
+            3,
+            20
+          ]
+        },
+        {
+          "text": "Bleeding you cannot control, or a deep or gaping wound or burn.",
+          "sources": [
+            0,
+            20
+          ]
+        },
+        {
+          "text": "Choking on something you cannot dislodge.",
+          "sources": [
+            3,
+            20
+          ]
+        },
+        {
+          "text": "A serious allergic reaction.",
+          "sources": [
+            3,
+            4
+          ]
+        },
+        {
+          "text": "A head injury followed by lower alertness, confusion, headache, vomiting, irritability or trouble walking.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "Suspected neck, back or pelvis injury: call and keep the child still.",
+          "sources": [
+            20
+          ]
+        },
+        {
+          "text": "A child pulled out of water who does not respond.",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "Fever together with abnormal appearance, breathing or circulation; or a stiff neck with headache and fever; or a purple or red rash that is spreading fast.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "Vomiting blood, significant blood in stool, or signs of significant dehydration (sunken eyes, no tears or urine, lethargy).",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "Severe or increasing pain anywhere, or a heat or cold injury such as heat exhaustion or frostbite.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "A child who has swallowed poison or too much medicine and has collapsed, is seizing, is struggling to breathe or cannot be woken. UK: 999 for any swallowed poison or overdose.",
+          "sources": [
+            10,
+            20,
+            21,
+            3
+          ]
+        },
+        {
+          "text": "Burn emergencies: a burn that is large (about the size of the child's palm or bigger) or deep; a burn on the face, hands, genitals or bottom; an electrical or chemical burn; skin that looks charred, leathery, white, brown or black, or has no feeling; breathing trouble, smoke or fume exposure, confusion or difficulty waking; or you are not sure how serious it is.",
+          "sources": [
+            6,
+            7,
+            18,
+            43,
+            44
+          ]
+        },
+        {
+          "text": "More than one child hurt or seriously ill at the same time.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "You are not sure what is wrong but believe the child is in danger. The operator will guide you.",
+          "sources": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "urgent",
+      "legacyKey": "urgentCareOrER",
+      "items": [
+        {
+          "text": "Go to the emergency room, or call 911 for an ambulance, for severe injury or life-threatening illness. An ambulance is safer than driving a seriously ill or injured child yourself.",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Emergency room list: wounds that keep bleeding, a seizure lasting more than 2 minutes in a child who has never had one (call emergency services for any seizure), head injury with changed behaviour, loss of consciousness, severe belly pain, severe burns, swallowed object with trouble breathing or swallowing, severe fractures, trouble breathing, vomiting or coughing blood, severe neck stiffness or rash with fever, poisoning, worsening asthma or diabetes.",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "A baby under 60 days (about 2 months) with a fever above 100.4 F needs emergency care now. (Infants are outside this guide's scope.)",
+          "sources": [
+            2,
+            0
+          ]
+        },
+        {
+          "text": "Burns: call emergency services for a burn that is large (about the size of the child's palm or bigger) or deep; a burn on the face, hands, genitals or bottom; an electrical or chemical burn; skin that looks charred, leathery, white, brown or black, or has no feeling; breathing trouble, smoke or fume exposure, confusion or difficulty waking; or you are not sure how serious it is. A blistering or swollen burn bigger than the child's hand, or any burn on a foot or over a joint, should be seen immediately by a paediatrician or in an emergency room.",
+          "sources": [
+            6,
+            18,
+            43,
+            44,
+            7
+          ]
+        },
+        {
+          "text": "UK: go to A&E for a cut where bleeding will not stop with pressure, spurting blood, an embedded object, or a very large or deep wound; do not drive yourself if you are the injured person (ask someone else or call 999).",
+          "sources": [
+            19
+          ]
+        },
+        {
+          "text": "UK: a suspected broken arm or leg, if the child cannot use the limb, goes to A&E. If you cannot move the child without pain, call 999.",
+          "sources": [
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "poison",
+      "legacyKey": "callPoisonControl",
+      "items": [
+        {
+          "text": "Child may have swallowed, breathed in, or got on skin or in eyes a medicine, chemical or other possible poison, even if the child looks fine. US: call Poison Help, 1-800-222-1222. It is free, confidential and open 24 hours a day, and it connects to your regional poison centre.",
+          "sources": [
+            3,
+            9,
+            38
+          ]
+        },
+        {
+          "text": "If the child is unwell, or you believe the child is in danger, call 911 rather than waiting for the poison line.",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "poison.org offers a free online tool, but call the phone line for pregnancy, babies under 6 months, adults over 79, several substances at once, or self-harm.",
+          "sources": [
+            37
+          ]
+        },
+        {
+          "text": "Do not wait for symptoms before getting poison advice. Australia: call the Poisons Information Line; call 000 if someone has stopped breathing, collapsed, had a seizure, had a severe allergic reaction or has been exposed to a harmful substance. Canada: get advice from a poison information centre or call 911 right away; if the child shows any signs of illness, altered awareness or anything else that makes you immediately concerned, call 911 or your local ambulance service.",
+          "sources": [
+            31,
+            35
+          ]
+        },
+        {
+          "text": "If the child has collapsed, is having a seizure, has trouble breathing or cannot be woken, call 911 (or the local emergency number) instead of the poison line.",
+          "sources": [
+            10
+          ]
+        },
+        {
+          "text": "Have the product, container or medicine package in hand when you call.",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "Do not try to make the child vomit.",
+          "sources": [
+            31,
+            35,
+            21
+          ]
+        },
+        {
+          "text": "UK: if you think a child has swallowed, touched or breathed in something harmful, call 999 or go to A&E (do not drive yourself). If you are not sure whether it is harmful, call NHS 111.",
+          "sources": [
+            21
+          ]
+        },
+        {
+          "text": "UK: a swallowed button battery or magnet means 999 or A&E straight away.",
+          "sources": [
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "nurseLine",
+      "legacyKey": "callDoctorOrNurseLine",
+      "items": [
+        {
+          "text": "Not an emergency and you are unsure where to go: call the child's own paediatrician or doctor, including after hours (many offices give advice by phone).",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Problems suitable for a call to the paediatrician first: minor burns, ear pain, pink eye, possible urinary infection, sore throat, rashes, vomiting or diarrhoea with mild dehydration, simple wounds, objects stuck in ear or nose, colds, coughs and allergies. Minor means minor: a serious burn or severe allergic reaction is an emergency.",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "A rough test: if the child can walk, talk, interact and play, it is probably not an emergency (still ask if unsure).",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Needs prompt same-day medical advice but not an ambulance: fever in a child who looks more than mildly ill, severe vomiting or diarrhoea, a cut that may need stitches, animal bites that break the skin.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "UK: NHS 111 is for urgent problems that are not emergencies; for a child under 5 use the phone, not the online service.",
+          "sources": [
+            15
+          ]
+        },
+        {
+          "text": "Australia: healthdirect nurse line 1800 022 222 (registered nurse, 24 hours).",
+          "sources": [
+            33
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "dispatcherScript",
+      "legacyKey": "whatToTellDispatcher",
+      "items": [
+        {
+          "text": "Where you are: the exact address, nearest cross street or landmark. Mobile calls may not be located automatically, so be ready to say it.",
+          "sources": [
+            0,
+            1,
+            14,
+            32
+          ]
+        },
+        {
+          "text": "What happened and the main problem (for example: not breathing, seizure, bleeding).",
+          "sources": [
+            14,
+            32
+          ]
+        },
+        {
+          "text": "The child's age, whether the child is awake and whether the child is breathing; the operator may also ask about medical history.",
+          "sources": [
+            1,
+            32
+          ]
+        },
+        {
+          "text": "A phone number they can call you back on (and if a mobile call drops, give your number).",
+          "sources": [
+            1,
+            14
+          ]
+        },
+        {
+          "text": "Stay on the line until the rescue crew arrives, unless the operator tells you that you can hang up. They may coach you through first aid or CPR or tell you to move somewhere safer.",
+          "sources": [
+            1,
+            32,
+            14
+          ]
+        },
+        {
+          "text": "Make a voice call rather than texting if you can safely do so (in Australia you cannot text 000 at all). Put the phone on speaker so your hands are free.",
+          "sources": [
+            1,
+            27,
+            32
+          ]
+        },
+        {
+          "text": "Be patient and answer the questions calmly, slowly and clearly; the questions let responders send the right kind of help.",
+          "sources": [
+            1,
+            32
+          ]
+        },
+        {
+          "text": "Do not hang up, even if you think the call was a mistake.",
+          "sources": [
+            1
+          ]
+        },
+        {
+          "text": "While waiting: stay with the child, turn on lights (inside and outside) and unlock the front door so responders can get in, open curtains, lock pets away (hazard lights if in a car), and call again if the child's condition or your location changes.",
+          "sources": [
+            14,
+            32
+          ]
+        },
+        {
+          "text": "For the crew: tell them about known allergies, and if it was given, the time any emergency medicine such as epinephrine was given.",
+          "sources": [
+            14,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "haveReady",
+      "legacyKey": "haveReady",
+      "items": [
+        {
+          "text": "Your street address, posted by the home phone.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "The child's paediatrician or GP name and contact details.",
+          "sources": [
+            3,
+            14
+          ]
+        },
+        {
+          "text": "A list of the child's regular medicines (and bring the medicines with the child to hospital).",
+          "sources": [
+            3,
+            14
+          ]
+        },
+        {
+          "text": "Known allergies (to tell the paramedics).",
+          "sources": [
+            14
+          ]
+        },
+        {
+          "text": "For a suspected poisoning: the product, medicine bottle or packet, what it was, how much, when and how it happened (swallowed, breathed in, skin or eye), and what symptoms there are.",
+          "sources": [
+            3,
+            21,
+            31
+          ]
+        },
+        {
+          "text": "Any care plan the child has (some conditions in a care plan require the parent to be told).",
+          "sources": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "firstSteps",
+      "legacyKey": "universalFirstSteps",
+      "items": [
+        {
+          "text": "Check it is safe for you to approach before you go to the child. Do not move an injured child unless staying put is dangerous (for example fire).",
+          "n": 1,
+          "sources": [
+            27,
+            3
+          ]
+        },
+        {
+          "text": "Check if the child responds: call out their name and tap the shoulder. Do not shake. Shout for help.",
+          "n": 2,
+          "sources": [
+            12,
+            23,
+            27
+          ]
+        },
+        {
+          "text": "If there is no response or it is a serious emergency, have someone call the emergency number straight away, or call yourself with the phone on speaker.",
+          "n": 3,
+          "sources": [
+            27,
+            25,
+            23,
+            42
+          ]
+        },
+        {
+          "text": "Open the airway and look, listen and feel for normal breathing for no more than about 10 seconds; gasping is not normal breathing. Airway: lift the chin and tilt the head back, UNLESS a neck or back injury is possible; then lift the jaw forward without tilting the head (see step 9).",
+          "n": 4,
+          "sources": [
+            27,
+            25,
+            23,
+            12,
+            28
+          ]
+        },
+        {
+          "text": "Child not responding but breathing normally, and no neck or back injury is suspected: place them in the recovery position (on their side, head tilted back), call emergency services, stay with them and keep checking breathing. If a neck or back injury is suspected, do not roll them: see step 9.",
+          "n": 5,
+          "sources": [
+            22,
+            26,
+            24,
+            27,
+            28
+          ]
+        },
+        {
+          "text": "Child not responding and not breathing normally: start CPR and send someone for a defibrillator (AED) if there is one. Cycle of 30 chest compressions then 2 breaths; push on the centre of the chest about 5 cm (2 inches) deep, 100 to 120 per minute, let the chest rise fully. In the US start with the 30 compressions; in the UK start with 5 rescue breaths first. Do not check for a pulse. Continue until help takes over or the child breathes normally.",
+          "n": 6,
+          "sources": [
+            12,
+            25,
+            23,
+            39,
+            40
+          ]
+        },
+        {
+          "text": "If you cannot or will not give breaths, keep giving chest compressions.",
+          "n": 7,
+          "sources": [
+            23
+          ]
+        },
+        {
+          "text": "If you are alone with a child who is not responding and not breathing normally: if you have a phone, put it on speaker and call emergency services NOW, then start CPR and follow the operator. If you have NO phone, do about 1 minute of CPR and then go to call. Take a small child with you if you can (unless a neck or back injury is suspected). If anyone else is there, they call straight away while you start CPR.",
+          "n": 8,
+          "sources": [
+            39,
+            27,
+            40,
+            25,
+            23,
+            12,
+            42
+          ]
+        },
+        {
+          "text": "Suspected neck, back or pelvis injury: call emergency services. Do not move the child and do not tell them to move unless they are in immediate danger. Kneel at their head and hold it with both hands so head, neck and back stay in line. If they are not responding, open the airway by lifting the jaw forward without tilting the head. If they are not breathing, start CPR at once. If they are not responding but are breathing, keep holding the head steady, keep checking their breathing and wait for help; only if you cannot keep the airway open, use the spinal recovery position. If you must move them, two people should move the child so the head and neck do not twist.",
+          "n": 9,
+          "sources": [
+            28,
+            20,
+            12
+          ]
+        },
+        {
+          "text": "Severe bleeding: press firmly on the wound with a clean cloth and keep pressing; shout for someone to call emergency services, or if you are alone put the phone on speaker and call while you keep pressing. If blood soaks through, put more cloth on top and keep pressing. If something is stuck in the wound, leave it and press firmly on either side of it.",
+          "n": 10,
+          "sources": [
+            19,
+            20,
+            27
+          ]
+        },
+        {
+          "text": "Stay with the child, stay as calm as you can (children copy you), and keep the phone line open until told otherwise.",
+          "n": 11,
+          "sources": [
+            3,
+            1,
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "recognition",
+      "legacyKey": "quickRecognition",
+      "items": [
+        {
+          "group": "anaphylaxis",
+          "signs": [
+            "Trouble breathing or swallowing, wheezing, chest or throat tightness, hoarse voice",
+            "Swelling of lips, tongue or face",
+            "Hives or rash together with any breathing, dizziness or stomach symptoms",
+            "Pale, blue or grey skin or lips, weak pulse, dizziness, fainting",
+            "Vomiting or diarrhoea, confusion or unusual drowsiness",
+            "In babies: unusual fussiness, sudden drooling, unusual sleepiness"
+          ],
+          "text": "If the child has their own prescribed epinephrine auto-injector, use it straight away, following the device instructions, and then call emergency services at once. If there is no epinephrine, call emergency services at once. Ask for an ambulance, say you think it is anaphylaxis, and say whether epinephrine was given and when. Never use an antihistamine, inhaler or other medicine in place of epinephrine. Keep the child lying down and do not let them stand or walk; if they vomit, turn them onto their side; if they struggle to breathe, tell the call-taker and follow their instructions on position. If symptoms get worse or do not improve within 5 minutes and the child has a second device, a second dose is used, following the child's own plan. Everyone goes to the ER, even if they look better. Dose and device instructions are on the child's own device or plan and are not given here.",
+          "sources": [
+            4,
+            16,
+            13
+          ]
+        },
+        {
+          "group": "seizure",
+          "signs": [
+            "Any seizure: call emergency services",
+            "Extra warning signs: first ever seizure; lasts longer than 5 minutes; seizures one after another without recovery between them",
+            "Child does not wake up afterwards or has trouble breathing",
+            "Child was injured, or the seizure happened in water",
+            "Child has diabetes or another serious medical condition"
+          ],
+          "text": "Call emergency services (any seizure). Stay with the child and note the time. Do not hold them down and do not put anything in their mouth. Move hard or sharp things away and cushion the head. Lower them to the ground and, unless a neck or back injury is suspected, onto their side. When the jerking stops, open the airway and check breathing; if they are breathing, use the recovery position, unless a neck or back injury is suspected (then keep holding the head steady and follow step 9).",
+          "sources": [
+            0,
+            20,
+            3,
+            5,
+            17,
+            29,
+            36,
+            28
+          ]
+        },
+        {
+          "group": "burn",
+          "signs": [
+            "Large (about the size of the child's palm or bigger) or deep burn",
+            "Face, hands, genitals or bottom",
+            "Electrical or chemical burn; skin that looks charred, leathery, white, brown or black, or has no feeling",
+            "Breathing trouble, smoke or fume exposure, confusion or difficulty waking; or you are not sure how serious it is",
+            "Blistering burn bigger than the child's hand, or a burn on a foot or over a joint: seen immediately by a paediatrician or in an emergency room"
+          ],
+          "text": "If the burn has any of the call-now signs: call emergency services first (put the phone on speaker, or ask someone else to call), then cool the burn while you wait and while on the call. For every burn, cool at once under cool (not icy) running water for 20 minutes. For a burn on the face, apply a cold wet washcloth right away instead. Do not delay cooling to undress the child; remove clothing or jewellery near the burn only if it is not stuck to the skin. Make sure the child does not get too cold: use a coat or blanket to keep them warm if necessary. No ice, butter, creams or oils. After cooling, cover loosely with cling film laid over the burn (not wrapped; not on the face) or a clean, non-fluffy cloth.",
+          "sources": [
+            6,
+            7,
+            18,
+            20,
+            43,
+            44
+          ]
+        },
+        {
+          "group": "severeBleeding",
+          "signs": [
+            "Bleeding that will not stop with firm pressure",
+            "Blood spurting or hard to control",
+            "Deep or large wound, or an object stuck in the wound",
+            "Numbness or inability to move near the wound"
+          ],
+          "text": "Press firmly on the wound with a clean cloth or dressing at once and keep pressing. Shout for someone to call emergency services; if you are alone, put the phone on speaker and call while you keep pressing. If blood soaks through, put more cloth on top and keep pressing. If something is stuck in the wound, leave it and press firmly on either side of it.",
+          "sources": [
+            19,
+            20,
+            27,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "consent",
+      "legacyKey": "consentBasics",
+      "items": [
+        {
+          "text": "Not legal advice. Rules on who can agree to a child's treatment vary by state and by country, and emergency consent rules are not covered here. If you believe a child is in danger, call emergency services; the operator will guide you.",
+          "sources": [
+            8,
+            3
+          ]
+        }
+      ]
+    }
+  ],
+  "ageBands": [],
+  "helplines": [
+    {
+      "region": "US",
+      "name": "Emergency services",
+      "number": "911",
+      "sources": [
+        1
+      ]
+    },
+    {
+      "region": "US",
+      "name": "Poison Help (free, 24/7, routes to your regional poison centre)",
+      "number": "1-800-222-1222",
+      "sources": [
+        9,
+        37,
+        38
+      ]
+    },
+    {
+      "region": "US",
+      "name": "988 Suicide & Crisis Lifeline: call, text or chat (free, confidential, 24/7); parents and caregivers can use it for a child or teen in mental health crisis",
+      "number": "988",
+      "sources": [
+        3,
+        41
+      ]
+    },
+    {
+      "region": "UK",
+      "name": "Emergency services",
+      "number": "999 (112 also works)",
+      "sources": [
+        25,
+        28
+      ]
+    },
+    {
+      "region": "UK",
+      "name": "NHS 111 urgent advice (phone for children under 5); also the route if you are unsure whether something is harmful",
+      "number": "111",
+      "sources": [
+        15,
+        21
+      ]
+    },
+    {
+      "region": "Canada",
+      "name": "Emergency services",
+      "number": "911",
+      "sources": [
+        35
+      ]
+    },
+    {
+      "region": "Canada",
+      "name": "Poison centres, national toll-free number (Quebec callers are routed to Centre antipoison du Quebec, 1-800-463-5060)",
+      "number": "1-844-764-7669 (1-844 POISON-X)",
+      "sources": [
+        30
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "Emergency (triple zero)",
+      "number": "000 (you cannot text 000; if 000 will not connect from a mobile, try 112)",
+      "sources": [
+        31,
+        32
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "Poisons Information Line",
+      "number": "13 11 26",
+      "sources": [
+        31
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "healthdirect nurse line",
+      "number": "1800 022 222",
+      "sources": [
+        33
+      ]
+    },
+    {
+      "region": "EU",
+      "name": "European single emergency number (free, works in all EU countries; some countries also keep national numbers)",
+      "number": "112",
+      "sources": [
+        34
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": 0,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "When to Call Emergency Medical Services (EMS)",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/When-to-Call-Emergency-Medical-Services-EMS.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "911-level signs; prompt-care list; know your location; keep street address posted by the telephone"
+    },
+    {
+      "id": 1,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Calling 911: How and When to Call for Help",
+      "url": "https://healthychildren.org/English/health-issues/injuries-emergencies/Pages/Calling-911-How-and-When-to-Call-for-Help.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "What to tell the dispatcher, stay on the line, voice not text; questions let responders send the right help"
+    },
+    {
+      "id": 2,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Is It a Medical Emergency or Not?",
+      "url": "https://www.healthychildren.org/english/family-life/health-management/pages/is-it-a-medical-emergency-or-not.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Pediatrician vs ER vs 911; ambulance safer than car; walk-talk-play rule"
+    },
+    {
+      "id": 3,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "When Your Child Needs Emergency Medical Services",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/When-Your-Child-Needs-Emergency-Medical-Services.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "911 triggers; before help arrives; info to have; poison help"
+    },
+    {
+      "id": 4,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Anaphylaxis",
+      "url": "https://healthychildren.org/English/health-issues/injuries-emergencies/Pages/Anaphylaxis.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Signs, epinephrine then 911, second dose, ER"
+    },
+    {
+      "id": 5,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Seizure First Aid for Children",
+      "url": "https://healthychildren.org/English/health-issues/conditions/seizures/Pages/Seizure-First-Aid-for-Children.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "When to call 911 and first steps for a seizure"
+    },
+    {
+      "id": 6,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "First Aid for Burns",
+      "url": "https://www.healthychildren.org/English/safety-prevention/all-around/pages/First-Aid-For-Burns.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Minor burn cooling (about 5 min), emergency burn types"
+    },
+    {
+      "id": 7,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Symptom Checker: Burn",
+      "url": "https://www.healthychildren.org/English/tips-tools/Symptom-Checker/Pages/symptomviewer.aspx?symptom=Burn",
+      "retrieved": "2026-11-14",
+      "covers": "When to call 911 for burns; 10 vs 20 minute cooling; for burns on the face apply a cold wet washcloth right away"
+    },
+    {
+      "id": 8,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "AAP Offers Advice for Providing Proxy Care for Non-Urgent Pediatric Visits",
+      "url": "https://healthychildren.org/English/news/Pages/AAP-Offers-Advice-for-Providing-Proxy-Care-for-Non-Urgent-Pediatric-Visits.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Consent by proxy varies by state; consent forms kept on file"
+    },
+    {
+      "id": 9,
+      "org": "NIH / MedlinePlus",
+      "title": "Poison control center - emergency number",
+      "url": "https://medlineplus.gov/ency/article/002724.htm",
+      "retrieved": "2026-11-14",
+      "covers": "US poison line 1-800-222-1222, 24/7, free, confidential"
+    },
+    {
+      "id": 10,
+      "org": "Poison Control (National Capital Poison Center)",
+      "title": "Poison Control home page",
+      "url": "https://www.poison.org/",
+      "retrieved": "2026-11-14",
+      "covers": "Call 911 for collapse/seizure/breathing trouble/cannot be woken; statement that its own call centre closed 31 March 2025 (see source 37 for what that means)"
+    },
+    {
+      "id": 11,
+      "org": "poisoncontrol.org (a different organisation from the National Capital Poison Center)",
+      "title": "Poison help 24/7",
+      "url": "https://poisoncontrol.org/",
+      "retrieved": "2026-11-14",
+      "covers": "1-800-222-1222, 24 hours; not relied on for any statement in revision 2"
+    },
+    {
+      "id": 12,
+      "org": "NIH / MedlinePlus",
+      "title": "CPR - young child (age 1 year to onset of puberty)",
+      "url": "https://medlineplus.gov/ency/article/000012.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Child CPR steps, alone = 2 minutes first, spinal caution"
+    },
+    {
+      "id": 13,
+      "org": "NIH / MedlinePlus",
+      "title": "Anaphylaxis",
+      "url": "https://medlineplus.gov/ency/article/000844.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Symptoms; call 911 and use epinephrine"
+    },
+    {
+      "id": 14,
+      "org": "NHS (England)",
+      "title": "When to call 999",
+      "url": "https://www.nhs.uk/nhs-services/urgent-and-emergency-care-services/when-to-call-999/",
+      "retrieved": "2026-11-14",
+      "covers": "What the call handler asks; what to do while waiting"
+    },
+    {
+      "id": 15,
+      "org": "NHS (England)",
+      "title": "When to use NHS 111",
+      "url": "https://www.nhs.uk/nhs-services/urgent-and-emergency-care-services/when-to-use-111/",
+      "retrieved": "2026-11-14",
+      "covers": "111 for urgent non-emergencies; phone for under 5s"
+    },
+    {
+      "id": 16,
+      "org": "NHS (England)",
+      "title": "Anaphylaxis",
+      "url": "https://www.nhs.uk/conditions/anaphylaxis/",
+      "retrieved": "2026-11-14",
+      "covers": "Symptoms and first actions"
+    },
+    {
+      "id": 17,
+      "org": "NHS (England)",
+      "title": "Febrile seizures",
+      "url": "https://www.nhs.uk/conditions/febrile-seizures/",
+      "retrieved": "2026-11-14",
+      "covers": "First steps in a child's seizure and when to call 999"
+    },
+    {
+      "id": 18,
+      "org": "NHS (England)",
+      "title": "Burns and scalds",
+      "url": "https://www.nhs.uk/conditions/burns-and-scalds/",
+      "retrieved": "2026-11-14",
+      "covers": "When burns need 999/A&E; cool about 20 minutes"
+    },
+    {
+      "id": 19,
+      "org": "NHS (England)",
+      "title": "Cuts and grazes",
+      "url": "https://www.nhs.uk/conditions/cuts-and-grazes/",
+      "retrieved": "2026-11-14",
+      "covers": "Bleeding that needs 999/A&E; pressure steps"
+    },
+    {
+      "id": 20,
+      "org": "NHS (England)",
+      "title": "What to do if your child has an accident",
+      "url": "https://www.nhs.uk/baby/first-aid-and-safety/first-aid/what-to-do-if-your-child-has-an-accident/",
+      "retrieved": "2026-11-14",
+      "covers": "999 triggers; do not move neck/spine/pelvis injury; button battery; cuts; burns 20 to 30 min"
+    },
+    {
+      "id": 21,
+      "org": "NHS (England)",
+      "title": "Poisoning - treatment",
+      "url": "https://www.nhs.uk/conditions/poisoning/treatment/",
+      "retrieved": "2026-11-14",
+      "covers": "999/A&E vs 111; do not induce vomiting; keep packaging"
+    },
+    {
+      "id": 22,
+      "org": "British Red Cross",
+      "title": "Unresponsive and breathing child",
+      "url": "https://www.redcross.org.uk/first-aid/learn-first-aid-for-babies-and-children/unresponsive-and-breathing-child",
+      "retrieved": "2026-11-14",
+      "covers": "Check breathing, recovery position, call 999"
+    },
+    {
+      "id": 23,
+      "org": "British Red Cross",
+      "title": "Unresponsive and not breathing child",
+      "url": "https://www.redcross.org.uk/first-aid/learn-first-aid-for-babies-and-children/unresponsive-not-breathing-child",
+      "retrieved": "2026-11-14",
+      "covers": "5 breaths then 30:2 CPR; alone = 1 minute first; AED; compressions only if no breaths"
+    },
+    {
+      "id": 24,
+      "org": "Australian Red Cross",
+      "title": "First aid for a child who is unresponsive and breathing",
+      "url": "https://www.redcross.org.au/firstaid/basics-children-babies/child-unresponsive-and-breathing",
+      "retrieved": "2026-11-14",
+      "covers": "Recovery position and calling 000"
+    },
+    {
+      "id": 25,
+      "org": "St John Ambulance (UK)",
+      "title": "How to do CPR on a child",
+      "url": "https://www.sja.org.uk/first-aid-advice/child-cpr/",
+      "retrieved": "2026-11-14",
+      "covers": "Child CPR steps, depth, rate, AED, alone with no phone"
+    },
+    {
+      "id": 26,
+      "org": "St John Ambulance (UK)",
+      "title": "How to put a child in the recovery position",
+      "url": "https://www.sja.org.uk/first-aid-advice/child-recovery-position/",
+      "retrieved": "2026-11-14",
+      "covers": "Recovery position steps; switch sides at 30 minutes"
+    },
+    {
+      "id": 27,
+      "org": "St John Ambulance (UK)",
+      "title": "How to do the primary survey (DR ABCDE)",
+      "url": "https://www.sja.org.uk/first-aid-advice/primary-survey/",
+      "retrieved": "2026-11-14",
+      "covers": "Danger, response, call, airway, breathing, severe bleeding"
+    },
+    {
+      "id": 28,
+      "org": "St John Ambulance (UK)",
+      "title": "Spinal injury first aid",
+      "url": "https://www.sja.org.uk/first-aid-advice/spinal-injury/",
+      "retrieved": "2026-11-14",
+      "covers": "Do not move unless in immediate danger; steady head; unresponsive case"
+    },
+    {
+      "id": 29,
+      "org": "St John Ambulance (UK)",
+      "title": "Seizure first aid",
+      "url": "https://www.sja.org.uk/first-aid-advice/seizure/",
+      "retrieved": "2026-11-14",
+      "covers": "When to call 999/112; first steps"
+    },
+    {
+      "id": 30,
+      "org": "Health Canada (Government of Canada)",
+      "title": "Canada launches new toll-free 1-844 POISON-X number for poison centres",
+      "url": "https://www.canada.ca/en/health-canada/news/2023/03/canada-launches-new-toll-free-1-844-poison-x-number-for-poison-centres.html",
+      "retrieved": "2026-11-14",
+      "covers": "1-844-764-7669; Quebec keeps its own line"
+    },
+    {
+      "id": 31,
+      "org": "healthdirect Australia (Australian Government-funded)",
+      "title": "Poisoning",
+      "url": "https://www.healthdirect.gov.au/poisoning",
+      "retrieved": "2026-11-14",
+      "covers": "13 11 26; call 000 for collapse/seizure/breathing; do not induce vomiting"
+    },
+    {
+      "id": 32,
+      "org": "healthdirect Australia (Australian Government-funded)",
+      "title": "Calling triple zero (000)",
+      "url": "https://www.healthdirect.gov.au/calling-triple-zero",
+      "retrieved": "2026-11-14",
+      "covers": "What the operator asks; location; stay on the line; stay calm"
+    },
+    {
+      "id": 33,
+      "org": "healthdirect Australia (Australian Government-funded)",
+      "title": "About ambulances in Australia",
+      "url": "https://www.healthdirect.gov.au/about-ambulances-in-australia",
+      "retrieved": "2026-11-14",
+      "covers": "000 triggers; nurse line 1800 022 222"
+    },
+    {
+      "id": 34,
+      "org": "European Union (Your Europe portal)",
+      "title": "Single emergency number 112",
+      "url": "https://europa.eu/youreurope/citizens/travel/security-and-emergencies/emergency/index_en.htm",
+      "retrieved": "2026-11-14",
+      "covers": "112 free from any phone in the EU; reaches police, ambulance, fire"
+    },
+    {
+      "id": 35,
+      "org": "SickKids AboutKidsHealth (Canada; hospital, not on the project's named list, treat as supporting)",
+      "title": "Poison first aid",
+      "url": "https://www.aboutkidshealth.ca/poison-first-aid",
+      "retrieved": "2026-11-14",
+      "covers": "Canada 911 and poison centre; do not make the child vomit; bring container"
+    },
+    {
+      "id": 36,
+      "org": "Canadian Paediatric Society (Caring for kids)",
+      "title": "Febrile seizures",
+      "url": "https://caringforkids.cps.ca/handouts/health-conditions-and-treatments/febrile_seizures",
+      "retrieved": "2026-11-14",
+      "covers": "Call 911 if over 3 minutes or under 6 months; first steps"
+    },
+    {
+      "id": 37,
+      "org": "National Capital Poison Center",
+      "title": "Press release: announces closure of its call center",
+      "url": "https://www.poison.org/press/national-capital-poison-center-call-center-closure",
+      "retrieved": "2026-11-14",
+      "covers": "1-800-222-1222 still works; calls from its former area re-routed to neighbouring centres; phone preferred for pregnancy, under 6 months, over 79, multiple substances, self-harm"
+    },
+    {
+      "id": 38,
+      "org": "America's Poison Centers",
+      "title": "Home page",
+      "url": "https://poisoncenters.org/",
+      "retrieved": "2026-11-14",
+      "covers": "53 accredited poison centres answer the Poison Help line 1-800-222-1222 in every US state and territory; expert advice 24/7/365 at no cost"
+    },
+    {
+      "id": 39,
+      "org": "American Heart Association (summary sheet, copy hosted by Vanderbilt University Medical Center; cpr.heart.org returned HTTP 403)",
+      "title": "Heartsaver CPR AED Summary of High-Quality CPR Components, 2025 Guidelines",
+      "url": "https://www.vumc.org/resuscitation-program/sites/default/files/public_files/BLS/Heartsaver/Heartsaver-CPR-AED-Summary-High-Quality-CPR%20Components-2025-Guidelines.pdf",
+      "retrieved": "2026-11-14",
+      "covers": "Phone: call 911 on speakerphone; child alone with no phone: 5 cycles of 30:2 before leaving to call; compressions about 2 inches, 100-120 per minute"
+    },
+    {
+      "id": 40,
+      "org": "American Red Cross",
+      "title": "Child and baby CPR",
+      "url": "https://www.redcross.org/take-a-class/cpr/performing-cpr/child-baby-cpr",
+      "retrieved": "2026-11-14",
+      "covers": "If child does not respond and is not breathing normally, call 9-1-1 (or tell someone to); 30 compressions then 2 breaths; about 2 inches; 2 minutes then call is worded for a baby"
+    },
+    {
+      "id": 41,
+      "org": "988 Suicide & Crisis Lifeline",
+      "title": "Home page",
+      "url": "https://988lifeline.org/",
+      "retrieved": "2026-11-14",
+      "covers": "Call, text or chat, free and confidential, 24/7/365; for a friend, loved one or yourself"
+    },
+    {
+      "id": 42,
+      "org": "Resuscitation Council UK (2025 Resuscitation Guidelines, ERC-based)",
+      "title": "Paediatric Basic Life Support guidelines",
+      "url": "https://www.resus.org.uk/library/2025-resuscitation-guidelines/paediatric-basic-life-support-guidelines",
+      "retrieved": "2026-11-14",
+      "covers": "Call using the phone's speaker function; a single rescuer without a mobile phone does CPR for 1 minute before going to seek help"
+    },
+    {
+      "id": 43,
+      "org": "healthdirect Australia",
+      "title": "Burns and scalds",
+      "url": "https://www.healthdirect.gov.au/burns-and-scalds",
+      "retrieved": "2026-11-14",
+      "covers": "When to call 000 for a burn (deep, face, hands, genitals, chemical, electrical, airway); cool running water at least 20 minutes while waiting for the ambulance; no cling film on a burn to the face"
+    },
+    {
+      "id": 44,
+      "org": "NIH MedlinePlus",
+      "title": "Burns",
+      "url": "https://medlineplus.gov/ency/article/000030.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Call 911 for a serious burn, palm-sized or larger, chemical or electrical, smoke, or unsure; do not place a severe burn in cold water; minor burns cooled 5 to 30 minutes"
+    }
+  ]
+}

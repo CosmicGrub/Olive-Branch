@@ -16,6 +16,7 @@ import 'app_lock_screen.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
+import 'care_guide_screens.dart' show CareGuidesHubTile;
 import 'parent_learn_logic.dart';
 import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
@@ -974,6 +975,8 @@ class GuardianMoreScreen extends StatelessWidget {
               // encrypted `learn` area), unless a server-backed store is passed.
               store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId),
               childAge: childAge))),
+          // Care guides: renders nothing unless a guide has passed the review gate (none has: see care_guide_gate.dart).
+          const CareGuidesHubTile(),
         ]),
         HubSection(title: 'Show me', children: [
           HubTile(icon: Icons.photo_camera_back_outlined, title: 'Show me — your side',

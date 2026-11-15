@@ -1,0 +1,985 @@
+{
+  "schemaVersion": 1,
+  "id": "high-fever",
+  "title": "High fever in children (including a fever that will not come down)",
+  "category": "illness",
+  "region": "US",
+  "status": "DRAFT_UNREVIEWED",
+  "revision": 4,
+  "lastResearched": "2026-11-14",
+  "review": {
+    "reviewedOn": null,
+    "reviewedBy": null,
+    "regions": []
+  },
+  "notes": [
+    {
+      "kind": "tier",
+      "text": "If you are unsure whether a sign is serious enough, treat it as an emergency. Signs in the 'call the doctor right away' list are not to be left until tomorrow: call the doctor or after-hours line now, or seek care now if you cannot reach one."
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "emergency",
+      "legacyKey": "callEmergencyNow",
+      "items": [
+        {
+          "text": "Baby aged 3 months or younger (this includes a baby who has just turned 3 months; if you are unsure of the exact age, count them in) with a temperature of 100.4 F (38 C) or higher, or whom you think has a high temperature (rectal reading is best), even with no other symptoms; or a rectal temperature below 97.7 F (36.5 C) (Cleveland Clinic): call the doctor or after-hours line immediately, day or night, or go to emergency care. Do not give fever medicine before the baby has been seen.",
+          "ages": "3 months or younger",
+          "sources": [
+            1,
+            0,
+            14,
+            2,
+            9,
+            15,
+            5,
+            8
+          ]
+        },
+        {
+          "text": "Cannot be woken (including a child who is asleep and cannot be roused), is very hard to wake, is not alert when awake, or is limp or too weak to stand",
+          "ages": "all",
+          "sources": [
+            14,
+            9,
+            2
+          ]
+        },
+        {
+          "text": "Any difficulty breathing with a fever, even after the nose has been cleared: fast breathing, breathlessness, grunting, the belly sucking in under the ribs, or struggling to speak or cry; or blue, grey or pale lips, tongue or nails; or blue, grey, pale or blotchy skin.",
+          "ages": "all",
+          "sources": [
+            2,
+            9,
+            14,
+            8,
+            15
+          ]
+        },
+        {
+          "text": "Dark red or purple spots or pinpricks on the skin, new bruises, or a rash that stays visible when a glass is pressed against it",
+          "ages": "all",
+          "sources": [
+            2,
+            14,
+            9
+          ]
+        },
+        {
+          "text": "Any other new or unexplained rash with fever, including a rash that fades when a glass is pressed against it: go to emergency care now or call emergency services (MedlinePlus: call 911; Cleveland Clinic: ER or 911). AAP When to Call, NHS 111 and Seattle Children's rate a rash that fades less urgently; see the disagreement block.",
+          "ages": "all",
+          "sources": [
+            9,
+            8,
+            0,
+            2,
+            5
+          ]
+        },
+        {
+          "text": "A seizure (fit) with fever: get emergency care now and do not wait until the next day. Call emergency services, and do not drive, if it is the child's first, if it lasts about 3 minutes or longer, if the child is under 6 months, has trouble breathing, is stiff or twitching on only one side, has had more than one in 24 hours, is still seizing or unconscious, or is not back to normal or is unusually sleepy more than an hour after it ends. Even a short seizure that has fully stopped needs emergency care now in this guide. MedlinePlus, the most cautious source, says call 911 for any seizure with fever; this guide asks you to call emergency services in the cases listed above and otherwise to go to emergency care now (AAP KidsDoc: go to the emergency room; Canadian Paediatric Society: a physical exam within a few hours). See the seizure disagreement block.",
+          "ages": "all, febrile seizures mostly 6 months to 5-6 years",
+          "sources": [
+            14,
+            9,
+            10,
+            12,
+            3,
+            6,
+            15
+          ]
+        },
+        {
+          "text": "Stiff neck, severe or very bad headache, or light hurting the eyes, together with fever",
+          "ages": "all",
+          "sources": [
+            2,
+            9,
+            14
+          ]
+        },
+        {
+          "text": "Bulging or swollen soft spot on the head (fontanelle) with fever",
+          "ages": "under 1 year",
+          "sources": [
+            14
+          ]
+        },
+        {
+          "text": "Crying that does not stop or cannot be calmed (nonstop crying), confusion, or extreme agitation; or no interest in feeding or normal activities, or not responding as usual",
+          "ages": "all",
+          "sources": [
+            9,
+            2,
+            14,
+            8
+          ]
+        },
+        {
+          "text": "Cannot walk (this includes a child who usually walks and no longer seems able to), or refuses to move an arm or leg; or unusually cold hands and feet",
+          "ages": "all",
+          "sources": [
+            9,
+            2,
+            14,
+            3
+          ]
+        },
+        {
+          "text": "Serious trouble swallowing fluids or saliva, or constant heavy drooling (Cleveland Clinic: ER or 911; AAP KidsDoc: seek care now)",
+          "ages": "all",
+          "sources": [
+            8,
+            14
+          ]
+        },
+        {
+          "text": "Chest pain with fever",
+          "ages": "all (older children who can describe it)",
+          "sources": [
+            15
+          ]
+        },
+        {
+          "text": "Fever or high body temperature after being somewhere very hot, such as a parked car or an overheated room: call the doctor right away or go to emergency care even if the reading is below 105 F. If heatstroke is suspected (body temperature above 105 F / 40.5 C from heat, not infection), call emergency services.",
+          "ages": "all",
+          "sources": [
+            0,
+            1
+          ]
+        },
+        {
+          "text": "Temperature above 104 F (40 C) at any age, or repeatedly above it, or staying high despite fever medicine: call the doctor or after-hours line right away or seek care now.",
+          "ages": "all",
+          "sources": [
+            14,
+            0,
+            5,
+            8
+          ]
+        },
+        {
+          "text": "Temperature above 105 F (40.5 C): go to emergency care or call the doctor right away; do not wait to see if it comes down.",
+          "ages": "all",
+          "sources": [
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "urgent",
+      "legacyKey": "callDoctorRightAway",
+      "items": [
+        {
+          "text": "The child looks or acts very ill, is unusually drowsy or sleepy, or is very fussy or irritable",
+          "sources": [
+            0,
+            14,
+            8,
+            5
+          ]
+        },
+        {
+          "text": "The child has a health condition or takes a medicine that weakens the immune system (for example sickle cell disease, cancer, HIV, organ transplant, long-term steroids), or has a heart problem",
+          "sources": [
+            0,
+            14,
+            3,
+            5,
+            9,
+            11
+          ]
+        },
+        {
+          "text": "Signs of dehydration: no urine for 8 hours, dark urine, very dry mouth or lips, no tears when crying, nappies that are not very wet, or sunken eyes",
+          "sources": [
+            14,
+            8,
+            9,
+            2,
+            5
+          ]
+        },
+        {
+          "text": "Pain or burning when passing urine",
+          "sources": [
+            14,
+            15
+          ]
+        },
+        {
+          "text": "Severe sore throat or severe ear pain",
+          "sources": [
+            0,
+            5
+          ]
+        },
+        {
+          "text": "Repeated vomiting or diarrhoea, or vomiting so that food, drinks or medicines cannot be kept down",
+          "sources": [
+            0,
+            3,
+            5
+          ]
+        },
+        {
+          "text": "Shivering or shaking chills lasting more than 30 minutes",
+          "sources": [
+            14
+          ]
+        },
+        {
+          "text": "Crying whenever touched or moved",
+          "sources": [
+            14
+          ]
+        },
+        {
+          "text": "The child still does not act alert or comfortable, or still acts sick, once the fever has come down, or seems to be getting worse",
+          "sources": [
+            0,
+            9,
+            8,
+            14
+          ]
+        },
+        {
+          "text": "Breathing faster than usual but without effort (breathing that is fast with effort, grunting or struggling is on the emergency list)",
+          "sources": [
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "sameDay",
+      "legacyKey": "callDoctorSameDay",
+      "items": [
+        {
+          "text": "Baby over 3 months up to 6 months with any fever: contact the doctor the same day (AAP KidsDoc: within 24 hours; Canadian Paediatric Society: any fever under 6 months). Do not wait for a higher number.",
+          "sources": [
+            14,
+            4
+          ]
+        },
+        {
+          "text": "Child over 6 months up to 3 years with 102 F (38.9 C) or higher, especially if fever is the only symptom (Mayo content). Younger babies: see the any-fever rule above. Other figures are in the disagreements block.",
+          "sources": [
+            15
+          ]
+        },
+        {
+          "text": "Fever lasting more than 24 hours if under 2 years, or not improving after 2 days at any age (other figures are in the disagreements block)",
+          "sources": [
+            0,
+            3,
+            5
+          ]
+        },
+        {
+          "text": "Fever that comes back after being gone more than 24 hours, or recent travel to a high-risk area",
+          "sources": [
+            14
+          ]
+        },
+        {
+          "text": "Eating or drinking less than usual, or not quite themselves, but still responding normally and showing interest when awake (if they stop responding as usual, or lose interest in feeding and normal activities, use the emergency list)",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Parent or carer is worried (several sources say trust your instinct)",
+          "sources": [
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "doNow",
+      "legacyKey": "doNow",
+      "items": [
+        {
+          "text": "Check the emergency list at the top first. If any sign is present, act as that list says: call emergency services (US 911, UK 999, Australia 000, Canada 911) or call the doctor right away. Do not drive a seizing or very sick child yourself.",
+          "n": 1,
+          "ages": "all",
+          "sources": [
+            14,
+            10,
+            3
+          ]
+        },
+        {
+          "text": "If a child is having a seizure right now: lay them on their side on the floor or a bed, away from hard or sharp objects, so saliva or vomit can drain from the mouth. Do not hold them down and do not put anything in their mouth. Note when it started, because every emergency rule above counts minutes. When it stops, keep them on their side and get emergency care as the seizure row at the top says, even if it was short.",
+          "n": 2,
+          "ages": "all",
+          "sources": [
+            6,
+            10,
+            12,
+            8
+          ]
+        },
+        {
+          "text": "Take a proper temperature with a thermometer (not by feeling the skin). For a baby 3 months old or younger use a rectal reading if you have been shown how. Write down the number, the method and the time.",
+          "n": 3,
+          "ages": "all",
+          "sources": [
+            1,
+            4,
+            14
+          ]
+        },
+        {
+          "text": "Baby 3 months old or younger (including a baby who has just turned 3 months) with 100.4 F (38 C) or higher, or whom you think has a high temperature: this is on the emergency list. Call the doctor or after-hours line immediately, or go to emergency care. Do not give fever medicine before the baby has been seen.",
+          "n": 4,
+          "ages": "3 months or younger",
+          "sources": [
+            0,
+            14,
+            2,
+            9
+          ]
+        },
+        {
+          "text": "Baby over 3 months up to 6 months with any fever: contact the doctor the same day (AAP KidsDoc says within 24 hours; the Canadian Paediatric Society says any fever under 6 months should see a doctor). Do not wait for a higher number. Some sources use higher numbers (AAP baby page 101 F / 38.3 C, NHS 39 C), see disagreements; if the baby seems unwell, use the emergency list.",
+          "n": 5,
+          "ages": "over 3 to 6 months",
+          "sources": [
+            14,
+            4,
+            1,
+            2
+          ]
+        },
+        {
+          "text": "Offer plenty of fluids often, because fever increases fluid loss. Under 6 months give only breast milk or formula (extra feeds are fine).",
+          "n": 6,
+          "ages": "all",
+          "sources": [
+            7,
+            14,
+            3
+          ]
+        },
+        {
+          "text": "Dress in one light layer; add a blanket only if shivering. Do not bundle up, especially babies under 1 year. Keep the room comfortable.",
+          "n": 7,
+          "ages": "all",
+          "sources": [
+            7,
+            14,
+            2,
+            9
+          ]
+        },
+        {
+          "text": "Look at how the child is acting, not just the number. A child who is comfortable, drinking and playing between fever spikes often does not need medicine.",
+          "n": 8,
+          "ages": "over 3 months",
+          "sources": [
+            7,
+            11,
+            3,
+            14
+          ]
+        },
+        {
+          "text": "If the child is uncomfortable and old enough, one fever medicine (acetaminophen/paracetamol, or ibuprofen only if over 6 months old and drinking reasonably well) may be used exactly as the product label says for the child's weight or age. Avoid ibuprofen if the child is dehydrated (NHS). For a child under 2 years, ask a paediatrician or pharmacist for the correct dose. If unsure, ask a pharmacist, doctor or poison control (US 1-800-222-1222).",
+          "n": 9,
+          "ages": "see byAgeBand",
+          "sources": [
+            2,
+            4,
+            5,
+            7,
+            13
+          ]
+        },
+        {
+          "text": "Check on the child regularly through the night (NHS). Seattle Children's advises against waking a sleeping child only to give fever medicine. A sleeping child who cannot be woken, or is very hard to wake, is an emergency: use the list at the top.",
+          "n": 10,
+          "ages": "all",
+          "sources": [
+            2,
+            5,
+            14,
+            9
+          ]
+        },
+        {
+          "text": "Keep the child home and resting. If any sign in the 'call the doctor right away' list appears, call right away. If a sign in the 'same day' list appears, or you are worried, call the doctor the same day.",
+          "n": 11,
+          "ages": "all",
+          "sources": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "doNot",
+      "legacyKey": "doNot",
+      "items": [
+        {
+          "text": "Do not give aspirin (or aspirin-containing products) to a child with fever. It is linked to Reye syndrome. UK says under 16; others say never unless a doctor prescribes it.",
+          "sources": [
+            2,
+            3,
+            4,
+            14,
+            15
+          ]
+        },
+        {
+          "text": "Do not give fever medicine to a baby 3 months old or younger before a clinician has seen them (UK: no paracetamol under 2 months at all).",
+          "sources": [
+            14,
+            5,
+            2
+          ]
+        },
+        {
+          "text": "Do not give ibuprofen unless the child is over 6 months old; for a baby 6 months old or younger, only if a doctor says so (UK is stricter in other ways: not under 3 months, not under 5 kg, not with chickenpox, not when dehydrated, and not with asthma unless a doctor has advised it).",
+          "sources": [
+            4,
+            5,
+            2
+          ]
+        },
+        {
+          "text": "Do not give two products that contain the same medicine (for example a cold medicine with acetaminophen plus an acetaminophen fever medicine). Read every label.",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Do not give adult-strength medicine to children.",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Do not rub with alcohol or use ice water or cold baths or ice packs to cool a child. Rubbing alcohol can cause a coma (AAP KidsDoc), and cold causes shivering and discomfort.",
+          "sources": [
+            7,
+            5,
+            3,
+            14,
+            9
+          ]
+        },
+        {
+          "text": "Do not undress the child completely.",
+          "sources": [
+            2,
+            4
+          ]
+        },
+        {
+          "text": "Do not pile on blankets or extra clothes, or bundle up the child, especially a baby under 1 year.",
+          "sources": [
+            5,
+            9,
+            7,
+            14
+          ]
+        },
+        {
+          "text": "Do not alternate or combine acetaminophen and ibuprofen unless a doctor or pharmacist tells you to (sources differ; see disagreements). If more than one caregiver gives medicine, keep one written log.",
+          "sources": [
+            2,
+            5,
+            14,
+            13
+          ]
+        },
+        {
+          "text": "Do not rely on feeling the forehead, fever strips, or ear thermometers in babies under 6 months.",
+          "sources": [
+            1,
+            4,
+            7
+          ]
+        },
+        {
+          "text": "Do not put anything in the mouth of a child who is having a seizure, and do not hold them down.",
+          "sources": [
+            6,
+            10,
+            12
+          ]
+        },
+        {
+          "text": "Do not force solid food; fluids matter more.",
+          "sources": [
+            9,
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "watchFor",
+      "legacyKey": "watchFor",
+      "items": [
+        {
+          "text": "Signs of dehydration: no tears when crying, dry mouth or lips, fewer wet nappies/diapers, sunken soft spot, no urine for 8 hours, dark urine, cannot take fluids (if any of these is present, call the doctor right away, see the list above)",
+          "detail": "throughout the illness; check every few hours",
+          "sources": [
+            7,
+            14,
+            5,
+            9
+          ]
+        },
+        {
+          "text": "Child still seems sick, drowsy or not alert after the fever comes down, or is getting worse (if this happens, call the doctor right away, see the list above)",
+          "detail": "after each fever drop",
+          "sources": [
+            0,
+            9,
+            3
+          ]
+        },
+        {
+          "text": "Fever coming back after it had gone",
+          "detail": "AAP KidsDoc: if it returns after being gone over 24 hours, contact doctor within 24 hours; MedlinePlus: call if fever returns, or if fevers come and go for a week or more",
+          "sources": [
+            14,
+            9
+          ]
+        },
+        {
+          "text": "Fever that lasts: under 2 years more than 24 hours (AAP); any age not better after 2 days (RCH). Follow the earliest (other figures are in the disagreements block)",
+          "detail": "count from the first fever reading",
+          "sources": [
+            0,
+            3
+          ]
+        },
+        {
+          "text": "Persistent cough or wheeze (Canadian Paediatric Society). Breathing faster than usual is on the call-right-away list, and trouble breathing is on the emergency list",
+          "detail": "ongoing",
+          "sources": [
+            5,
+            4
+          ]
+        },
+        {
+          "text": "Pain, redness or swelling in one place (CHOP lists this as a reason to call the doctor); a new rash is on the emergency list and pain when passing urine is on the call-right-away list",
+          "detail": "ongoing",
+          "sources": [
+            11,
+            14,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "prevention",
+      "legacyKey": "prevention",
+      "items": [
+        {
+          "text": "Do not leave a child in a parked or very hot car; overheating can raise body temperature to dangerous levels and is an emergency (not an infection fever).",
+          "ages": "all",
+          "sources": [
+            0,
+            1
+          ]
+        },
+        {
+          "text": "Keep a written log of every dose of any medicine (what, when, how much, who gave it) when more than one adult is caring for the child.",
+          "ages": "all",
+          "sources": [
+            13,
+            3
+          ]
+        },
+        {
+          "text": "Store medicines up and away from children; use children's products with the dosing device that comes with the product; read every label.",
+          "ages": "all",
+          "sources": [
+            13,
+            5
+          ]
+        },
+        {
+          "text": "Keep the poison control number (US 1-800-222-1222) saved in the phone.",
+          "ages": "all",
+          "sources": [
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "coolDown",
+      "legacyKey": "hardToBringDown",
+      "items": [
+        {
+          "text": "Remember medicine is for comfort, not to reach a normal number. It usually lowers the temperature only by a couple of degrees (AAP KidsDoc: about 2 to 3 F / 1 to 1.5 C), may take 1 to 2 hours, and may not lower it at all. Australia's RCH says lowering the fever does not make the infection go away faster or prevent febrile seizures.",
+          "sources": [
+            14,
+            3,
+            8
+          ]
+        },
+        {
+          "text": "Check the basics: one light layer, comfortable room, plenty of fluids, and that the label was followed for the child's weight or age. Check no other product contains the same medicine.",
+          "sources": [
+            7,
+            14,
+            13
+          ]
+        },
+        {
+          "text": "Do not give extra or repeated doses early, and do not combine or alternate acetaminophen and ibuprofen on your own initiative. If you think it is not working, call the doctor, pharmacist or poison control and ask before giving more.",
+          "sources": [
+            2,
+            5,
+            14,
+            13
+          ]
+        },
+        {
+          "text": "A fever that stays above 104 F (40 C), or that does not come down at all after a correct dose of fever medicine, or a child who still acts sick once the fever has come down, is a reason to call the doctor or after-hours line right away or seek care now (AAP KidsDoc, Seattle Children's and Cleveland Clinic say call for a fever above 104 F; AAP When to Call says call right away if it is repeatedly above 104 F, and also to call if the child still acts sick once the fever is down; MedlinePlus says provider or emergency room if the child is not more alert or comfortable once the fever is down).",
+          "sources": [
+            14,
+            0,
+            5,
+            8,
+            9
+          ]
+        },
+        {
+          "text": "Above 105 F (40.5 C): go to emergency care or call the doctor right away. MedlinePlus allows waiting if the temperature comes down readily and the child is comfortable, but this guide does not carry that exception. Any emergency sign: act on the emergency list.",
+          "sources": [
+            9
+          ]
+        },
+        {
+          "text": "Some sources describe a lukewarm sponge only for fever above 104 F (40 C) that has not responded to medicine, but others advise against all sponging. For this draft, default to NOT sponging and flag for the clinician.",
+          "sources": [
+            14,
+            9,
+            7,
+            2
+          ]
+        },
+        {
+          "text": "When you call the doctor, tell them: child's age and weight; highest temperature, how and when it was taken; how long the fever has lasted; what medicine was given, which product, what time and how much (from your written log); how much the child has been drinking and wet nappies; other symptoms (cough, rash, vomiting, diarrhoea, pain); vaccinations; medical conditions; whether the child perks up when the fever drops.",
+          "sources": [
+            14,
+            9,
+            11,
+            0
+          ]
+        },
+        {
+          "text": "Fever that goes away and comes back: call the doctor (AAP KidsDoc: contact the doctor within 24 hours if it returns after being gone more than 24 hours; MedlinePlus: contact the provider if it returns, or if fevers come and go for a week or more). A child who is not more alert once the fever drops is on the call-right-away list.",
+          "sources": [
+            9,
+            14
+          ]
+        },
+        {
+          "text": "If the child's breathing, alertness, colour, drinking or movement worsens at any point, go to emergency care or call emergency services.",
+          "sources": [
+            8,
+            2,
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "howToMeasure",
+      "legacyKey": "howToMeasure",
+      "items": [
+        {
+          "text": "Rectal is the most accurate; armpit is an alternative but less accurate. Use rectal only if you are comfortable and a health care provider has shown you how. For a baby under 6 months use the shallower AAP depth, about 1/2 inch (about 1.3 cm); for an older child go no deeper than about 1 inch (about 2.5 cm). Never push against resistance: stop if there is any. If you have not been shown how, do not take a rectal reading; for a baby 3 months old or younger who feels hot or whom you think has a high temperature, follow the first emergency row (call the doctor or after-hours line immediately, or go to emergency care). Follow your thermometer's instructions first. The Canadian Paediatric Society gives about 2.5 cm (1 inch) with no age split; see the disagreements block. If the armpit or ear reads normal but the child feels warm and is unwell, recheck rectally.",
+          "ages": "Birth to 2 years",
+          "sources": [
+            16,
+            4,
+            1
+          ]
+        },
+        {
+          "text": "Avoid ear thermometers: ear canals are too small for an accurate reading.",
+          "ages": "Under 6 months",
+          "sources": [
+            1,
+            14
+          ]
+        },
+        {
+          "text": "Rectal reading is the most reliable. Fever = 100.4 F (38 C) or higher.",
+          "ages": "Birth to 3 months",
+          "sources": [
+            1,
+            0,
+            16
+          ]
+        },
+        {
+          "text": "Rectal is most accurate; ear or armpit are alternatives. Oral is not recommended under 5.",
+          "ages": "2 to 5 years",
+          "sources": [
+            4
+          ]
+        },
+        {
+          "text": "Mouth (under the tongue, mouth closed, about 1 minute until the thermometer beeps, per the Canadian Paediatric Society) is most accurate; ear or armpit are alternatives.",
+          "ages": "Over 5 years",
+          "sources": [
+            4
+          ]
+        },
+        {
+          "text": "A digital thermometer in the armpit is the NHS method; fever is 38 C or higher. Wait a few minutes after a bath or being wrapped up before measuring.",
+          "ages": "Any age (UK)",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Feeling the forehead or skin is not accurate; fever strips are not reliable. Digital forehead (temporal) thermometers are accepted by AAP and Cleveland Clinic at 100.4 F, but RCH says forehead infrared and tape thermometers can be unreliable, and the Canadian Paediatric Society says sweat, head coverings and the environment can affect non-contact readings. For a baby 3 months old or younger, a rectal reading is the most reliable (AAP), so use one to confirm a forehead reading.",
+          "ages": "Any age",
+          "sources": [
+            1,
+            4,
+            14,
+            8,
+            3,
+            16
+          ]
+        },
+        {
+          "text": "Fever is rectal, ear or forehead 100.4 F (38.0 C) or higher; oral 100 F (37.8 C) or higher; armpit 99 F (37.2 C) or higher. Cleveland Clinic gives the same armpit and oral cut-offs. Normal body temperature is about 98.6 F (37 C), give or take 1 F.",
+          "ages": "Thresholds by method (AAP KidsDoc)",
+          "sources": [
+            14,
+            8,
+            7
+          ]
+        }
+      ]
+    }
+  ],
+  "ageBands": [
+    {
+      "key": "up to 3 months",
+      "text": "Any temperature of 100.4 F (38 C) or higher, or a baby you think has a high temperature, is urgent: call the doctor or after-hours line immediately or go to emergency care, even with no other symptoms. A rectal temperature below 97.7 F (36.5 C) is also a reason to call (Cleveland Clinic). This band is 3 months old or younger, the most cautious age line among the sources (they draw the line at 2 months, younger than 3 months or 3 months or younger; see the disagreements block). Australia (RCH) says under 1 month with fever goes to hospital. Use a rectal reading. No fever medicine before being seen (UK: no paracetamol under 2 months, no ibuprofen under 3 months). Sources: 0, 1, 2, 3, 8, 14, 16."
+    },
+    {
+      "key": "over 3 to 6 months",
+      "text": "Any fever (100.4 F / 38 C or higher): contact the doctor the same day, and within 24 hours at the latest (AAP KidsDoc); the Canadian Paediatric Society says any fever under 6 months should see a doctor. Do not wait for a higher number (other figures are in the disagreements block). If the baby seems unwell, use the lists at the top. Acetaminophen only if over 3 months (Seattle Children's). No ibuprofen in this band: ibuprofen only if over 6 months old. Follow the label, and for a child under 2 years ask a paediatrician or pharmacist about the dose. Only breast milk or formula for extra fluids until 6 months. No ear thermometers before 6 months. Sources: 14, 4, 1, 2, 5, 7."
+    },
+    {
+      "key": "over 6 to 12 months",
+      "text": "Contact the doctor at 102 F (38.9 C) or higher, especially if fever is the only symptom (Mayo content); other figures are in the disagreements block. Ibuprofen only if over 6 months old and drinking reasonably well; follow the label, and for a child under 2 years ask a paediatrician or pharmacist about the dose. Offer plenty of fluids and avoid bundling. Sources: 15, 4, 5, 7."
+    },
+    {
+      "key": "over 12 months to 3 years",
+      "text": "Call the doctor if fever lasts more than 24 hours and the child is under 2 (AAP), or if it is not improving after 2 days at 2 and over (RCH); other figures are in the disagreements block. Contact the doctor at 102 F (38.9 C) or higher, especially if fever is the only symptom (Mayo content). Febrile seizures are most common around 12 to 18 months. Rectal is most accurate up to age 2 (CPS); armpit is the alternative. Offer plenty of fluids (AAP); avoid bundling. For medicine under 2 years, ask a paediatrician or pharmacist for the dose. Sources: 0, 3, 4, 6, 15, 7."
+    },
+    {
+      "key": "over 3 to 5 years",
+      "text": "Duration: call if not improving after 2 days (RCH); other figures are in the disagreements block. Rectal or ear or armpit; oral thermometers are not recommended under 5 (CPS). Febrile seizures remain possible up to age 5-6. Watch behaviour and fluids more than the number. Sources: 3, 4, 6, 10."
+    },
+    {
+      "key": "over 5 to 12 years",
+      "text": "Oral temperature becomes the preferred method after age 5 (CPS). By mouth, treat 100 F (37.8 C) or higher as a fever (AAP KidsDoc and Cleveland Clinic); the 100.4 F (38 C) figure is for rectal, ear and forehead readings (other sources differ, see disagreements). Duration: call if not improving after 2 days (RCH); other figures are in the disagreements block. Above 104 F (40 C): call right away or seek care now. Aspirin is never to be used (Reye syndrome risk), including for children with flu or chickenpox. Sources: 0, 3, 4, 8, 14, 2."
+    },
+    {
+      "key": "over 12 to 17 years",
+      "text": "No teen-specific fever guidance was found in the opened pages; the sources address 'children' broadly. Same red flags (stiff neck, rash that does not fade, breathing trouble, confusion, severe headache, dehydration) apply. UK NHS says no aspirin under 16; US sources say avoid aspirin in children generally. Adult dosing is not covered here; ask a pharmacist or doctor. Sources: 2, 8, 15."
+    }
+  ],
+  "helplines": [
+    {
+      "region": "US",
+      "name": "Emergency services",
+      "number": "911",
+      "sources": [
+        6
+      ]
+    },
+    {
+      "region": "US",
+      "name": "Poison Help / Poison Control",
+      "number": "1-800-222-1222 (also online tool at triage.webpoisoncontrol.org)",
+      "sources": [
+        13
+      ]
+    },
+    {
+      "region": "UK",
+      "name": "Emergency / NHS 111 for urgent advice",
+      "number": "999 (emergency); 111 (urgent advice)",
+      "sources": [
+        2
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "Ambulance",
+      "number": "000",
+      "sources": [
+        3
+      ]
+    },
+    {
+      "region": "Canada",
+      "name": "Emergency services",
+      "number": "911",
+      "sources": [
+        12
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": 0,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "When to Call the Pediatrician (fever)",
+      "url": "https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/When-to-Call-the-Pediatrician.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Under-3-month threshold, 24 hour and 3 day durations, 104 F, red flags"
+    },
+    {
+      "id": 1,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Fever and Your Baby",
+      "url": "https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/Fever-and-Your-Baby.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Rectal accuracy (no insertion depth stated), 3 months or younger call immediately, 3-6 month and over-6 month thresholds, ear thermometer under 6 months, febrile seizure 911 at 15 minutes, heatstroke above 105 F"
+    },
+    {
+      "id": 2,
+      "org": "NHS (UK)",
+      "title": "High temperature (fever) in children",
+      "url": "https://www.nhs.uk/conditions/fever-in-children/",
+      "retrieved": "2026-11-14",
+      "covers": "38 C, 111 and 999 triggers, check overnight, no sponging, no over-bundling, no aspirin under 16, no alternating, paracetamol and ibuprofen age/weight limits"
+    },
+    {
+      "id": 3,
+      "org": "Royal Children's Hospital Melbourne",
+      "title": "Fever in children (Kids Health Info)",
+      "url": "https://www.rch.org.au/kidsinfo/fact_sheets/Fever_in_children/",
+      "retrieved": "2026-11-14",
+      "covers": "38 C, under 1 month hospital, 000 triggers, no cold bath, medicines, aspirin, febrile seizures"
+    },
+    {
+      "id": 4,
+      "org": "Canadian Paediatric Society (Caring for Kids)",
+      "title": "Fever and temperature taking",
+      "url": "https://caringforkids.cps.ca/handouts/health-conditions-and-treatments/fever_and_temperature_taking",
+      "retrieved": "2026-11-14",
+      "covers": "Methods by age, rectal about 2.5 cm, oral about 1 minute, normal ranges, under 3 and 6 months, 48-72 hours, medicines, aspirin, do not strip completely"
+    },
+    {
+      "id": 5,
+      "org": "Seattle Children's Hospital",
+      "title": "Fever",
+      "url": "https://www.seattlechildrens.org/conditions/a-z/fever/",
+      "retrieved": "2026-11-14",
+      "covers": "100.4 F, acetaminophen over 3 months, ibuprofen over 6 months, 24 hour and 3 day and 104 F calls, no waking a sleeping child for medicine, avoid bundling, no alcohol or ice water, no alternating, no aspirin"
+    },
+    {
+      "id": 6,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Febrile Seizures",
+      "url": "https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/Febrile-Seizures.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "What to do in a seizure, 5 minutes, call the doctor, medicine does not prevent them"
+    },
+    {
+      "id": 7,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Fever Without Fear",
+      "url": "https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/Fever-Without-Fear.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Fever basics, comfort over number, sponging and alcohol baths not recommended, fluids, dehydration signs, call-now list"
+    },
+    {
+      "id": 8,
+      "org": "Cleveland Clinic",
+      "title": "Kids' fevers: when to worry, when to relax",
+      "url": "https://health.clevelandclinic.org/kids-fevers-when-to-worry-when-to-relax/",
+      "retrieved": "2026-11-14",
+      "covers": "Thresholds by method, 97.7 F low temperature, 5 days, 104 F, ER signs including drooling or difficulty swallowing, rubbing alcohol warning"
+    },
+    {
+      "id": 9,
+      "org": "MedlinePlus (NIH)",
+      "title": "Fever in infants and children: patient instructions",
+      "url": "https://medlineplus.gov/ency/patientinstructions/000319.htm",
+      "retrieved": "2026-11-14",
+      "covers": "Age thresholds, 911 list, home care, lukewarm sponge, medicine timing, ibuprofen not under 6 months"
+    },
+    {
+      "id": 10,
+      "org": "NHS (UK)",
+      "title": "Febrile seizures",
+      "url": "https://www.nhs.uk/conditions/febrile-seizures/",
+      "retrieved": "2026-11-14",
+      "covers": "What to do and not do, 999 triggers"
+    },
+    {
+      "id": 11,
+      "org": "Children's Hospital of Philadelphia",
+      "title": "Fever in Kids: When to Call the Doctor",
+      "url": "https://chop.edu/node/121928",
+      "retrieved": "2026-11-14",
+      "covers": "100.4 F, under 3 months, symptoms matter more than the number, abnormal symptoms, 3 days"
+    },
+    {
+      "id": 12,
+      "org": "Canadian Paediatric Society (Caring for Kids)",
+      "title": "Febrile seizures",
+      "url": "https://caringforkids.cps.ca/handouts/health-conditions-and-treatments/febrile_seizures",
+      "retrieved": "2026-11-14",
+      "covers": "Seizure first aid, 911 over 3 minutes or under 6 months, exam within hours"
+    },
+    {
+      "id": 13,
+      "org": "Poison Control (poison.org)",
+      "title": "Use acetaminophen safely",
+      "url": "https://www.poison.org/articles/use-acetaminophen-safely",
+      "retrieved": "2026-11-14",
+      "covers": "Hidden acetaminophen, no doubled products, no adult strength, overdose action, 1-800-222-1222"
+    },
+    {
+      "id": 14,
+      "org": "American Academy of Pediatrics (HealthyChildren.org KidsDoc symptom checker)",
+      "title": "Fever symptom checker",
+      "url": "https://www.healthychildren.org/English/tips-tools/Symptom-Checker/Pages/symptomviewer.aspx?symptom=Fever",
+      "retrieved": "2026-11-14",
+      "covers": "Method cut-offs, 911 and ER and call-now and 24 hour lists, fluids, treatment thresholds, medicine rules, under 2 years dose from doctor or pharmacist, sponging, seizure with fever ER now"
+    },
+    {
+      "id": 15,
+      "org": "Mayo Clinic Health Information (Mayo Clinic content hosted on the Mosaic Life Care website)",
+      "title": "Fever (definition and care)",
+      "url": "https://mymlc.com/health-information/definitions/f/fever",
+      "retrieved": "2026-11-14",
+      "covers": "Under 3 months right away, 3 months to 3 years 102 F, chest pain, stiff neck, painful urination, seizure over 5 minutes, no aspirin"
+    },
+    {
+      "id": 16,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "How to Take Your Child's Temperature",
+      "url": "https://www.healthychildren.org/English/health-issues/conditions/fever/Pages/How-to-Take-a-Childs-Temperature.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "Rectal depth 1/2 inch under 6 months to 1 inch, forehead (temporal) thermometers for any age, 2 months or younger call-right-away line"
+    }
+  ]
+}
