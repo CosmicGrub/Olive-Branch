@@ -159,8 +159,20 @@ mixin _CareLoad<T extends StatefulWidget> on State<T> {
 // ================================================================ the hub ===
 /// Where each part of the hub that lives in another file opens. A null builder shows its row as "later".
 class CareHubLinks {
-  const CareHubLinks({this.emergencyCard, this.hospital, this.exchange, this.binder, this.appointments, this.schedule});
+  const CareHubLinks({
+    this.emergencyCard,
+    this.hospital,
+    this.exchange,
+    this.binder,
+    this.appointments,
+    this.schedule,
+    this.aboutChild,
+  });
   final WidgetBuilder? emergencyCard, hospital, exchange, binder, appointments, schedule;
+
+  /// The care profile ("About her"), which gathers the binder, the emergency card and the medicines. Null in a
+  /// tree built without it: the hub then shows no row for it.
+  final WidgetBuilder? aboutChild;
 }
 
 class CareHubScreen extends StatefulWidget {
@@ -254,6 +266,14 @@ class _CareHubState extends State<CareHubScreen> with _CareLoad<CareHubScreen> {
                 key: const Key('careHubBanner'),
                 icon: Icons.shield_outlined,
               ),
+              if (widget.links.aboutChild != null)
+                HubTile(
+                  key: const Key('careRowAbout'),
+                  icon: Icons.person_search_outlined,
+                  title: 'About ${widget.childName}',
+                  subtitle: 'What helps, what keeps her safe, who sees what. Gathers the pages below',
+                  onTap: () => _open(widget.links.aboutChild, 'About her is not available here.'),
+                ),
               HubTile(
                 key: const Key('careRowCard'),
                 icon: Icons.medical_information_outlined,

@@ -14,6 +14,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'local_pin.dart';
+import 'scanner_unavailable.dart';
 import 'unlock_challenge.dart';
 
 class UnlockChildScreen extends StatefulWidget {
@@ -115,6 +116,8 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
                           ? widget.scannerBuilder!(_onScanned)
                           : MobileScanner(
                               key: const Key('unlockScanner'),
+                              // Camera denied or missing: plain words and a way to the app's settings, never raw plugin text.
+                              errorBuilder: scannerErrorBuilder,
                               onDetect: (BarcodeCapture c) {
                                 final String? v = c.barcodes.isNotEmpty ? c.barcodes.first.rawValue : null;
                                 if (v != null) _onScanned(v);

@@ -1,0 +1,1013 @@
+{
+  "schemaVersion": 1,
+  "id": "head-injury",
+  "title": "Head injury in children (bumps, falls, sports, bike and car)",
+  "category": "injury",
+  "region": "US",
+  "status": "DRAFT_UNREVIEWED",
+  "revision": 4,
+  "lastResearched": "2026-11-14",
+  "review": {
+    "reviewedOn": null,
+    "reviewedBy": null,
+    "regions": []
+  },
+  "notes": [],
+  "emergencyFirstLine": {
+    "text": "If the child is unconscious, is having a seizure, cannot be woken, or may have a neck or back injury, call 911 rather than driving them in, and do not move them.",
+    "sources": [
+      4,
+      11,
+      6,
+      1
+    ]
+  },
+  "blocks": [
+    {
+      "kind": "emergency",
+      "legacyKey": "callEmergencyNow",
+      "items": [
+        {
+          "text": "The child is knocked out (even briefly), will not wake up, or cannot stay awake. If they are not breathing, start rescue breaths and CPR while help is coming.",
+          "ages": "all",
+          "sources": [
+            0,
+            7,
+            6,
+            4
+          ]
+        },
+        {
+          "text": "Very sleepy, hard to wake, or getting sleepier as time passes.",
+          "ages": "all",
+          "sources": [
+            2,
+            3,
+            4,
+            6
+          ]
+        },
+        {
+          "text": "A seizure (fit, convulsion, jerking or shaking that the child cannot control).",
+          "ages": "all",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Vomiting more than once after the injury, or vomiting that will not stop, or repeated vomiting in a baby or toddler. (Go to the emergency department now or call emergency services. The AAP page for children 2 and over is more lenient; see disagreements.)",
+          "ages": "all",
+          "sources": [
+            7,
+            4,
+            16,
+            17,
+            11,
+            6,
+            2,
+            20,
+            9
+          ]
+        },
+        {
+          "text": "Neck pain or stiffness, a neck that will not move normally, or bad back pain. Do not move the child; hold the head and neck still.",
+          "ages": "all",
+          "sources": [
+            3,
+            4,
+            7,
+            6
+          ]
+        },
+        {
+          "text": "Clear fluid or blood coming from the nose or ears (NHS lists the ears; AAP and Pregnancy, Birth and Baby also list the nose), bruising behind the ears, or black eyes without a blow to the eyes. (Seattle Children's notes that a bruise on the forehead can cause black eyes 1 to 3 days later; this guide follows the NHS rule.)",
+          "ages": "all",
+          "sources": [
+            1,
+            0,
+            17,
+            3
+          ]
+        },
+        {
+          "text": "Pupils (black centres of the eyes) of different sizes, double vision, or other new vision or hearing problems.",
+          "ages": "all",
+          "sources": [
+            1,
+            7,
+            2,
+            0
+          ]
+        },
+        {
+          "text": "New weakness or numbness in an arm or leg, slurred speech, trouble walking or balancing, or not recognising familiar people or places.",
+          "ages": "all",
+          "sources": [
+            2
+          ]
+        },
+        {
+          "text": "Confusion, agitation, restlessness, or behaviour that is clearly not normal for this child.",
+          "ages": "all",
+          "sources": [
+            7,
+            2
+          ]
+        },
+        {
+          "text": "A severe headache, a headache that does not go away or gets worse, or a bad headache that is still there after pain relief (see disagreements).",
+          "ages": "all (children who can talk)",
+          "sources": [
+            2,
+            9,
+            17,
+            4,
+            6,
+            7
+          ]
+        },
+        {
+          "text": "Major bleeding that cannot be stopped with firm pressure (healthdirect: bleeding that will not stop; MedlinePlus: severe head or face bleeding; see disagreements).",
+          "ages": "all",
+          "sources": [
+            3,
+            16,
+            6
+          ]
+        },
+        {
+          "text": "A dent in the skull, or something stuck in a head wound.",
+          "ages": "all",
+          "sources": [
+            1,
+            3
+          ]
+        },
+        {
+          "text": "The injury happened at high speed (for example a car or bike crash) or from a fall of more than about 1 metre (3 feet), at any age. NHS also lists a fall of more than 5 stairs. This guide carries the lowest height found; some sources use 1.5 metres from age 2 (see disagreements).",
+          "ages": "all",
+          "sources": [
+            1,
+            4,
+            16
+          ]
+        },
+        {
+          "text": "A baby under 1 year old with a bruise, swelling or a large cut on the head (NHS says call 999 for this).",
+          "ages": "under 1 year",
+          "sources": [
+            1
+          ]
+        },
+        {
+          "text": "Baby: soft spot on the head looks tense or bulging, will not feed or nurse, or cries nonstop and cannot be comforted.",
+          "ages": "under 1 year (also toddlers: refusing to eat, inconsolable crying)",
+          "sources": [
+            8,
+            9,
+            2,
+            20
+          ]
+        },
+        {
+          "text": "The child gets worse while you are watching them at home.",
+          "ages": "all",
+          "sources": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "urgent",
+      "legacyKey": "seekMedicalHelpNow",
+      "items": [
+        {
+          "text": "Any head injury in a baby under 1 year old, even if the baby looks well. Do not wait to see how it goes (Seattle Children's: call the doctor or seek care now).",
+          "ages": "under 1 year",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "Any head injury in a child aged 5 or younger: call the doctor or a nurse line for advice (NHS: call 111 for advice for a child under 5; this guide also applies it at age 5 so there is one boundary).",
+          "ages": "5 years and younger",
+          "sources": [
+            1
+          ]
+        },
+        {
+          "text": "A lump on the back, side or upper side of the head (not the forehead) in a child under 2 years. The RCH clinician guide lists this as a risk factor; it is written for clinicians, so a clinician should confirm this row.",
+          "ages": "under 2 years",
+          "sources": [
+            5
+          ]
+        },
+        {
+          "text": "Vomited once after the injury: call the doctor or a nurse line now for advice (children often vomit once, but sources say to have them checked). Seattle Children's says to call if it happens 2 or more times.",
+          "ages": "all",
+          "sources": [
+            6,
+            17,
+            3
+          ]
+        },
+        {
+          "text": "Swelling on the head larger than about 2.5 cm (1 inch).",
+          "ages": "all",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "A cut where the skin is split open or gaping, or bleeding that is still going after 10 minutes of firm direct pressure (less heavy than the emergency-list bleeding).",
+          "ages": "all",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "The head was hit by a hard object (for example a golf club), or the child fell from a dangerous height.",
+          "ages": "all",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "There is a cut and the child has never had a tetanus shot.",
+          "ages": "all",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "Unusual paleness that lasts more than an hour, the child looks sicker, dizziness that does not go away or keeps coming back, or ringing in the ears that does not stop (AAP: call the doctor right away).",
+          "ages": "children over 2 (AAP page scope); for younger children ask the doctor",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "The child takes blood-thinning medicine or has a bleeding disorder or a condition that thins the blood (NHS: get 111 advice; RCH clinician guide: needs closer assessment; the AAP page excludes these children).",
+          "ages": "all",
+          "sources": [
+            1,
+            5,
+            0
+          ]
+        },
+        {
+          "text": "The injury happened while a teen or adult was drinking alcohol or taking drugs (NHS: get 111 advice).",
+          "ages": "teen",
+          "sources": [
+            1
+          ]
+        },
+        {
+          "text": "You think the child has a serious injury or needs to be seen urgently.",
+          "ages": "all",
+          "sources": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "sameDay",
+      "legacyKey": "callDoctorSameDay",
+      "items": [
+        {
+          "text": "Any head injury in a child aged 6 or older that is more than a light bump (AAP; for a child aged 5 or younger see the get-medical-help-now list).",
+          "sources": [
+            0,
+            1
+          ]
+        },
+        {
+          "text": "You think the child may have a concussion (even if they were not knocked out). SickKids says to have a clinician see them on the day it happens; AAP says to contact the pediatrician as soon as possible.",
+          "sources": [
+            9,
+            10
+          ]
+        },
+        {
+          "text": "A short spell of dizziness that settles on its own (NHS: get help from NHS 111 for advice if dizzy). Dizziness that does not go away or keeps coming back is in the get-medical-help-now list.",
+          "sources": [
+            1
+          ]
+        },
+        {
+          "text": "A cut that is dirty or hard to clean and the last tetanus shot was more than 5 years ago, or a clean cut and the last shot was more than 10 years ago: contact the doctor within 24 hours (Seattle Children's). A cut with no tetanus shot ever is in the seek-care-now list.",
+          "sources": [
+            3
+          ]
+        },
+        {
+          "text": "Moderate symptoms (other than a headache, which is in the emergency list) still there after 24 hours (RCH), or any symptoms still there after 10 days (the earliest figure found: healthdirect 10 days, NHS 2 weeks, SickKids 21 days).",
+          "sources": [
+            1,
+            4,
+            9,
+            16
+          ]
+        },
+        {
+          "text": "You are worried about the child, or they seem 'not themselves'.",
+          "sources": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "doNow",
+      "legacyKey": "doNow",
+      "items": [
+        {
+          "text": "Stay calm and stop whatever the child was doing (play, sport, climbing). Keep the child still at first. Do not leave them alone.",
+          "n": 1,
+          "ages": "all",
+          "sources": [
+            4,
+            11
+          ]
+        },
+        {
+          "text": "Check quickly: Are they awake? Do they answer or respond to you? Are they breathing normally? If they are knocked out, hard to wake, or not breathing, call 911 (or local emergency number) now. If they are not breathing, give rescue breaths and CPR.",
+          "n": 2,
+          "ages": "all",
+          "sources": [
+            0,
+            6,
+            4
+          ]
+        },
+        {
+          "text": "If you think the neck or back may be hurt (a hard fall, a crash, neck pain), do not move the child and call 911 (RCH: call an ambulance). If they are unconscious but breathing, steady the head and neck with a hand on each side, keeping the head in line with the spine, and wait for help. Leave a helmet on if a serious injury is possible.",
+          "n": 3,
+          "ages": "all",
+          "sources": [
+            6,
+            11,
+            16,
+            4
+          ]
+        },
+        {
+          "text": "If there is bleeding, press firmly with a clean cloth; Seattle Children's says to keep direct pressure on for 10 minutes. If blood comes through the cloth, leave it in place and lay another over it. If a skull fracture is possible (a dent, fluid from the ears or nose), do not press on the bleeding spot and do not take out anything caught in the wound; cover the wound with sterile gauze and get emergency help.",
+          "n": 4,
+          "ages": "all",
+          "sources": [
+            3,
+            6
+          ]
+        },
+        {
+          "text": "Only if the child is vomiting: turn them onto their side in one movement, with head, neck and body kept in a straight line, so they do not choke. Otherwise do not move them if a neck injury is possible.",
+          "n": 5,
+          "ages": "all",
+          "sources": [
+            6
+          ]
+        },
+        {
+          "text": "For a bump or swelling, hold a cold pack wrapped in a cloth on it for about 20 minutes, then watch the child closely. For a baby under 1 year, do not wait to see how it goes: call or get medical care now.",
+          "n": 6,
+          "ages": "all",
+          "sources": [
+            0,
+            1,
+            3
+          ]
+        },
+        {
+          "text": "For a child aged 6 or older, call the child's doctor for anything more than a light bump (AAP). For a child aged 5 or younger, call the doctor or a nurse line after any head injury (NHS). For a baby under 1 year, call or seek care now for any head injury. Note: the AAP page is not meant for children under 2, so for babies follow the stricter NHS and Seattle Children's advice. The AAP page also excludes children with bleeding disorders, seizure or movement disorders, developmental delay, neck injury or suspected abuse; for them ask the doctor.",
+          "n": 7,
+          "ages": "all; under 1 year: now",
+          "sources": [
+            0,
+            3,
+            1
+          ]
+        },
+        {
+          "text": "Stay with the child. A grown-up should be with them for at least the first 24 hours after a head injury, ready to go to the doctor or hospital if anything changes. Sources suggest watching closely from 2 to 8 hours up to 24 to 48 hours, and signs can show up to 3 days later (see disagreements).",
+          "n": 8,
+          "ages": "all",
+          "sources": [
+            0,
+            1,
+            4,
+            11,
+            17
+          ]
+        },
+        {
+          "text": "Medicine: do not give any medicine until you have asked a doctor, pharmacist or nurse line. Sources differ (see disagreements): the AAP page says acetaminophen (paracetamol) is the only pain medicine to use unless the doctor agrees; Seattle Children's allows acetaminophen or ibuprofen once 2 hours have passed since the injury with no vomiting; NHS and healthdirect mention paracetamol only. Never give aspirin to a child or teen (Seattle Children's). No opened source gives a rule written for babies, so ask the doctor first. RCH and Pregnancy, Birth and Baby also mention pain relief or paracetamol for a headache; that is not advice here. No doses are given here; follow the product label and the doctor's advice.",
+          "n": 9,
+          "ages": "all",
+          "sources": [
+            0,
+            3,
+            1,
+            16,
+            4,
+            17
+          ]
+        },
+        {
+          "text": "Sleep: sleep is fine, and no source here says to keep the child awake. Sources differ on whether to wake them during the night (see disagreements), so ask the doctor what to do for this child. If you check and cannot wake them, or they seem confused, call 911.",
+          "n": 10,
+          "ages": "all",
+          "sources": [
+            0,
+            1,
+            3,
+            4,
+            11,
+            17,
+            20
+          ]
+        },
+        {
+          "text": "If it happened in sport or play: stop the activity at once and take the child out of the game. They should not go back until symptoms have gone and a doctor has cleared them. Tell the child's doctor and coach or school.",
+          "n": 11,
+          "ages": "school age, teen (and any age that plays sport)",
+          "sources": [
+            11,
+            10,
+            9
+          ]
+        },
+        {
+          "text": "Be ready to tell the doctor when and how it happened and how the child is acting now (AAP: the doctor will want to know). Making a few notes of the time and any changes (vomiting, sleepiness, crying, behaviour) helps; the RCH fact sheet suggests taking notes when the injury happens.",
+          "n": 12,
+          "ages": "all",
+          "sources": [
+            4,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "doNot",
+      "legacyKey": "doNot",
+      "items": [
+        {
+          "text": "If a child looks dazed, do not shake them. If a child has fallen and shows any sign of head injury, do not move them unless it is truly necessary (for example, they are in danger where they lie); get help first.",
+          "sources": [
+            6
+          ]
+        },
+        {
+          "text": "Never shake, throw or hit a baby for any reason, including when they are crying.",
+          "sources": [
+            12
+          ]
+        },
+        {
+          "text": "Do not take off a helmet if a serious head or neck injury is possible.",
+          "sources": [
+            6,
+            11,
+            16
+          ]
+        },
+        {
+          "text": "Leave anything that is sticking out of a head wound where it is, and do not wash a wound that is deep or bleeding heavily.",
+          "sources": [
+            6
+          ]
+        },
+        {
+          "text": "Do not give medicine until you have asked a doctor, pharmacist or nurse line. Sources differ on acetaminophen only (AAP) versus acetaminophen or ibuprofen (Seattle Children's); see disagreements. Never give aspirin to a child or teen (Seattle Children's).",
+          "sources": [
+            0,
+            3
+          ]
+        },
+        {
+          "text": "Do not send a child back into the game or practice after a suspected concussion until symptoms have gone and a doctor has cleared them.",
+          "sources": [
+            11,
+            10
+          ]
+        },
+        {
+          "text": "Do not assume the child is fine if they change. Call the doctor or emergency services if they get worse.",
+          "sources": [
+            0
+          ]
+        },
+        {
+          "text": "Do not leave a baby alone on a changing table, bed, sofa or other high place, even for a moment.",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Keep the child away from rough play for a few days (NHS), and do not let them return to contact sport until a doctor says it is okay (CPS).",
+          "sources": [
+            1,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "watchFor",
+      "legacyKey": "watchFor",
+      "items": [
+        {
+          "text": "Headache that gets worse or does not go away (this is in the emergency list).",
+          "detail": "at least 24 to 48 hours; symptoms can be delayed by hours to days (up to 3 days per Pregnancy, Birth and Baby), and AAP says watch for a few days",
+          "sources": [
+            0,
+            2,
+            4,
+            11,
+            17
+          ]
+        },
+        {
+          "text": "Vomiting. More than once needs care now (see the emergency list); a single vomit still needs a call to a doctor or nurse line. AAP's own page says to call after more than 2 or 3 vomits (see disagreements).",
+          "detail": "first 24 to 48 hours",
+          "sources": [
+            0,
+            4,
+            7,
+            6
+          ]
+        },
+        {
+          "text": "Increasing sleepiness, hard to wake, or not recognising you.",
+          "detail": "first 24 to 48 hours",
+          "sources": [
+            0,
+            2,
+            4
+          ]
+        },
+        {
+          "text": "Confusion, unusual quietness, anxiety, sadness, irritability, or any change from their normal self.",
+          "detail": "24 to 48 hours and for weeks if it lingers",
+          "sources": [
+            2,
+            4,
+            11
+          ]
+        },
+        {
+          "text": "Trouble walking, talking or seeing; clumsiness; dizziness that will not go away or keeps coming back.",
+          "detail": "first days",
+          "sources": [
+            0,
+            2,
+            4
+          ]
+        },
+        {
+          "text": "Crying that lasts longer than about 10 minutes after the injury, or crying that cannot be soothed.",
+          "detail": "immediately, and over the following hours",
+          "sources": [
+            0,
+            2
+          ]
+        },
+        {
+          "text": "Baby or toddler: refusing to feed or eat, more clingy, sleeping differently, less interest in play, slower speech, dazed or unsteady look.",
+          "detail": "24 to 48 hours and the following days",
+          "sources": [
+            2,
+            7
+          ]
+        },
+        {
+          "text": "Concussion signs in an older child: feeling foggy, trouble focusing or remembering, sensitivity to light or noise, tiredness, poor balance, trouble sleeping.",
+          "detail": "symptoms usually worst 1 to 2 days after; many children improve in days to 2 weeks, some take up to 4 weeks (CDC: most feel better within 2 to 4 weeks)",
+          "sources": [
+            2,
+            4,
+            10,
+            18
+          ]
+        },
+        {
+          "text": "Looks sicker than before, unusual paleness lasting more than an hour, or ringing in the ears that does not stop (these need a doctor right away; see the seek-care-now list).",
+          "detail": "first hours to days",
+          "sources": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "prevention",
+      "legacyKey": "prevention",
+      "items": [
+        {
+          "text": "Put gates that screw into the wall at the top and bottom of stairs; KidsHealth says pressure-mounted gates are not as secure. Avoid accordion-style gates, which can trap a head.",
+          "ages": "babies and toddlers",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Never leave a baby alone on a changing table, bed or other raised surface. Use the straps and 2-inch guardrails on changing tables.",
+          "ages": "0-12 months",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Avoid baby walkers. Use a stationary activity saucer if you want something similar.",
+          "ages": "6-12 months",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Window guards on windows above the ground floor, and keep furniture away from windows. Screens do not stop a fall.",
+          "ages": "all young children",
+          "sources": [
+            13,
+            15
+          ]
+        },
+        {
+          "text": "Buckle children into high chairs, strollers and shopping cart seats. Never put an infant seat on a counter or table.",
+          "ages": "0-3 years",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Anchor top-heavy furniture such as bookshelves and dressers to the wall.",
+          "ages": "toddlers and preschoolers",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Do not let children under 6 sleep on a top bunk.",
+          "ages": "under 6",
+          "sources": [
+            13
+          ]
+        },
+        {
+          "text": "Playgrounds: choose age-labelled equipment, about 12 inches of soft surface (wood chips, mulch, sand, rubber), supervise at all times. KidsHealth advises no trampolines.",
+          "ages": "1-12 years",
+          "sources": [
+            13,
+            15
+          ]
+        },
+        {
+          "text": "Secure children in a car seat, booster seat or seat belt that suits their age and size on every trip. Do not keep using a car seat or a helmet that has been damaged.",
+          "ages": "all",
+          "sources": [
+            7,
+            16,
+            17,
+            6,
+            20
+          ]
+        },
+        {
+          "text": "Wear a properly fitted, approved helmet when cycling (AAP). RCH says hard-shell helmets are essential for bike riding, scooters, skating and snow sports; CPS names cycling, skiing and skating. Helmets do not prevent concussion (CPS), so keep watching for signs after any knock to the head.",
+          "ages": "toddlers to teens",
+          "sources": [
+            11,
+            14,
+            4
+          ]
+        },
+        {
+          "text": "Teach children and teens to say so at once if they are hit on the head or feel 'off', and have coaches learn the signs.",
+          "ages": "school age, teen",
+          "sources": [
+            10,
+            11
+          ]
+        },
+        {
+          "text": "Know a calming plan for crying babies: swaddle, skin to skin, a pacifier, rock, sing, stroller walk or car ride. A carer who is getting upset can put the baby down safely, walk away, then check in every 5 to 10 minutes. Do not leave a baby with anyone who loses their temper easily or has been violent.",
+          "ages": "0-12 months",
+          "sources": [
+            12
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "note",
+      "legacyKey": "unexplainedInjuryNote",
+      "title": "If you do not know how a baby was hurt",
+      "items": [
+        {
+          "text": "Doctors and nurses ask careful questions about how any head injury happened. The RCH clinician guide tells clinicians to consider the possibility of abuse in every child with a head injury, to take a detailed, moment-by-moment account of what happened, and to look more closely if the account does not adequately explain the injury.",
+          "sources": [
+            5
+          ]
+        },
+        {
+          "text": "Why a baby whose injury is unexplained should be seen by a clinician: babies under 1 year are at the greatest risk of abusive head trauma (CDC), and shaking, or shaking with an impact, can cause bleeding around the brain or behind the eyes, which needs medical assessment. The RCH clinician guide lists possible abuse among the reasons a child may need to stay for longer observation instead of going home.",
+          "sources": [
+            12,
+            5
+          ]
+        },
+        {
+          "text": "For any baby: crying is normal and is worst in the first few months (about 4 to 20 weeks). Shaking, throwing or hitting a baby is never the right response. Anyone looking after a baby who feels upset can put the baby down in a safe place, step away, and check on the baby every 5 to 10 minutes, and can ask a friend, relative, neighbour, parent helpline or the child's healthcare provider for help.",
+          "sources": [
+            12
+          ]
+        },
+        {
+          "text": "Support for caregivers: National Maternal Mental Health Hotline 1-833-852-6262 (see helplines). CDC contact number printed on the same page: 800-232-4636.",
+          "sources": [
+            12
+          ]
+        }
+      ]
+    }
+  ],
+  "ageBands": [
+    {
+      "key": "under-3m",
+      "label": "Newborn, under 3 months",
+      "text": "Rule for this age: any head injury in a baby under 1 year, get medical help now (Seattle Children's). If there is a bruise, swelling or a large cut, call emergency services (NHS). If the baby will not feed or nurse, is very sleepy or hard to wake, cannot be comforted, vomits repeatedly or has a bulging soft spot, treat it as an emergency (ACEP, CDC, SickKids, AAP page for babies and toddlers). Very young babies cannot tell you anything, so you must go by how they look and act. The RCH clinician guide says babies under 6 months need closer assessment, so ask a doctor. Babies can roll off beds, sofas and changing tables, so never leave a baby alone on a raised surface (KidsHealth). Never shake a baby; crying is normal and peaks in the first months. Anyone caring for a baby who is getting frustrated can put the baby down safely, step away and check on the baby every 5 to 10 minutes (CDC). If it is not known how a baby was hurt, a clinician should see the baby (see the note on unexplained injuries). The AAP head injury page excludes children under 2; AAP's separate page for babies and toddlers is used for the emergency signs."
+    },
+    {
+      "key": "3m-under-1y",
+      "label": "Infant, 3 months to under 1 year",
+      "text": "Rule for this age: the same as for babies under 3 months. Any head injury in a baby under 1 year, get medical help now (Seattle). A bruise, swelling or large cut on the head, call emergency services (NHS). If a baby will not feed or nurse, is very sleepy or hard to wake, or cannot be comforted, treat it as an emergency (see the emergency list). A fall of more than about 1 metre is an emergency at any age. Babies at this age roll, crawl, pull to stand and fall from beds, high chairs, stairs and walkers. Walkers can carry a baby through a gate and down stairs; a non-moving activity saucer is suggested instead (KidsHealth). Also watch for a bulging soft spot, constant crying and repeated vomiting."
+    },
+    {
+      "key": "1y-under-3y",
+      "label": "Toddler, 1 year to under 3 years",
+      "text": "Rule for this age: any emergency-list sign, or a fall of more than about 1 metre, is an emergency. AAP's page for babies and toddlers (it does not state an age range) says to go to the emergency department right away for repeated vomiting, slurred speech, looking very drowsy or cannot be woken, unequal pupils, seizure, unusual behaviour, or loss of consciousness, and for crying that will not stop or refusing to eat in infants. CDC lists crying that cannot be soothed and refusing to eat for infants and toddlers, and ACEP lists them for the child. For any other head injury in a child aged 5 or younger, call the doctor or a nurse line for advice (NHS: 111 for a child under 5; this guide also applies it at age 5). A lump on the back, side or upper side of the head in a child under 2 should be checked now (RCH clinician guide; clinician to confirm). Children under 3 have the highest rate of head injury (Pregnancy, Birth and Baby). Toddlers cannot say they have a headache, so look for behaviour changes: more crying or clinginess, slower speech, vomiting soon after, refusing food, clumsiness, dazed look, sleep changes (CDC, Cleveland Clinic). The AAP head injury page excludes children under 2. Use stair gates, window guards and anchored furniture."
+    },
+    {
+      "key": "3y-5y",
+      "label": "Preschool, 3 to 5 years (until the 6th birthday)",
+      "text": "Rule for this age: any emergency-list sign, or a fall of more than about 1 metre, is an emergency. For any other head injury in a child aged 5 or younger, call the doctor or a nurse line for advice (NHS: 111 for a child under 5; this guide also applies it at age 5, so the rule runs up to the 6th birthday). Preschoolers may be able to say 'my head hurts' but often cannot describe dizziness, fog or vision changes. CDC and Cleveland Clinic list the under-5 signs (cranky, clingy, vomiting, sleep or eating changes, unsteady). Playground falls are common: soft surfaces, equipment under 4 feet for under-5s (Nationwide Children's), and no trampolines (KidsHealth). This guide uses about 1 metre (3 feet) at every age because it is the most cautious figure (NHS, RCH fact sheet, healthdirect). Some Australian sources use more than 1.5 metres from age 2 (Pregnancy, Birth and Baby, RCH clinician guide); do not use the higher figure at home."
+    },
+    {
+      "key": "6y-12y",
+      "label": "School age, 6 to 12 years",
+      "text": "Rule for this age: any emergency-list sign, or a fall of more than about 1 metre, is an emergency; for anything more than a light bump, call the doctor (AAP). Children can usually describe symptoms: headache, dizziness, nausea, trouble concentrating, light or noise sensitivity. They may hide symptoms to keep playing, so ask directly and look for clumsiness, slowed answers and personality changes (Cleveland Clinic, AAP). In sport: stop play at once, and a doctor must clear a return after a step-by-step plan (CPS, AAP). Return to school gradually after the first one or two days of rest; stay in touch with the school. Wear an approved helmet for cycling (AAP) and for skating or skiing (CPS)."
+    },
+    {
+      "key": "13y-17y",
+      "label": "Teen, 13 to 17 years",
+      "text": "Rule for this age: the same as for 6 to 12 years. From age 8, sports and recreation are the top causes (Cleveland Clinic), and athletes may report feeling normal when they are not fully recovered (AAP), so ask directly. Teach them to report any head hit or feeling 'not right' (AAP). Symptoms usually start soon but can take hours or days to show; most settle in about 4 weeks (AAP) though sources give shorter times (CPS 7 to 10 days; NHS up to 2 weeks). A written release from a doctor is required to return to sport in all US states (AAP). NHS advises no driving until fully recovered, not driving yourself to the emergency department, and no alcohol or drugs while recovering; it also says avoid contact sports for at least 3 weeks, which is stricter than a stepwise plan. A doctor should decide."
+    }
+  ],
+  "helplines": [
+    {
+      "region": "US",
+      "name": "Emergency services",
+      "number": "911",
+      "sources": [
+        0
+      ]
+    },
+    {
+      "region": "US",
+      "name": "Poison Help (US poison control)",
+      "number": "1-800-222-1222",
+      "sources": [
+        19
+      ]
+    },
+    {
+      "region": "US",
+      "name": "CDC contact number (printed under Contact Us on the CDC page)",
+      "number": "800-232-4636",
+      "sources": [
+        12
+      ]
+    },
+    {
+      "region": "UK",
+      "name": "Emergency services (999) / NHS non-emergency advice (111)",
+      "number": "999 / 111",
+      "sources": [
+        1
+      ]
+    },
+    {
+      "region": "Canada",
+      "name": "Emergency services (ambulance)",
+      "number": "911",
+      "sources": [
+        9
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "Emergency services (triple zero)",
+      "number": "000",
+      "sources": [
+        16
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "healthdirect nurse line (24/7)",
+      "number": "1800 022 222",
+      "sources": [
+        16
+      ]
+    },
+    {
+      "region": "Australia",
+      "name": "Pregnancy, Birth and Baby (maternal child health nurse, 7am to midnight AET)",
+      "number": "1800 882 436",
+      "sources": [
+        17
+      ]
+    },
+    {
+      "region": "US",
+      "name": "National Maternal Mental Health Hotline (for pregnant and postpartum women and their loved ones; free, confidential, 24/7, call or text)",
+      "number": "1-833-852-6262",
+      "sources": [
+        12
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": 0,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Head Injury in Children: How to Know If It's Minor or Serious",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/Head-Injury.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "911 signs, when to call pediatrician, cold compress, acetaminophen only, 24 h adult presence, sleep checks, not for under 2 or for children with bleeding disorders"
+    },
+    {
+      "id": 1,
+      "org": "NHS (UK)",
+      "title": "Head injury and concussion",
+      "url": "https://www.nhs.uk/conditions/head-injury-and-concussion/",
+      "retrieved": "2026-11-14",
+      "covers": "999 / 111 criteria, under 1 year, blood thinners, fall of more than 1 m or 5 stairs, sleep, ice, 24 h supervision, contact sport 3 weeks, driving"
+    },
+    {
+      "id": 2,
+      "org": "CDC",
+      "title": "HEADS UP: Signs and symptoms of concussion",
+      "url": "https://www.cdc.gov/heads-up/signs-symptoms/index.html",
+      "retrieved": "2026-11-14",
+      "covers": "danger signs, signs in babies and children up to 4, symptoms peak 1-2 days"
+    },
+    {
+      "id": 3,
+      "org": "Seattle Children's",
+      "title": "Head Injury (Symptom guide)",
+      "url": "https://www.seattlechildrens.org/conditions/a-z/head-injury/",
+      "retrieved": "2026-11-14",
+      "covers": "911 vs seek-care-now vs 24-h tiers, under 1 year, 10 min pressure, 1 inch swelling, tetanus, observation and sleep, ibuprofen/acetaminophen, no aspirin"
+    },
+    {
+      "id": 4,
+      "org": "Royal Children's Hospital Melbourne",
+      "title": "Kids Health Info: Head injuries",
+      "url": "https://www.rch.org.au/kidsinfo/fact_sheets/Head_injury/",
+      "retrieved": "2026-11-14",
+      "covers": "000 criteria (1 m fall), hospital criteria, vomiting, 24-48 h watch, sleep, recovery times, take notes at the time of injury, hard-shell helmets for wheeled sports"
+    },
+    {
+      "id": 5,
+      "org": "Royal Children's Hospital Melbourne",
+      "title": "Clinical Practice Guideline: Head injury (clinician)",
+      "url": "https://www.rch.org.au/clinicalguide/guideline_index/Head_Injury/",
+      "retrieved": "2026-11-14",
+      "covers": "red flags, fall height by age (1 m under 2, 1.5 m from 2), observation for up to 4 h, under-2 scalp lump, consider abuse in all head injuries, bleeding disorder and anticoagulant risk, under 6 months. For review questions and the unexplained-injury note only"
+    },
+    {
+      "id": 6,
+      "org": "NIH MedlinePlus",
+      "title": "Head injury - first aid",
+      "url": "https://medlineplus.gov/ency/article/000028.htm",
+      "retrieved": "2026-11-14",
+      "covers": "first aid steps, bleeding, skull fracture caution, side-lying for vomiting, do-nots, severe headache or stiff neck, vomits more than once"
+    },
+    {
+      "id": 7,
+      "org": "Cleveland Clinic",
+      "title": "Signs of Concussion in Kids, Toddlers & Babies",
+      "url": "https://my.clevelandclinic.org/health/diseases/signs-of-concussion-in-kids",
+      "retrieved": "2026-11-14",
+      "covers": "signs by age (to 4, 5 and up), 911 red flags including vomiting more than once, rest 1-2 days, neck pain at 911, car seat and damaged helmet"
+    },
+    {
+      "id": 8,
+      "org": "American College of Emergency Physicians",
+      "title": "Child head injury",
+      "url": "https://emergencyphysicians.org/article/pediatrics/child-head-injury",
+      "retrieved": "2026-11-14",
+      "covers": "ER signs, bulging soft spot on the front of the head, feeding refusal, vomiting pattern"
+    },
+    {
+      "id": 9,
+      "org": "SickKids (AboutKidsHealth, Canada)",
+      "title": "Concussion",
+      "url": "https://www.aboutkidshealth.ca/concussion",
+      "retrieved": "2026-11-14",
+      "covers": "emergency signs for babies, same-day assessment, 21 day reassessment, 911"
+    },
+    {
+      "id": 10,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Sport-Related Concussions: Understanding Risks, Symptoms, & Recovery",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/sports-injuries/Pages/Sports-Related-Concussion-Understanding-the-Risks-Signs-Symptoms.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "keep out of play and contact pediatrician as soon as possible, stepwise return, 48 h rest, written release in all US states, 4 weeks"
+    },
+    {
+      "id": 11,
+      "org": "Canadian Paediatric Society (Caring for Kids)",
+      "title": "Sport-related concussion: information for parents, coaches and trainers",
+      "url": "https://caringforkids.cps.ca/handouts/safety-and-injury-prevention/sport_related_concussion",
+      "retrieved": "2026-11-14",
+      "covers": "hospital right away if vomiting, do not move child or remove helmet if knocked out, 6-8 h close watch, overnight checks, 6 return stages, helmets (cycling, skiing, skating)"
+    },
+    {
+      "id": 12,
+      "org": "CDC",
+      "title": "About Abusive Head Trauma",
+      "url": "https://www.cdc.gov/violenceprevention/childabuseandneglect/abusive-head-trauma.html",
+      "retrieved": "2026-11-14",
+      "covers": "never shake a baby, calming steps, crying peak 4-20 weeks, under-1 highest risk, bleeding around the brain or behind the eyes, the CDC contact number and the maternal mental health hotline number (no Childhelp number printed)"
+    },
+    {
+      "id": 13,
+      "org": "KidsHealth (Nemours), pediatric health information",
+      "title": "Preventing Injuries From Falling, Climbing, and Grabbing",
+      "url": "https://kidshealth.org/en/parents/safety-falls.html",
+      "retrieved": "2026-11-14",
+      "covers": "gates, windows and furniture, changing tables, walkers, high chairs, strollers, shopping carts, infant seats on counters, furniture anchoring, bunk beds, playgrounds. Note: not on the project's named source list; a secondary pediatric source. Page last reviewed May 2018"
+    },
+    {
+      "id": 14,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "How to Choose the Right Size Bike & Helmet: Tips for Parents",
+      "url": "https://www.healthychildren.org/English/safety-prevention/at-play/Pages/choosing-the-right-size-bicycle.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "helmet as standard gear, CPSC-approved, fit checks (bicycles only)"
+    },
+    {
+      "id": 15,
+      "org": "Nationwide Children's Hospital",
+      "title": "Preventing falls in children",
+      "url": "https://www.nationwidechildrens.org/conditions/health-library/preventing-falls-in-children",
+      "retrieved": "2026-11-14",
+      "covers": "window guards, stairs, playground heights and surfacing. Note: secondary children's-hospital source"
+    },
+    {
+      "id": 16,
+      "org": "healthdirect Australia",
+      "title": "Head injuries",
+      "url": "https://www.healthdirect.gov.au/head-injuries",
+      "retrieved": "2026-11-14",
+      "covers": "000 criteria, vomiting more than once, helmet stays on, paracetamol, nurse line 1800 022 222"
+    },
+    {
+      "id": 17,
+      "org": "Pregnancy, Birth and Baby (Australian Government)",
+      "title": "Children and head injuries",
+      "url": "https://www.pregnancybirthbaby.org.au/children/health-and-wellbeing/children-and-head-injuries",
+      "retrieved": "2026-11-14",
+      "covers": "000 criteria, vomiting, fall heights by age, under-3 rates, up to 3 days delayed signs, no need to wake, helpline"
+    },
+    {
+      "id": 18,
+      "org": "CDC",
+      "title": "HEADS UP: About concussion",
+      "url": "https://www.cdc.gov/heads-up/about/index.html",
+      "retrieved": "2026-11-14",
+      "covers": "most children feel better within 2 to 4 weeks, repeat concussions"
+    },
+    {
+      "id": 19,
+      "org": "NIH MedlinePlus",
+      "title": "Poisoning",
+      "url": "https://medlineplus.gov/poisoning.html",
+      "retrieved": "2026-11-14",
+      "covers": "Poison Help number 1-800-222-1222 (the page says to call it if you suspect someone has been poisoned; hours not stated on the page)"
+    },
+    {
+      "id": 20,
+      "org": "American Academy of Pediatrics (HealthyChildren.org)",
+      "title": "Concussions in Babies: What to Do If Your Infant or Toddler Hits Their Head",
+      "url": "https://www.healthychildren.org/English/health-issues/injuries-emergencies/Pages/concussions-in-babies-what-to-do-if-your-infant-or-toddler-hits-their-head.aspx",
+      "retrieved": "2026-11-14",
+      "covers": "emergency department right away signs for babies and toddlers (cannot be consoled, will not nurse or eat, repeated vomiting, very drowsy, unequal pupils, seizure, loss of consciousness), no need to wake a sleeping child unless the doctor advises, car safety seat. Page last updated 11/20/2024; age range for toddlers not stated"
+    }
+  ]
+}

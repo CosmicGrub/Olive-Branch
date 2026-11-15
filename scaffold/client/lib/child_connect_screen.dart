@@ -403,7 +403,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     return Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
       const Icon(Icons.phone_android_rounded, key: Key('childConnectWhich'), size: 56, color: KioskLockColors.secondaryText),
       const SizedBox(height: 6),
-      const Text("Open \"Connect a child's device\" on your phone.",
+      const Text("Open \"Connect a child's device\" on your phone, then tap the same picture here.",
           textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 14)),
       const SizedBox(height: 16),
       if (pictureMode || _nearby.isEmpty)

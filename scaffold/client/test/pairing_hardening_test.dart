@@ -13,7 +13,7 @@ import 'package:olive_client/pairing_protocol.dart';
 Future<LocalPinRecord> _cheap(String pin) async => LocalPinRecord(iterations: 1, salt: Uint8List(16), hash: Uint8List(32));
 Future<DeviceKey> _key() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
 
-Future<AdultWindow> _window(DeviceKey k, {bool qr = false}) => AdultWindow.open(
+Future<AdultWindow> _window(DeviceKey k, {bool qr = false}) => AdultWindow.open(requireMatch: false,
     adultKey: k, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829',
     offerQr: qr, makeUnlockVerifier: _cheap);
 

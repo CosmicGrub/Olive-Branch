@@ -22,7 +22,7 @@ Uint8List _b(int n, int f) => Uint8List.fromList(List<int>.filled(n, f));
 Future<AdultWindow> _window(DeviceKey k, {String fid = 'fam-secret-77', bool? phoneOnly, Uint8List? fk, bool qr = false, String name = 'Grandma Ottoline'}) =>
     AdultWindow.open(
         adultKey: k, adultName: name, familyId: fid, childId: 'kid-1', childName: 'Ivy', pin: '4829', offerQr: qr, familyKey: fk,
-        makeUnlockVerifier: _counting, phoneOnly: phoneOnly ?? true);
+        makeUnlockVerifier: _counting, phoneOnly: phoneOnly ?? true, requireMatch: false);
 
 ChildPairingClient _client(DeviceKey ck, PairingTransport t) => ChildPairingClient(
     childKey: ck, transport: t, delay: (Duration d) async {}, pollEvery: const Duration(seconds: 1), giveUpAfter: const Duration(seconds: 3));

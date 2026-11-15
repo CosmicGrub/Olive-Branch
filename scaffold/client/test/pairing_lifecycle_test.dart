@@ -108,7 +108,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final _Clock clock = _Clock();
       final AdultWindow w = await AdultWindow.open(
-          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829', now: clock.call);
+          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829', requireMatch: false, now: clock.call);
       w.addListener(() async {
         if (w.state == WindowState.awaitingApproval) await w.approve();
       });
@@ -496,7 +496,7 @@ void main() {
       final DeviceKey ak = await _key(), ck = await _key();
       final _Clock clock = _Clock();
       final AdultWindow w = await AdultWindow.open(
-          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829', now: clock.call);
+          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', pin: '4829', requireMatch: false, now: clock.call);
       w.addListener(() async {
         if (w.state == WindowState.awaitingApproval) await w.approve();
       });

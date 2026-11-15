@@ -16,7 +16,7 @@ Future<DeviceKey> _key() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
 Uint8List _salt(int f) => Uint8List.fromList(List<int>.filled(16, f));
 
 Future<AdultWindow> _window(DeviceKey k, {String name = 'Mom', String fid = 'fam-1', String pin = '4829', DateTime Function()? now, List<PairedKid>? paired}) =>
-    AdultWindow.open(adultKey: k, adultName: name, familyId: fid, childId: 'kid-1', childName: 'Ivy', pin: pin, now: now, makeUnlockVerifier: _cheap, onPaired: paired?.add);
+    AdultWindow.open(requireMatch: false, adultKey: k, adultName: name, familyId: fid, childId: 'kid-1', childName: 'Ivy', pin: pin, now: now, makeUnlockVerifier: _cheap, onPaired: paired?.add);
 
 ChildPairingClient _client(DeviceKey ck, PairingTransport t) => ChildPairingClient(
     childKey: ck, transport: t, delay: (Duration d) async {}, pollEvery: const Duration(seconds: 1), giveUpAfter: const Duration(seconds: 3));

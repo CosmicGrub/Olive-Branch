@@ -171,6 +171,20 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           "a guardian's; the app adds no medical text and no amounts, and moves no money. Never shown in her app. "
           'Sealed on the device; never uploaded.'),
   LocalDataEntry(
+      area: 'aboutchild', scope: LocalScope.child, encrypted: true, maxBytes: 4 * _mib,
+      what: 'The care profile (About her), grown-up side only: what a guardian wrote under Keep her safe, her '
+          'everyday, what helps, health history and moods and habits (the last two behind the guardian PIN), '
+          "today's heads-up (one note for one local day, not shown after midnight and removed the next time it is opened or changed, never kept as a log), who each part is shown to on "
+          'this phone and until when, the dates for the "is this still right?" prompts, and a short edit history '
+          'of each entry (who changed it and when; not an evidence log). Every word is a guardian\'s; '
+          'the app adds no medical text and works out no dose. Never shown in her app. Sealed on the device; '
+          'never uploaded.'),
+  LocalDataEntry(
+      area: 'aboutplans', scope: LocalScope.child, encrypted: true, maxBytes: 6 * _mib,
+      what: "Photos of a doctor's plan (for example an asthma or allergy action plan) that a guardian chose to "
+          'keep, each with a label the guardian typed. The app never takes, edits or reads one. Guardian side '
+          'only, never in her app. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
       area: 'explainers', scope: LocalScope.child, encrypted: true, maxBytes: 3 * _mib,
       what: 'Picture stories a guardian wrote for her: a title, up to six short pages, an optional '
           'small photo, and whether it is shown to her. The app writes none. Sealed on the device; '
@@ -281,7 +295,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
           'the date), so one can be forgotten later. Sealed on the device.'),
   LocalDataEntry(
-      area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 128 * 1024,
+      area: 'familyledger', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
+      what: 'On a grown-up\'s device: the family\'s signed record of which grown-ups and which child devices '
+          'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
+          'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
+          'never holds the grown-ups-only key. Sealed on the device; nothing is uploaded; not used by the '
+          'app yet.'),
+  LocalDataEntry(
+      area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
       what: 'On a grown-up\'s device: which child devices it added and when it last met them, the ones it stopped or '
           'forgot, and a plain-language list of what happened (a device was added, paused, stopped). Sealed on the device.'),
   LocalDataEntry(
