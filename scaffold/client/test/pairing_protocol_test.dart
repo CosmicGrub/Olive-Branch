@@ -499,6 +499,26 @@ void main() {
       expect(log.length, 1, reason: 'it never got past the first message');
     });
   });
+  test('the sealed credential carries her age (3 to 17 only) so a tablet can open her home with no server', () async {
+    Future<ChildPairing?> pairWith(int? age) async {
+      final DeviceKey ak = await _key(), ck = await _key();
+      // requireMatch: false like every other test here (see _window): this one is about the sealed age, not the
+      // Match step; with the default (true) approve() refuses and the child times out.
+      final AdultWindow w = await AdultWindow.open(requireMatch: false,
+          adultKey: ak, adultName: 'Mom', familyId: 'fam-1', childId: 'kid-1', childName: 'Ivy', childAge: age,
+          pin: '4829', makeUnlockVerifier: _cheapVerifier);
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      final PairingResult r = await _client(ck, LoopbackPairingTransport(w)).pair(sid: w.sid, password: '4829');
+      expect(r.ok, isTrue, reason: '${r.failure}');
+      return r.pairing;
+    }
+    expect((await pairWith(9))!.childAge, 9);
+    expect((await pairWith(null))!.childAge, isNull, reason: 'no age given = none sent');
+    expect((await pairWith(2))!.childAge, isNull, reason: 'implausible ages are dropped, not trusted');
+    expect((await pairWith(99))!.childAge, isNull);
+  });
 }
 
 /// Answers every message with one canned map.

@@ -29,6 +29,7 @@ import 'pairing_picture_widgets.dart';
 import 'pairing_protocol.dart';
 import 'pairing_records.dart';
 import 'pairing_trust.dart';
+import 'screen_privacy.dart';
 
 /// What serves an open window to the network. Injectable so tests need no sockets.
 abstract class WindowHost {
@@ -68,6 +69,7 @@ class ConnectChildScreen extends StatefulWidget {
     required this.kids,
     required this.adultName,
     required this.childName,
+    this.childAge,
     this.familyId,
     this.childId = 'local-child',
     this.startHost = startLanWindowHost,
@@ -101,6 +103,9 @@ class ConnectChildScreen extends StatefulWidget {
   final DeviceKeyRepository deviceKeys;
   final PairedKidsRepository kids;
   final String adultName, childName;
+
+  /// Her age, sealed into the credential for the tablet's own home (null = not given).
+  final int? childAge;
 
   /// Null = derived from this device's key (a local family has one adult device today).
   final String? familyId;
@@ -204,6 +209,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       familyId: widget.familyId ?? 'local-${b64(key.fingerprint)}',
       childId: widget.childId,
       childName: widget.childName,
+      childAge: widget.childAge,
       pin: pin,
       offerQr: _offerQr,
       phoneOnly: _phoneOnly,
@@ -286,7 +292,9 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
+
+  Widget _buildSensitive(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text("Connect a child's device")),
         body: SafeArea(
           child: Padding(

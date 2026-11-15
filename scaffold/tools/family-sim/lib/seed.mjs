@@ -25,6 +25,31 @@ export function dayPlan(startMs, msPerVHour) {
     realAt: (vh) => startMs + (vh - 15) * msPerVHour,
     virtualAt: (ms) => 15 + (ms - startMs) / msPerVHour };
 }
+/**
+ * The day_part rows a plan puts in ONE child's zone, as [kind, startsLocal, endsLocal, reachable].
+ * Pure (no clock, no DB) so the test can sweep every minute of the day.
+ *
+ * A part that straddles the child's local midnight is written WRAPPED (starts_local > ends_local,
+ * e.g. 23:56 -> 00:06). That is exactly how the product models it (0042's day_part_no_overlap
+ * handles it, and materialize()/activeDayPart() read it by START time). This used to be SKIPPED
+ * ("never write a bad range"), so for ~10 minutes a day per zone (for Europe/Stockholm in
+ * winter: 21:56-22:05 UTC) the child had no bedtime and a bank-for-bedtime send answered
+ * 400 daypart_undefined: a seeding bug in the sim, not a product bug.
+ */
+export function dayPartRows(plan, tz) {
+  return plan.parts.map(([kind, a, b]) => {
+    const s = localHMS(plan.realAt(a), tz);
+    // End = start + the part's length as plain wall-clock arithmetic (mod 24h), NOT a second
+    // zone lookup: on a DST fall-back night the second lookup can land BEFORE the start
+    // (01:55 -> 01:05) and would make a bogus 23h range. Bedtime is wall-clock by design (0001).
+    const [h, m, sec] = s.split(':').map(Number);
+    const len = Math.round((b - a) * plan.msPerVHour / 1000);
+    const end = (h * 3600 + m * 60 + sec + len) % 86400;
+    const e = [Math.floor(end / 3600), Math.floor(end % 3600 / 60), end % 60]
+      .map((n) => String(n).padStart(2, '0')).join(':');
+    return [kind, s, e, kind !== 'dinner'];
+  });
+}
 export const fmtVirtual = (vh) => {
   const h = Math.floor(vh), m = Math.floor((vh - h) * 60);
   return `${String(((h % 24) + 24) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -59,15 +84,6 @@ export async function cleanup(admin, { userIds, childIds }) {
  * bedtime part and made "a message banks" fail with daypart_undefined whenever CI ran near local midnight.
  * Returns null only when there is no room at all before midnight.
  */
-export function partRange(plan, a, b, tz) {
-  const s = localHMS(plan.realAt(a), tz);
-  let e = localHMS(plan.realAt(b), tz);
-  if (e <= s) {                                // wraps local midnight
-    if (s >= '23:59:59') return null;
-    e = '23:59:59';
-  }
-  return [s, e];
-}
 
 export async function seedFamily(admin, fam, { plan = null } = {}) {
   for (const g of fam.guardians) {
@@ -81,14 +97,11 @@ export async function seedFamily(admin, fam, { plan = null } = {}) {
         [k.id, g.id]);
     }
     if (plan) {
-      for (const [kind, a, b] of plan.parts) {
-        const range = partRange(plan, a, b, fam.tz);
-        if (!range) continue;
-        const [s, e] = range;
+      for (const [kind, s, e, reachable] of dayPartRows(plan, fam.tz)) {
         await admin.query(
           `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
            VALUES ($1,$2,$3,$4,'{0,1,2,3,4,5,6}', $5, '[2020-01-01,2099-01-01)')`,
-          [k.id, kind, s, e, kind !== 'dinner']);
+          [k.id, kind, s, e, reachable]);
       }
     }
     if (fam.custody) {
