@@ -2,16 +2,21 @@
 # Build the live CHILD and GUARDIAN shells against the local dev server and push them to the two test devices.
 # Re-run after every change: it rebuilds, reinstalls in place (no uninstall, data kept), and refreshes `adb reverse`.
 #
-#   FOLD=<serial> TAB=<serial> bash tools/device-sync.sh [child|guardian|both]
+#   FOLD=<serial> TAB=<serial> [ADB=<path to adb>] bash tools/device-sync.sh [child|guardian|both]
 #
-# Defaults: Fold5 = guardian shell (dev login), Tab S9 FE = child shell (real pairing). Needs the dev stack
-# (docker compose -f docker-compose.dev.yml up -d db migrate server) and DEV_LOGIN=1 in scaffold/.env.
-# It never launches an app and never uninstalls one. Signing: release, debug-signed (olive.allowDebugSignedRelease).
+# FOLD = the phone that gets the guardian shell (dev login), TAB = the tablet that gets the child shell (real
+# pairing). Serials come from `adb devices`; there are no defaults, because a serial does not belong in a public
+# repository. ADB defaults to the `adb` on PATH. Needs the dev stack
+#   docker compose -p olive-fresh -f docker-compose.dev.yml up -d --build db migrate server delivery
+# (the `delivery` worker is what moves a banked message into the child's inbox) and, for the guardian shell,
+# DEV_LOGIN=1 in scaffold/.env plus `node server/seed-dev.mjs`. The server must answer on 127.0.0.1:$PORT (default
+# 8123); this script then runs `adb reverse` so the device reaches it. It never launches an app and never
+# uninstalls one. Signing: release, debug-signed (olive.allowDebugSignedRelease).
 set -euo pipefail
 WHICH="${1:-both}"
-ADB="${ADB:-/c/Users/Obliv/android-sdk/platform-tools/adb}"
-FOLD="${FOLD:-RFCW80CK2RW}"
-TAB="${TAB:-R52X101MB6W}"
+ADB="${ADB:-adb}"
+FOLD="${FOLD:-}"
+TAB="${TAB:-}"
 PORT="${PORT:-8123}"
 URL="http://127.0.0.1:${PORT}"
 OUT="${OUT:-$(mktemp -d)}"
@@ -31,7 +36,13 @@ push() { # $1 serial, $2 apk
   "$ADB" -s "$1" reverse "tcp:$PORT" "tcp:$PORT" >/dev/null
   "$ADB" -s "$1" shell "dumpsys package com.olivebranch.olive_client | grep -m1 lastUpdateTime" | tr -d '\r'
 }
-curl -fsS -m 5 "$URL/healthz" >/dev/null || { echo "server not healthy at $URL"; exit 1; }
-if [ "$WHICH" = child ] || [ "$WHICH" = both ]; then build main_live child; push "$TAB" child; fi
-if [ "$WHICH" = guardian ] || [ "$WHICH" = both ]; then build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1; push "$FOLD" guardian; fi
+curl -fsS -m 5 "$URL/readyz" >/dev/null || { echo "server not ready at $URL (GET /readyz)"; exit 1; }
+if [ "$WHICH" = child ] || [ "$WHICH" = both ]; then
+  [ -n "$TAB" ] || { echo "set TAB=<tablet serial> (see: adb devices)"; exit 2; }
+  build main_live child; push "$TAB" child
+fi
+if [ "$WHICH" = guardian ] || [ "$WHICH" = both ]; then
+  [ -n "$FOLD" ] || { echo "set FOLD=<phone serial> (see: adb devices)"; exit 2; }
+  build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1; push "$FOLD" guardian
+fi
 echo "done. apks in $OUT"

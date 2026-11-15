@@ -200,6 +200,13 @@ services:
       start_period: 10s
 
   callroom:
+    # OPT-IN ONLY (profile `callroom`, the same gating docker-compose.prod.yml uses). This
+    # is the LiveKit-era room coordinator and it exits at boot unless LIVEKIT_URL,
+    # LIVEKIT_API_KEY and LIVEKIT_API_SECRET are all set. Calls default to the owner's
+    # Jitsi now (CALL_PROVIDER, on `server`), so a plain `up -d --build` used to leave
+    # this container in a restart loop. Start it only when you run LiveKit:
+    #   docker compose -f docker-compose.dev.yml --profile callroom up -d --build
+    profiles: ["callroom"]
     build: .
     # No dependency on `server`/`migrate` — the room-coordination server
     # only calls into packages/session-runtime directly (see its own file

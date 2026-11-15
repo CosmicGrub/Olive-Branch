@@ -82,7 +82,7 @@ the `migrate` one-shot service) before `server` ever starts — see
 `postgres`.
 
 ```bash
-docker compose -f docker-compose.dev.yml logs -f server callroom   # tail both
+docker compose -f docker-compose.dev.yml logs -f server delivery   # tail both
 docker compose -f docker-compose.dev.yml ps                        # health
 docker compose -f docker-compose.dev.yml down                      # stop
 docker compose -f docker-compose.dev.yml down -v                   # stop + wipe the DB volume
@@ -94,8 +94,8 @@ device, since the container publishes those same host ports. Nothing about
 how `call_screen.dart`/`api_client.dart` reach the backend changes; only
 how the backend itself is launched and kept alive changed.
 
-All three published ports — `server` (8123), `callroom` (8787), and `db`
-(5434) — bind to `127.0.0.1` only, not every host interface: a device on
+All published ports — `server` (8123), `db` (5434) and, when you opt in to it,
+`callroom` (8787) — bind to `127.0.0.1` only, not every host interface: a device on
 the same WiFi network can't reach any of them directly, only `server`/
 `callroom` through `adb reverse`'s own tunnel to host loopback. This is
 deliberate: both `DEV_LOGIN=1` (server) and the call-room coordinator's own
@@ -108,6 +108,25 @@ host machine itself. `db`'s own superuser password is overridable via
 `POSTGRES_PASSWORD` in `.env` (see `.env.example`) if you want it to be
 more than a formality even against another local process on the same
 host.
+
+## The services, and which ones start by default
+
+`db`, `migrate` (one-shot), `server` and `delivery` start with a plain `up -d --build`. `delivery` is
+the ONE delivery worker (`tools/scheduler.mjs deliver-loop`); without it nothing ever moves a banked
+message into a child's inbox, so a rebuild that names services must name it too:
+`docker compose -p olive-fresh -f docker-compose.dev.yml up -d --build db migrate server delivery`.
+`server` answers `GET /readyz` (database, schema level, media volume, draining) as its healthcheck.
+
+`callroom` (the LiveKit-era room coordinator, port 8787) is behind the `callroom` profile. It exits
+at boot unless `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are all set, and calls default
+to the owner's Jitsi now, so it used to sit in a restart loop on every plain `up`. Opt in with
+`--profile callroom` when you run LiveKit.
+
+If `migrate` answers `REFUSING: applied migrations missing from db/migrations`, the volume was
+migrated from a branch whose migration numbering never reached main. The dev database is
+disposable: `docker compose -p olive-fresh -f docker-compose.dev.yml down -v`, then up again.
+Take a `pg_dump` first if you want the old rows. (On 2026-11-15 the `olive-fresh` volume had
+`0049_identity_signup` from a feature branch; main's 0049 is the delivery receipts.)
 
 ## Optional: the scheduled-jobs runner
 
