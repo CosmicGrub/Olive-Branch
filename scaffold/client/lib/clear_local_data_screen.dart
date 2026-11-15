@@ -45,6 +45,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'pairedkids': 'Child devices you connected',
   'familyledger': 'Who belongs to your family',
   'trust': 'Who you added and what changed',
+  'familysync': 'Updates shared between your phones',
   'lists': 'Wants and needs',
   'pictures': 'Saved pictures',
   'stories': 'Stories she kept',

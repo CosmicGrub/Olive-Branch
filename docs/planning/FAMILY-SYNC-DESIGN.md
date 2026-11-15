@@ -1,11 +1,13 @@
 # Family sync and notifications: how guardian devices share data without a server that can read it
 
 Design only. No code in this change. Written 2026-11-14 against `origin/main`, re-based on cdf9806 (care guides pilot, PR #200) after review.
-Status: DRAFT FOR OWNER REVIEW. Nothing here is built. Section 14 lists what needs the owner; section 15 lists what could not be verified.
+Status: DRAFT FOR OWNER REVIEW. Only the first slice is built (see "First slice built" below); the rest is not built. Section 14 lists what needs the owner; section 15 lists what could not be verified.
 
 Companions (read first): `FAMILY-IDENTITY-DESIGN.md` (family object FID, signed ledger, family key FK, guardian-only key GK, device agreement keys, rotation, second-guardian join), `VILLAGE-WELCOME-DESIGN.md` (welcome votes, pause, "told in plain words"), `QR-VETTING-BRAINSTORM.md` (a scan is an introduction, never a key), `docs/superpowers/specs/2026-11-08-server-snoop-hardening-design.md` (sealed relay envelope, network-identity minimisation), `DECISIONS.md` and `OPEN-DECISIONS.md` (offline-first, parked online items). MASTERFILE: 2.1 (P1 to P11), 2.6, 2.12, 5.7, 8.15, 8.24, 11, 15, 17.1.
 
 The identity lane and the village lane stay as they are. This document adds one layer on top: **what travels between guardian devices, over which road, in what sealed form, and what each person is told.** Where it needs something from them, section 11 names the exact dependency.
+
+**First slice built (build steps S1, S2, S3, road E of S4, and the emergency-card half of S5; MASTERFILE 8.24.9).** Differences from this text, so nobody reads it as built-as-written: the seal is the existing ChaCha20-Poly1305 `guardianSeal` with a random 96-bit nonce (not XChaCha20); the stream id is derived from the family id, area and child (not minted by the first event, so two grown-ups starting offline share one stream); the heads exchange is a per-writer contiguous-prefix summary (equivalent for convergence, simpler to test); bundles are sealed under the guardian key; the hand-carried road is a copied and pasted text (no plugin for files); acks, courier, mailbox, wake push, locked sections, the late-joiner carry, hospital-mode-while-forked and Node vectors are NOT built; and no menu reaches the screen because founding a family and joining a second grown-up's phone are not wired into the app yet.
 
 ---
 

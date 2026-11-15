@@ -307,6 +307,13 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'settling in, paused or stopped) and the plain-language history of those changes, kept in order so an '
           'edit can be noticed. Sealed on the device; never shown on a child\'s screen.'),
   LocalDataEntry(
+      area: 'familysync', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
+      what: 'On a grown-up\'s device: the updates the grown-ups\' phones have shared with each other (so far, '
+          'the emergency card), each one sealed and signed by the phone that wrote it, and a note of what the other '
+          'phone last said it holds. Only grown-ups\' phones can open them: a child\'s device holds none and sees '
+          'nothing of it. Sealed on the device; nothing is uploaded; an update leaves this phone only when a grown-up '
+          'copies it.'),
+  LocalDataEntry(
       area: 'learn', scope: LocalScope.guardian, encrypted: true, maxBytes: 2 * _mib,
       what: 'Parent Learn: the guardian\'s settings and, only if they chose to save them, '
           'their reflections and own rules list. Sealed on the device; default private; '
