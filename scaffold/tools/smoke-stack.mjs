@@ -143,6 +143,9 @@ function cleanup() {
     return;
   }
   try {
+    // a child delete cascades her pairing codes away, which paired_device.paired_via still references:
+    // remove this run's devices (the child's and the grown-ups') first
+    psql(`DELETE FROM paired_device WHERE target_id IN (SELECT id FROM child WHERE display_name LIKE '%${MARK}') OR target_id IN (SELECT id FROM app_user WHERE display_name LIKE '%${MARK}')`);
     psql(`DELETE FROM child WHERE display_name LIKE '%${MARK}'`);
     psql(`DELETE FROM app_user WHERE display_name LIKE '%${MARK}'`);
     psql(`DELETE FROM signup_allowance WHERE label LIKE '%${MARK}'`);
