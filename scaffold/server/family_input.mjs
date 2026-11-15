@@ -17,7 +17,7 @@ export function cleanName(v) {
   const t = v.normalize('NFC').trim().replace(/\s+/g, ' ');
   if (!t || [...t].length > MAX_NAME_CHARS) return null;
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f-\u009f  ]/.test(t)) return null;
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)) return null;
   return t;
 }
 

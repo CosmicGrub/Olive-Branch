@@ -12,8 +12,9 @@
 // GET .../inbox returns only `delivered`/`opened`, so a message sent through the
 // product never reached a child. This module is the missing caller.
 //
-// WHAT ONE TICK DOES, in order, under ONE session advisory lock so two server
-// replicas (or the server and a `scheduler run` invocation) never double-work:
+// WHAT ONE TICK DOES, in order, under ONE session advisory lock (job name `deliver`),
+// which serialises replicas OF THE TICK only; the correctness of everything below does not
+// depend on it, it rests on the compare-and-swap writes:
 //   - rematerialize pending intents      (reuses the scheduler's own sweep)
 //   - expire intents past their retention window (COPPA 10.1: nothing lingers)
 //   - claim due intents -> delivered     (compare-and-swap in SQL)
@@ -21,8 +22,10 @@
 //
 // IT RUNS IN THE SERVER PROCESS, not only in the scheduler container, so the stack
 // the owner actually tests on (olive-fresh runs no scheduler) delivers too. The
-// nightly scheduler loop is unchanged and stays safe alongside it: every write is a
-// compare-and-swap and both take the same advisory lock key.
+// nightly scheduler loop is unchanged and stays safe alongside it, but NOT because they
+// share a lock: the scheduler's `rematerialize` job locks under its own job name, so it
+// and this tick can run runRematerializeSweep at the same moment. What makes that safe is
+// that every write is a compare-and-swap (a loser's UPDATE matches no row).
 //
 // CHILD SAFETY (P1-P11). The push carries an opaque intent id and the kind, and
 // nothing else: no sender, no count, no caption, no time. notify.mjs runs

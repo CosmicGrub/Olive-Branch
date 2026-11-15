@@ -4,7 +4,7 @@
 //   GET /readyz   "this process should be handed traffic NOW"  (readiness; here)
 //
 // They answer different questions, and conflating them hid real faults:
-//   - an image that expects migration 0049 against a database at 0047 served
+//   - an image that expects a newer migration against a database at 0047 served
 //     /healthz 200 and then failed inside a route, in front of a person;
 //   - an unmounted or read-only media volume only showed up as 500s on upload;
 //   - a delivery worker stuck in a failure loop looked exactly like a healthy one;
@@ -49,9 +49,40 @@ export function mediaRootWritable(root) {
   } catch { return false; }
 }
 
-const withTimeout = (p, ms, label) => Promise.race([
-  p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms).unref()),
-]);
+// The timer is cleared when the work settles (no stray timer per probe) and is NOT unref'd:
+// an unref'd timer lets a process whose only pending work is a hung query exit silently
+// instead of reporting the timeout.
+const withTimeout = (p, ms, label) => {
+  let timer;
+  const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`${label} timeout`)), ms); });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+};
+
+/**
+ * Shares one readiness check between callers. A probe arriving while a check is running
+ * waits for that one; a probe arriving within `ttlMs` of the last finished check gets its
+ * result. Draining is answered fresh every time (it is an in-memory flag, and a cached
+ * "ready" must never outlive SIGTERM). ttlMs <= 0 turns the cache off.
+ */
+export function createReadinessCache({ check, isDraining = () => false, ttlMs = 2000, now = () => Date.now() }) {
+  let last = null;      // { at, value }
+  let inflight = null;
+  return async function readiness() {
+    if (isDraining()) return check();
+    const t = now();
+    if (ttlMs > 0 && last && t - last.at >= 0 && t - last.at < ttlMs) return last.value;
+    if (ttlMs > 0 && inflight) return inflight;
+    const run = (async () => {
+      try {
+        const value = await check();
+        last = { at: now(), value };
+        return value;
+      } finally { inflight = null; }
+    })();
+    if (ttlMs > 0) inflight = run;
+    return run;
+  };
+}
 
 /**
  * @param {{ pool: { query: Function },

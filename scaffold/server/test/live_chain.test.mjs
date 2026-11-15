@@ -113,9 +113,19 @@ const usersNamed = (n) => count(`SELECT count(*) AS n FROM app_user WHERE displa
 
   const tight = makeApi({ signupMissBudget: new MissBudget({ limit: 3 }) });
   for (let i = 0; i < 3; i++) await call(tight, 'POST', '/v1/families', null, goodFamily({ setupCode: 'nope' + i }));
-  const blocked = await call(tight, 'POST', '/v1/families', null, goodFamily());
-  check('A sign-up gate', 'after the miss budget is spent even the RIGHT code gets 429 (a guesser cannot win by volume)',
+  const blocked = await call(tight, 'POST', '/v1/families', null, goodFamily({ setupCode: 'nope-again' }));
+  check('A sign-up gate', 'after the miss budget is spent a further WRONG code gets 429 (floods cost nothing more)',
     `${blocked.status}/${blocked.body.error}`, '429/signup_rate_limited');
+  // The budget is global (no per-caller key is kept), so it must never be a way to lock the
+  // operator out: the RIGHT code is compared first and is not refused by it.
+  const rightWhileBlocked = await call(tight, 'POST', '/v1/families', null, goodFamily({
+    guardian: { displayName: nm('Lockout'), homeTz: 'UTC' } }));
+  if (rightWhileBlocked.body.userId) { created.users.add(rightWhileBlocked.body.userId); created.children.add(rightWhileBlocked.body.childId); }
+  check('A sign-up gate', 'but the RIGHT code still works while strangers have spent the wrong-code budget (no lock-out)',
+    `${rightWhileBlocked.status}`, '201');
+  const stillBlocked = await call(tight, 'POST', '/v1/families', null, goodFamily({ setupCode: 'nope-3' }));
+  check('A sign-up gate', 'and a correct sign-up does not reset or relax the wrong-code block',
+    `${stillBlocked.status}/${stillBlocked.body.error}`, '429/signup_rate_limited');
 
   const capped = makeApi({ signupCreateBudget: new MissBudget({ limit: 1 }) });
   const first = await call(capped, 'POST', '/v1/families', null, goodFamily({
@@ -382,14 +392,14 @@ const email = (p) => `${p}.${RUN}${String.fromCharCode(64)}example.test`;
   const b = await mkInvite(owner, owner.childId, 'step_parent', email('capB'));
   await POST(`/v1/guardian-invites/${a}/accept`, null); await POST(`/v1/guardian-invites/${b}/accept`, null);
   const both = await Promise.all([
-    POST(`/v1/guardian-invites/${a}/bootstrap`, null, { displayName: nm('CapA') }),
-    POST(`/v1/guardian-invites/${b}/bootstrap`, null, { displayName: nm('CapB') }),
+    POST(`/v1/guardian-invites/${a}/bootstrap`, null, { displayName: nm('CapInvA') }),
+    POST(`/v1/guardian-invites/${b}/bootstrap`, null, { displayName: nm('CapInvB') }),
   ]);
   for (const r of both) if (r.body.userId) created.users.add(r.body.userId);
   check('C caps', 'one slot left, two simultaneous bootstraps: exactly one wins, the other 409 family_full',
     both.map((r) => `${r.status}/${r.body.error ?? 'ok'}`).sort().join(' '), '201/ok 409/family_full');
   check('C caps', 'the loser created no account (rolled back with the refusal)',
-    (await usersNamed(nm('CapA'))) + (await usersNamed(nm('CapB'))), 1);
+    (await usersNamed(nm('CapInvA'))) + (await usersNamed(nm('CapInvB'))), 1);
   check('C caps', 'the child has exactly 4 live parent-class edges', await count(
     `SELECT count(*) AS n FROM guardianship WHERE child_id=$1 AND role IN ('guardian','step_parent','foster_parent')`, [owner.childId]), 4);
   // carers: 7 sitters present, the 8th fits, the 9th does not
@@ -401,6 +411,75 @@ const email = (p) => `${p}.${RUN}${String.fromCharCode(64)}example.test`;
   check('C caps', 'carers do not consume parent slots and parents do not consume carer slots', await count(
     `SELECT count(*) AS n FROM guardianship WHERE child_id=$1 AND role NOT IN ('guardian','step_parent','foster_parent')`, [owner.childId]), 8);
 }
+
+// ---- the inviter's authority is re-checked when the edge is created (review finding) ----
+// An invite is a 14-day bearer grant. Only the invite-create route used to check that the
+// inviter holds a live, unrestricted guardian edge; once the bootstrap makes an edge, an
+// invite from someone who has since been restricted or closed would have handed a third
+// party a full edge. Each case uses its own family so the edge states do not interact.
+{
+  const bootAfter = async (setup) => {
+    const owner = await newFamily('Inv');
+    await pinFor(owner.token);
+    const invId = await mkInvite(owner, owner.childId, 'guardian', email('ia' + Math.random().toString(36).slice(2, 7)));
+    await POST(`/v1/guardian-invites/${invId}/accept`, null);
+    await setup(owner);
+    const edgesBefore = await count(`SELECT count(*) AS n FROM guardianship WHERE child_id=$1`, [owner.childId]);
+    const boot = await POST(`/v1/guardian-invites/${invId}/bootstrap`, null, { displayName: nm('Heir') + Math.random().toString(36).slice(2, 6) });
+    if (boot.body.userId) created.users.add(boot.body.userId);
+    const edges = await count(`SELECT count(*) AS n FROM guardianship WHERE child_id=$1`, [owner.childId]);
+    const inv = (await admin.query(`SELECT bootstrapped_at, bootstrap_user_id FROM guardian_invite WHERE id=$1`, [invId])).rows[0];
+    return { owner, invId, boot, edges, edgesBefore, inv };
+  };
+  const refused = (r) => `${r.boot.status}/${r.boot.body.error}/edges-unchanged=${r.edges === r.edgesBefore}/open=${r.inv.bootstrapped_at === null && r.inv.bootstrap_user_id === null}/token=${r.boot.body.token === undefined}`;
+  const REFUSED = '409/inviter_no_longer_guardian/edges-unchanged=true/open=true/token=true';
+
+  const restricted = await bootAfter((o) => admin.query(
+    `UPDATE guardianship SET restricted = true, order_ref = 'test' WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]));
+  check('C inviter', 'inviter restricted (protective order) after inviting -> 409, no account, no second edge, invite not burned', refused(restricted), REFUSED);
+
+  const closed = await bootAfter((o) => admin.query(
+    `UPDATE guardianship SET closed_at = now(), closed_reason = 'court_order' WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]));
+  check('C inviter', 'inviter edge CLOSED after inviting -> 409, nothing created', refused(closed), REFUSED);
+
+  const expired = await bootAfter((o) => admin.query(
+    `UPDATE guardianship SET expires_at = now() - interval '1 minute' WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]));
+  check('C inviter', 'inviter edge EXPIRED after inviting -> 409, nothing created', refused(expired), REFUSED);
+
+  const demoted = await bootAfter((o) => admin.query(
+    `UPDATE guardianship SET role = 'sitter' WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]));
+  check('C inviter', 'inviter no longer a guardian (now a sitter) -> 409, nothing created', refused(demoted), REFUSED);
+
+  const gone = await bootAfter((o) => admin.query(
+    `DELETE FROM guardianship WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]));
+  check('C inviter', 'inviter edge gone entirely -> 409, nothing created', refused(gone), REFUSED);
+
+  // the edge that matters is the one to THIS child: a live edge to another child is no help
+  const otherChild = await bootAfter(async (o) => {
+    const second = await POST('/v1/children', o.token, { displayName: nm('Second'), birthDate: '2018-02-02', homeTz: 'UTC' });
+    if (second.body.childId) created.children.add(second.body.childId);
+    await admin.query(`UPDATE guardianship SET closed_at = now(), closed_reason = 'revoked' WHERE child_id=$1 AND user_id=$2`, [o.childId, o.userId]);
+  });
+  check('C inviter', "a live edge to the inviter's OTHER child does not keep an invite for the closed one alive", refused(otherChild), REFUSED);
+
+  // not a permanent burn: restoring her standing lets the SAME invite through (the refusal rolled back cleanly)
+  const owner = await newFamily('Inv');
+  await pinFor(owner.token);
+  const invId = await mkInvite(owner, owner.childId, 'guardian', email('restore'));
+  await POST(`/v1/guardian-invites/${invId}/accept`, null);
+  await admin.query(`UPDATE guardianship SET restricted = true, order_ref = 'test' WHERE child_id=$1 AND user_id=$2`, [owner.childId, owner.userId]);
+  const first = await POST(`/v1/guardian-invites/${invId}/bootstrap`, null, { displayName: nm('Late') });
+  await admin.query(`UPDATE guardianship SET restricted = false, order_ref = null WHERE child_id=$1 AND user_id=$2`, [owner.childId, owner.userId]);
+  const second = await POST(`/v1/guardian-invites/${invId}/bootstrap`, null, { displayName: nm('Late') });
+  if (second.body.userId) created.users.add(second.body.userId);
+  check('C inviter', 'once her standing is restored the same invite works (the refusal changed nothing)',
+    `${first.status}/${first.body.error} then ${second.status}`, '409/inviter_no_longer_guardian then 201');
+
+  // a refused bootstrap names the reason and nothing else
+  check('C inviter', 'the refusal body carries a reason code only (no names, e-mails or ids)',
+    JSON.stringify(Object.keys(first.body)), '["error"]');
+}
+
 
 // ===========================================================================
 // D · a banked message reaches the child — with no row hand-inserted (G1)
@@ -582,6 +661,9 @@ async function drive(t, id, until, passes = 10) {
   for (const r of byName.rows) kids.push(r.id);
   const uByName = await admin.query(`SELECT id FROM app_user WHERE display_name LIKE $1`, [`%${RUN}`]);
   for (const r of uByName.rows) users.push(r.id);
+  // paired_device.paired_via references device_pairing_code, which a child delete cascades
+  // away: remove the devices this run paired first or the delete is refused.
+  await admin.query(`DELETE FROM paired_device WHERE target_id = ANY($1::uuid[]) OR target_id = ANY($2::uuid[])`, [kids, users]);
   await admin.query(`DELETE FROM child WHERE id = ANY($1::uuid[])`, [kids]);
   await admin.query(`DELETE FROM app_user WHERE id = ANY($1::uuid[])`, [users]);
   const left = await count(`SELECT count(*) AS n FROM app_user WHERE display_name LIKE $1`, [`%${RUN}`]);

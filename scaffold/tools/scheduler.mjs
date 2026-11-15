@@ -51,8 +51,11 @@
  *     `server/delivery_tick.mjs` (server audit G1), which runs INSIDE the server
  *     process every 15 s, reuses `runRematerializeSweep` below, claims what is
  *     due, expires what is stale and sends the content-free `message_ready` push.
- *     It takes this file's own advisory lock (`withJobLock`, key `deliver`), so it
- *     and this nightly loop can run side by side. This file stays the
+ *     It uses this file's `withJobLock` under its own job name (`deliver`), which only
+ *     serialises replicas of the tick; this nightly `rematerialize` job locks under a
+ *     DIFFERENT name, so the two can run `runRematerializeSweep` at the same moment.
+ *     That is safe because every write in the sweep is a compare-and-swap, not because
+ *     of a shared lock. This file stays the
  *     materialise/reap/backup/alert runner; the nightly `rematerialize` job is now
  *     a safety net behind the worker rather than the only thing that ever ran it.
  *   - Does not resolve `on_event` targets. `childCtxFor()`

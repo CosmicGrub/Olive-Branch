@@ -565,9 +565,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // GUARDIAN INVITATION — real create/read/accept-decision/revoke. §11, §8.5.
   // Closes half of invitation_screen.dart's own named gap: "the API surface
   // names POST /v1/children/:id/guardianships, but no such route exists."
-  // Does NOT create a `guardianship` row — see 0014_guardian_invite.sql's own
-  // header for why that would fabricate an account-creation security step
-  // this codebase has never built.
+  // Creating the invite makes no edge; the edge is made later, by the bootstrap
+  // route below, once the invited party has accepted (audit G3).
   // ===========================================================================
 
   api.register({
@@ -687,9 +686,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   // did a brand-new guardian ever acquire one. This route closes exactly
   // that and nothing more — it does NOT touch WebAuthn registration itself
   // (POST .../webauthn/register/challenge and .../verify above are
-  // completely unchanged) and does NOT create a guardianship row (see
-  // 0014/0020_guardian_invite_bootstrap.sql's own headers for why that
-  // stays a real, separate, still-open gap).
+  // completely unchanged). Since audit G3 it DOES create the guardianship
+  // edge (the invite's role and scope, same transaction), and only while the
+  // INVITER still holds a live, unrestricted guardian edge: otherwise 409
+  // inviter_no_longer_guardian and no account is made.
   //
   // noSessionRequired, same reason as GET/accept above: the caller has no
   // app_user row yet, so there is nothing for them to hold a session token
@@ -741,11 +741,18 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       if (!setupCode.enabled) return { status: 404, body: { error: 'not_found' } };
-      const miss = signupMissBudget.check();
-      if (miss.blocked) {
-        return { status: 429, body: { error: 'signup_rate_limited', retryAfterSec: miss.retryAfterSec } };
-      }
+      // Compare FIRST, then throttle only the failure path. The budget is global (no
+      // per-caller key is kept), so gating the comparison on it would let anyone spend
+      // ten wrong codes a minute and lock the operator's own correct code out of
+      // sign-up indefinitely. The code is >= 16 characters (setupCodeConfig), so it is
+      // not guessable by volume; the budget only stops a flood of wrong codes costing
+      // work. A correct code is therefore never refused by it. The per-IP auth limiter
+      // and the creation budget below still bound how often a correct code is spent.
       if (!setupCodeMatches(c.body?.setupCode, setupCode.digest)) {
+        const miss = signupMissBudget.check();
+        if (miss.blocked) {
+          return { status: 429, body: { error: 'signup_rate_limited', retryAfterSec: miss.retryAfterSec } };
+        }
         signupMissBudget.hit();
         return { status: 403, body: { error: 'setup_code_invalid' } };
       }

@@ -4339,7 +4339,8 @@ export async function revokeGuardianInvite(
 
 export type BootstrapInviteError =
   | 'not_found' | 'expired' | 'revoked' | 'not_accepted'
-  | 'already_bootstrapped' | 'email_already_registered' | 'family_full';
+  | 'already_bootstrapped' | 'email_already_registered' | 'family_full'
+  | 'inviter_no_longer_guardian';
 
 /**
  * Caps adopted in docs/planning/DECISIONS.md (G-37): at most 4 parents and 8
@@ -4380,10 +4381,14 @@ async function liveEdgeCounts(q: Query, childId: string): Promise<{ parents: num
  * expires_at alone), creates the invited party's FIRST app_user row and
  * hands back its id so the caller (server/routes.mjs) can mint a real
  * session via `Api.issueSessionToken()`. Does NOT touch webauthn_credential
- * or pin_credential at all, and does NOT create a guardianship row — see
- * this file's own header and 0014/0020's migration headers for why the
- * latter stays a real, separate, still-open gap this function does not
- * close.
+ * or pin_credential at all. Since audit G3 it DOES create the invited party's
+ * guardianship edge (the invite's own role and scope), in the same transaction
+ * as the app_user row. Because an edge now follows from an invite, the INVITER'S
+ * authority is re-checked here, at the moment the edge would be created: an
+ * invite outlives its inviter's standing, so a guardian who was restricted
+ * (protective order) or whose edge was closed after she created the invite
+ * cannot have it hand a third party access up to 14 days later
+ * ('inviter_no_longer_guardian'). Same predicate the invite-create route uses.
  *
  * Single-use by construction, not just by this function's own already_
  * bootstrapped branch: 0020's bootstrap_columns_paired/bootstrap_needs_
@@ -4450,6 +4455,20 @@ export async function bootstrapGuardianInvite(
     // bootstrapped at the same instant serialise here, so the cap below cannot
     // be passed by both (each holds FOR UPDATE on its OWN invite row only).
     const child = await q(`SELECT home_tz FROM child WHERE id = $1 FOR UPDATE`, [row.child_id]);
+
+    // The inviter must STILL hold a live, unrestricted guardian edge to this
+    // child. Only the invite-create route checked this before; an invite is a
+    // 14-day bearer grant, and the edge it now produces must not outlive the
+    // authority of the person who issued it. Checked after the child row lock
+    // so a concurrent restriction/closure of her edge is ordered against us.
+    const inviter = await q(
+      `SELECT 1 FROM guardianship
+        WHERE child_id = $1 AND user_id = $2 AND role = 'guardian'
+          AND restricted = false AND closed_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())`,
+      [row.child_id, row.invited_by]);
+    if (!inviter.length) return { ok: false, reason: 'inviter_no_longer_guardian' };
+
     const live = await liveEdgeCounts(q, row.child_id);
     if (isParentRole(row.role) ? live.parents >= MAX_PARENT_EDGES_PER_CHILD
                                : live.carers >= MAX_CARER_EDGES_PER_CHILD) {
@@ -4485,9 +4504,13 @@ export async function bootstrapGuardianInvite(
     // Same transaction as the user insert, so there is never an account without
     // its edge or an edge without its account; UNIQUE (child_id, user_id) makes
     // a replay impossible. `system` writes guardianship by 0040's own policy.
+    // The edge is valid from a minute ago, not from this instant: the app server judges
+    // "live" by ITS clock and the database stamped the row by ITS clock, and a skew of even a
+    // second made a brand-new guardian's first request 403 (found running this suite against a
+    // Docker Postgres whose clock ran ahead of the host's).
     await q(
       `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
-       VALUES ($1, $2, $3, $4::jsonb, tstzrange(now(), null))`,
+       VALUES ($1, $2, $3, $4::jsonb, tstzrange(now() - interval '1 minute', null))`,
       [row.child_id, userId, row.role, JSON.stringify(row.scope ?? {})],
     );
     await q(
@@ -5317,7 +5340,7 @@ export async function createFamily(
     const childId = await insertChild(q, child);
     await q(
       `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
-       VALUES ($1, $2, 'guardian', '{}', tstzrange(now(), null))`,
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 minute', null))`,
       [childId, userId]);
     return { userId, childId };
   });
@@ -5353,7 +5376,7 @@ export async function addChildForGuardian(
     const childId = await insertChild(q, child);
     await q(
       `INSERT INTO guardianship (child_id, user_id, role, scope, valid)
-       VALUES ($1, $2, 'guardian', '{}', tstzrange(now(), null))`,
+       VALUES ($1, $2, 'guardian', '{}', tstzrange(now() - interval '1 minute', null))`,
       [childId, userId]);
     return { ok: true, childId };
   });

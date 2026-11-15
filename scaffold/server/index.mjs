@@ -30,10 +30,10 @@ import { errorLine } from './safe_log.mjs';
 import { checkBootSecrets } from './secrets.mjs';
 import { checkRuntimeRole } from './db_role.mjs';
 import { resolveCallConfig, describeCallConfig } from './call_config.mjs';
-import { Metrics, requestIdFor, accessLogLine, isInternalRequest } from './observability.mjs';
+import { Metrics, requestIdFor, accessLogLine, isInternalRequest, shouldLogAccess } from './observability.mjs';
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 import { createDeliveryTick, tickIntervalFromEnv } from './delivery_tick.mjs';
-import { checkReadiness } from './readiness.mjs';
+import { checkReadiness, createReadinessCache } from './readiness.mjs';
 import { setupCodeConfig } from './family_input.mjs';
 import { checkPushConfig } from './push_config.mjs';
 import { dirname, join } from 'node:path';
@@ -311,6 +311,21 @@ deliveryTick = createDeliveryTick({
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(SERVER_DIR, '..', 'db', 'migrations');
 let draining = false;
+// The compose healthcheck probes /readyz every few seconds and the probe does a database
+// query plus a media-volume write and unlink. A short shared cache (one check in flight at
+// a time, reused for READYZ_CACHE_MS, default 2 s) keeps a stampede of probes to one piece
+// of work; draining is never cached, so SIGTERM is visible on the very next probe.
+const READYZ_CACHE_RAW = process.env.READYZ_CACHE_MS;
+const readiness = createReadinessCache({
+  check: () => checkReadiness({
+    pool, migrationsDir: MIGRATIONS_DIR,
+    mediaRoot: defaultMediaStorage.root ?? process.env.MEDIA_STORAGE_ROOT ?? '',
+    delivery: deliveryTick, isDraining: () => draining,
+  }),
+  isDraining: () => draining,
+  ttlMs: READYZ_CACHE_RAW !== undefined && READYZ_CACHE_RAW !== '' && Number.isFinite(Number(READYZ_CACHE_RAW))
+    ? Number(READYZ_CACHE_RAW) : 2000,
+});
 const authLimiter = createAuthLimiter();
 const ACCESS_LOG = process.env.ACCESS_LOG !== '0';
 const ACCESS_LOG_HEALTHZ = process.env.ACCESS_LOG_HEALTHZ === '1';
@@ -354,7 +369,7 @@ const server = createServer(async (req, res) => {
   res.on('finish', () => {
     const ms = performance.now() - startedAt;
     metrics.record({ method, route: label, status: res.statusCode, ms });
-    if (ACCESS_LOG && (label !== '/healthz' || ACCESS_LOG_HEALTHZ)) {
+    if (shouldLogAccess({ route: label, accessLog: ACCESS_LOG, logProbes: ACCESS_LOG_HEALTHZ })) {
       console.log(accessLogLine({ id, method, route: label, status: res.statusCode, ms }));
     }
   });
@@ -417,11 +432,7 @@ const server = createServer(async (req, res) => {
     // as `degraded` and does not make the process unready (the app must keep serving).
     // The body names a category and nothing else.
     if (method === 'GET' && url === '/readyz') {
-      const r = await checkReadiness({
-        pool, migrationsDir: MIGRATIONS_DIR,
-        mediaRoot: defaultMediaStorage.root ?? process.env.MEDIA_STORAGE_ROOT ?? '',
-        delivery: deliveryTick, isDraining: () => draining,
-      });
+      const r = await readiness();
       return send({ status: r.ready ? 200 : 503,
         body: { status: r.ready ? 'ready' : 'not_ready', failing: r.failing, degraded: r.degraded } });
     }

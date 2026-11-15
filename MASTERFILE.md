@@ -1557,7 +1557,7 @@ account, including why no existing test had caught this
 guardian-invite coverage) and the new tests that now do, at both the `Api`
 mechanism level and against these real routes end to end.
 
-**The live chain on the server (server audit G1, G2, G3, G7; migration 0049).**
+**The live chain on the server (server audit G1, G2, G3, G7; migration 0051).**
 Before this pass the server could not carry a first family: nothing made a
 family, an accepted invite gave the second guardian no access, and nothing
 delivered a banked message to the child. All three are now built and proved
@@ -1573,7 +1573,9 @@ POST   /v1/families          no session; the operator's FAMILY_SETUP_CODE is the
                              asleep not) so a first message can be scheduled. Returns the
                              guardian's ordinary session token. 404 while FAMILY_SETUP_CODE is
                              unset (the kill switch); 403 setup_code_invalid; 429 once the
-                             wrong-code budget (10 per minute, global) or the creation budget
+                             wrong-code budget (10 per minute, global) is spent by WRONG codes
+                             (the correct code is compared first and is never refused by it, so
+                             strangers cannot lock the operator out) or the creation budget
                              (FAMILY_SIGNUPS_PER_HOUR, default 30) is spent; 400 with one
                              reason code per bad field.
 POST   /v1/children          an existing guardian adds another child. The new edge is HERS
@@ -1587,7 +1589,12 @@ POST   /v1/guardian-invites/:inviteId/bootstrap
                              observer-only (so a sitter invite is a sitter edge, never a
                              promoted one). Caps (G-37): at most 4 parent-class edges (guardian,
                              step_parent, foster_parent) and 8 carer edges per child, counted
-                             under a lock on the child row; 409 family_full beyond that.
+                             under a lock on the child row; 409 family_full beyond that. The
+                             INVITER must still hold a live, unrestricted guardian edge to that
+                             child when the edge is made (an invite is a 14-day bearer grant, so
+                             a guardian restricted or closed after inviting cannot hand a third
+                             party access through it): otherwise 409 inviter_no_longer_guardian,
+                             no account, no edge, and the invite is not burned.
 GET    /readyz               readiness, as distinct from /healthz liveness (below).
 ```
 
@@ -1604,8 +1611,11 @@ repository, so this is fitted to the schema, not to that finding.
 every `DELIVERY_TICK_MS` (default 15 000; 0 turns it off): rematerialize pending
 intents, expire intents past their retention window, claim what is due, then send one
 content-free `message_ready` push per child that received something. One tick holds
-a session advisory lock (key `deliver`), so two replicas or a `scheduler run` never
-double-deliver; every write is also a compare-and-swap. Banking a message nudges the
+a session advisory lock (job name `deliver`), which only serialises replicas of the tick.
+It is not shared with the scheduler: the nightly `rematerialize` job locks under its own
+name, so it and the tick can run the same sweep at once. Safety comes from the
+compare-and-swap on every write (a loser's UPDATE matches no row), so nothing is
+delivered twice. Banking a message nudges the
 worker (debounced 400 ms) so anything already due is not left to the interval. The
 push carries the kind and an opaque intent id only (no sender, count, caption or time);
 `notifyDevices()` still applies the asleep/school gate, so a sleeping child's lock screen
@@ -1615,16 +1625,20 @@ retried; it never takes the server down. Shutdown waits for the in-flight pass b
 the pool is ended. The nightly scheduler loop is unchanged and remains a safety net.
 `/internal/metrics` carries the worker's status and counters.
 
-**`/readyz` (migration 0049).** `GET /healthz` stays a pure liveness check. `GET /readyz`
+**`/readyz` (migration 0051).** `GET /healthz` stays a pure liveness check. `GET /readyz`
 answers 200 `{status:"ready"}` only when the database answers, its schema is at or past
 the newest migration baked into the image, the media volume accepts a write, and the
 process is not draining; otherwise 503 `{status:"not_ready", failing:[...]}` naming a
 category and nothing else. A stalled delivery worker is reported as `degraded` and does
 not make the process unready (the app must keep serving). `app_runtime` cannot read
-`schema_migration`, so migration 0049 adds `schema_migration_level()`, a SECURITY DEFINER
+`schema_migration`, so migration 0051 adds `schema_migration_level()`, a SECURITY DEFINER
 function returning only the newest applied filename. On SIGTERM `/readyz` flips to 503
 first and the listener closes after `READYZ_DRAIN_MS` (default 2 s in production, 0
-otherwise). Both compose files point the server healthcheck at `/readyz`.
+otherwise). Both compose files point the server healthcheck at `/readyz`. The probe does a
+database query and a media-volume write, so concurrent probes share one check and a result is
+reused for `READYZ_CACHE_MS` (default 2000; 0 turns the cache off); a draining answer is never
+cached. `/readyz` is, like `/healthz`, counted in the metrics but not written to the access log
+unless `ACCESS_LOG_HEALTHZ=1`.
 
 Sign-up configuration: `FAMILY_SETUP_CODE` (at least 16 characters, operator-held, in
 `.env` outside the repository; a shorter non-empty value is a boot failure) turns
@@ -2036,7 +2050,7 @@ unrouted path logs as `unmatched`). `x-request-id` is echoed on every response
 per-route count / 5xx / avg / max latency, pool gauges, rate-limit and
 body-cap counters). It is internal-only: loopback peer **and** no proxy header,
 or a matching `INTERNAL_METRICS_TOKEN`; anyone else gets the 404 an unknown
-path gets. `ACCESS_LOG=0` silences the log; `/healthz` is not logged unless
+path gets. `ACCESS_LOG=0` silences the log; `/healthz` and `/readyz` are not logged unless
 `ACCESS_LOG_HEALTHZ=1`. Not built: shipping the counters anywhere (no
 Prometheus/OTel exporter), and the client half of P-07.
 

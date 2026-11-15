@@ -36,12 +36,12 @@
  *      creates NO row — this route must never become a way to acquire a
  *      session for an account that already exists.
  *   H. no leak into any OTHER route's authorization — two independently
- *      bootstrapped sessions (for two different children) hold ZERO
- *      guardianship edges anywhere (none is created here — a real, separate,
- *      still-open gap), so both are refused by every edge-gated route
- *      against EITHER child, while the one route this pass exists to unlock
- *      (webauthn register/challenge) stays open for each — proven over real
- *      HTTP, not asserted from the route table.
+ *      bootstrapped sessions (for two different children) each hold an edge
+ *      to the ONE child their own invite named (audit G3) and NONE to the
+ *      other, so every edge-gated route answers for her own child and
+ *      refuses the other, while the webauthn register/challenge door stays
+ *      open for each — proven over real HTTP, not asserted from the route
+ *      table.
  *   I. the DB-level CHECK/UNIQUE constraints — bypassing bootstrapGuardianInvite()
  *      entirely via raw admin UPDATEs, mirroring guardian_invite.test.mjs's
  *      own "E" section for 0014's constraint.
@@ -89,6 +89,14 @@ await admin.query(
      ($1,'Wren','2017-06-11','America/New_York'),
      ($2,'Otis','2019-02-03','America/Los_Angeles')`,
   [CHILD_A, CHILD_B]);
+// The inviter holds a live guardian edge to both children. The bootstrap now makes the
+// invited party's edge (audit G3) and re-checks that the INVITER still holds hers, so an
+// inviter with no edge would be refused (inviter_no_longer_guardian).
+await admin.query(
+  `INSERT INTO guardianship (child_id, user_id, role, scope, valid) VALUES
+     ($1,$3,'guardian','{}',tstzrange(now() - interval '1 day', null)),
+     ($2,$3,'guardian','{}',tstzrange(now() - interval '1 day', null))`,
+  [CHILD_A, CHILD_B, GUARDIAN_A]);
 await admin.query('COMMIT');
 
 const rowCounts = async (email) => {
@@ -308,10 +316,9 @@ const getAvailability = (childId, tok) => api.handle(
 
 // ===========================================================================
 // H · no leak into any OTHER route's authorization — two independently
-//     bootstrapped sessions hold ZERO guardianship edges (none is created by
-//     this route), so both are refused by an edge-gated route against
-//     EITHER child, while the one route this pass exists to unlock stays
-//     open for each.
+//     bootstrapped sessions each hold an edge to the child their own invite
+//     named and none to the other (since audit G3 the bootstrap creates the
+//     edge), while the webauthn door stays open for each.
 // ===========================================================================
 {
   const invA = await createGuardianInvite(
@@ -332,11 +339,11 @@ const getAvailability = (childId, tok) => api.handle(
   check('H no leak', 'the two bootstraps mint two DIFFERENT accounts',
     bootA.body.userId === bootB.body.userId, 'false');
 
-  // tokenA against CHILD_A — the very child A's OWN invite named. No
-  // guardianship edge exists, so even this is refused.
+  // tokenA against CHILD_A — the very child A's OWN invite named. Since audit G3 the
+  // bootstrap made her edge, so this answers.
   const aOnA = await getAvailability(CHILD_A, tokenA);
-  check('H no leak', 'token A has no edge even to CHILD A (bootstrap grants no '
-    + 'guardianship — a real, separate, still-open gap)', aOnA.status, '403');
+  check('H no leak', 'token A reaches CHILD A (the bootstrap made her edge, audit G3)',
+    aOnA.status, '200');
 
   // tokenA against CHILD_B — the cross-child case named explicitly by this
   // task's own security requirement.

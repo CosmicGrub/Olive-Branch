@@ -21,12 +21,18 @@ import { tickIntervalFromEnv, DEFAULT_DELIVERY_TICK_MS } from '../delivery_tick.
 import { createShutdown } from '../shutdown.mjs';
 import { httpsRequired } from '../transport.mjs';
 import { checkPushConfig } from '../push_config.mjs';
+import { createReadinessCache } from '../readiness.mjs';
+import { shouldLogAccess, accessLogLine } from '../observability.mjs';
+import { judgeSmokeTarget, parseDockerListing, publishedHostPorts, isProtectedName } from '../../tools/smoke_target.mjs';
 
 let pass = 0, fail = 0; const rows = [];
 const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
   rows.push({ g, n, ok, a: String(a), e: String(e) }); };
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+// Several cases await work whose only timer is unref'd by design (the shutdown deadline, the
+// worker's interval): without a ref'd handle Node would exit mid-await and report nothing.
+const keepAlive = setInterval(() => {}, 1000);
 const NOW = DateTime.fromISO('2026-11-15T12:00:00Z', { zone: 'utc' });
 
 // ---- A · names, zones, dates ------------------------------------------------
@@ -39,7 +45,9 @@ check('A names', 'only spaces -> null', cleanName('    '), 'null');
 check('A names', '60 chars ok, 61 refused', `${!!cleanName('a'.repeat(60))}/${cleanName('a'.repeat(61))}`, 'true/null');
 check('A names', 'counts characters, not UTF-16 units (60 emoji ok)', !!cleanName('🌿'.repeat(60)), 'true');
 check('A names', 'a control character is refused', cleanName('a\u0001b'), 'null');
-check('A names', 'a newline (line separator U+2028) is refused', cleanName('a b'), 'null');
+check('A names', 'a line separator (U+2028) is whitespace: collapsed to one space, never stored raw', cleanName('a\u2028b'), 'a b');
+check('A names', 'a newline inside a name is likewise collapsed', cleanName('a\nb'), 'a b');
+check('A names', 'the module loads (it once held a raw U+2028 inside a regex literal, a SyntaxError)', typeof cleanName, 'function');
 check('A names', 'DEL is refused', cleanName('a\u007fb'), 'null');
 check('A names', 'a number is refused', cleanName(7), 'null');
 check('A names', 'an object is refused', cleanName({ toString: () => 'x' }), 'null');
@@ -108,11 +116,11 @@ check('B setup code', 'with no configured digest nothing matches', setupCodeMatc
 // ---- C · readiness helpers ---------------------------------------------------
 const dir = mkdtempSync(join(tmpdir(), 'olive-ready-'));
 try {
-  for (const f of ['0001_a.sql', '0049_schema_level.sql', '0010_b.sql', 'README.md', 'notes.txt']) writeFileSync(join(dir, f), 'x');
-  check('C schema', 'newest shipped migration is the highest-numbered .sql', newestShippedMigration(dir), '0049_schema_level.sql');
+  for (const f of ['0001_a.sql', '0051_schema_level.sql', '0010_b.sql', 'README.md', 'notes.txt']) writeFileSync(join(dir, f), 'x');
+  check('C schema', 'newest shipped migration is the highest-numbered .sql', newestShippedMigration(dir), '0051_schema_level.sql');
   check('C schema', 'an unreadable directory -> null, not a throw', newestShippedMigration(join(dir, 'nope')), 'null');
   check('C schema', 'an empty directory -> null', newestShippedMigration(mkdtempSync(join(tmpdir(), 'olive-empty-'))), 'null');
-  check('C schema', 'the REAL shipped directory ends at 0049 or later', newestShippedMigration(join(ROOT, 'db', 'migrations')) >= '0049_schema_level.sql', 'true');
+  check('C schema', 'the REAL shipped directory ends at 0051 or later', newestShippedMigration(join(ROOT, 'db', 'migrations')) >= '0051_schema_level.sql', 'true');
   check('C schema', 'db at the image level -> ok', compareSchemaLevel('0049_x.sql', '0049_x.sql'), 'ok');
   check('C schema', 'db AHEAD of the image (a rollback) -> still ok', compareSchemaLevel('0050_y.sql', '0049_x.sql'), 'ok');
   check('C schema', 'db BEHIND the image -> behind', compareSchemaLevel('0047_x.sql', '0049_x.sql'), 'behind');
@@ -259,8 +267,87 @@ check('E tick', 'NaN/Infinity -> default', `${tickIntervalFromEnv({ DELIVERY_TIC
   check('J push', 'no problem message ever contains a credential value', /secret-/.test(JSON.stringify(leaky)), 'false');
 }
 
+// ---- K · the smoke test refuses a target it cannot show is a test stack ---------------
+{
+  const row = (name, ports, project) => ({ name, ports, project });
+  const L = [
+    row('olive-live-server-1', '0.0.0.0:8130->8123/tcp, [::]:8130->8123/tcp', 'olive-live'),
+    row('olive-live-db-1', '5432/tcp', 'olive-live'),
+    row('olive-sim-server-1', '0.0.0.0:8141->8123/tcp', 'olive-sim'),
+    row('olive-fresh-server-1', '0.0.0.0:8123->8123/tcp', 'olive-fresh'),
+    row('olive-fresh-db-1', '5432/tcp', 'olive-fresh'),
+    row('some-other-1', '0.0.0.0:8200->80/tcp', 'other'),
+  ];
+  const j = (o) => judgeSmokeTarget({ containers: L, ...o });
+  const fresh = { dbContainer: 'olive-fresh-db-1', serverContainer: 'olive-fresh-server-1' };
+  check('K smoke', 'the fresh stack on its own port with its own containers is allowed', j({ base: 'http://127.0.0.1:8123', ...fresh }).ok, 'true');
+  check('K smoke', '--base on the LIVE port with NO containers named is refused (the reported hole)', j({ base: 'http://127.0.0.1:8130' }).ok, 'false');
+  check('K smoke', 'and the refusal names the long-lived stack that owns the port', j({ base: 'http://127.0.0.1:8130' }).problems.some((p) => /olive-live-server-1/.test(p)), 'true');
+  check('K smoke', '--base on the SIM port with the fresh containers is refused', j({ base: 'http://127.0.0.1:8141', ...fresh }).ok, 'false');
+  check('K smoke', '--base on the live port with the fresh containers is refused (cleanup would hit the wrong database)', j({ base: 'http://localhost:8130', ...fresh }).ok, 'false');
+  check('K smoke', 'fresh server on its port but the LIVE db container named is refused', j({ base: 'http://127.0.0.1:8123', dbContainer: 'olive-live-db-1', serverContainer: 'olive-fresh-server-1' }).ok, 'false');
+  check('K smoke', 'a db container from a different compose project is refused even if not protected', j({ base: 'http://127.0.0.1:8123', dbContainer: 'some-other-1', serverContainer: 'olive-fresh-server-1' }).ok, 'false');
+  check('K smoke', 'a db container with no project label cannot be tied to the server -> refused', judgeSmokeTarget({ base: 'http://127.0.0.1:8123', ...fresh,
+    containers: [row('olive-fresh-server-1', '0.0.0.0:8123->8123/tcp', 'olive-fresh'), row('olive-fresh-db-1', '5432/tcp', '')] }).ok, 'false');
+  check('K smoke', 'a server container that is not running is refused', j({ base: 'http://127.0.0.1:8123', serverContainer: 'olive-fresh-server-9' }).ok, 'false');
+  check('K smoke', 'a server container that does not publish the --base port is refused', j({ base: 'http://127.0.0.1:8200', ...fresh }).ok, 'false');
+  check('K smoke', 'docker unreachable (listing null) fails CLOSED', judgeSmokeTarget({ base: 'http://127.0.0.1:8123', ...fresh, containers: null }).ok, 'false');
+  check('K smoke', 'a non-loopback host with nothing named cannot be shown to be a test stack', j({ base: `http://${['192', '0', '2', '7'].join('.')}:8123` }).ok, 'false');
+  check('K smoke', 'a native server on a free loopback port with no containers is allowed', j({ base: 'http://127.0.0.1:9999' }).ok, 'true');
+  check('K smoke', 'a protected name is refused even when it is the only thing named', j({ base: 'http://127.0.0.1:9999', dbContainer: 'olive-healthrls-pg' }).ok, 'false');
+  check('K smoke', 'a garbage --base is refused', j({ base: 'not a url' }).ok, 'false');
+  check('K smoke', 'the explicit override passes, and still reports what it overrode', (() => { const v = j({ base: 'http://127.0.0.1:8130', override: true }); return `${v.ok}/${v.problems.every((p) => p.startsWith('overridden: '))}/${v.problems.length > 0}`; })(), 'true/true/true');
+  check('K smoke', 'protected names: live, sim, sec3 pg, healthrls pg, prod, jitsi; fresh is not',
+    ['olive-live-db-1', 'olive-sim-server-1', 'wt-sec3-pg', 'olive-healthrls-pg', 'olive-prod-x', 'jitsi-web'].every(isProtectedName) && !isProtectedName('olive-fresh-db-1'), 'true');
+  check('K smoke', 'docker Ports column parsing: ipv4+ipv6 mapping, a range, an unpublished port, junk',
+    JSON.stringify([...publishedHostPorts('0.0.0.0:8130->8123/tcp, [::]:8130->8123/tcp')]) + JSON.stringify([...publishedHostPorts('0.0.0.0:8000-8002->8000-8002/tcp')]) + JSON.stringify([...publishedHostPorts('5432/tcp')]) + JSON.stringify([...publishedHostPorts(null)]),
+    '[8130][8000,8001,8002][][]');
+  check('K smoke', 'docker listing parse keeps name, ports and project; skips blank lines',
+    JSON.stringify(parseDockerListing('a\t0.0.0.0:1->2/tcp\tp1\r\n\r\nb\t\t\n')), JSON.stringify([{ name: 'a', ports: '0.0.0.0:1->2/tcp', project: 'p1' }, { name: 'b', ports: '', project: '' }]));
+  const smoke = readFileSync(join(ROOT, 'tools', 'smoke-stack.mjs'), 'utf8');
+  check('K smoke', 'smoke-stack.mjs runs the target check before its first request', smoke.indexOf('judgeSmokeTarget(') > 0 && smoke.indexOf('judgeSmokeTarget(') < smoke.indexOf('async function main'), 'true');
+}
+
+// ---- L · probes are not access-logged; /readyz work is shared -------------------------
+{
+  check('L probes', '/healthz is not logged by default', shouldLogAccess({ route: '/healthz' }), 'false');
+  check('L probes', '/readyz is not logged by default (the reported 17k lines a day)', shouldLogAccess({ route: '/readyz' }), 'false');
+  check('L probes', 'ACCESS_LOG_HEALTHZ=1 logs both probes', `${shouldLogAccess({ route: '/healthz', logProbes: true })}/${shouldLogAccess({ route: '/readyz', logProbes: true })}`, 'true/true');
+  check('L probes', 'real traffic is logged', shouldLogAccess({ route: 'POST /v1/families' }), 'true');
+  check('L probes', 'ACCESS_LOG=0 silences everything, even with the probe switch on', shouldLogAccess({ route: 'GET /v1/me', accessLog: false, logProbes: true }), 'false');
+  check('L probes', 'an unmatched path is still logged (a scanner is worth seeing)', shouldLogAccess({ route: 'unmatched' }), 'true');
+  const idx2 = readFileSync(join(ROOT, 'server', 'index.mjs'), 'utf8');
+  check('L probes', 'index.mjs uses shouldLogAccess for the access log', /shouldLogAccess\(\{ route: label/.test(idx2), 'true');
+  check('L probes', 'index.mjs serves /readyz through the shared cache, not a fresh check per probe', /const r = await readiness\(\)/.test(idx2) && /createReadinessCache\(/.test(idx2), 'true');
+  check('L probes', 'a log line still carries only the fixed fields (unchanged)', Object.keys(JSON.parse(accessLogLine({ id: 'abcdefgh', method: 'GET', route: '/readyz', status: 200, ms: 1 }))).join(), 'ts,level,msg,id,method,route,status,ms');
+
+  let n = 0; let clock = 1000; let drain = false;
+  const slow = () => new Promise((r) => setTimeout(() => { n++; r({ ready: true, failing: [], degraded: [], n }); }, 40));
+  const rd = createReadinessCache({ check: slow, isDraining: () => drain, ttlMs: 2000, now: () => clock });
+  const burst = await Promise.all([rd(), rd(), rd(), rd(), rd()]);
+  check('L cache', 'five simultaneous probes share ONE check', `${n}/${burst.every((r) => r.n === 1)}`, '1/true');
+  clock += 1500; await rd();
+  check('L cache', 'a probe inside the TTL reuses the result', n, 1);
+  clock += 600; const after = await rd();
+  check('L cache', 'a probe after the TTL runs a fresh check', `${n}/${after.n}`, '2/2');
+  drain = true; clock += 1; const dr = await rd();
+  check('L cache', 'draining bypasses the cache, so SIGTERM shows on the very next probe', `${n}/${dr.n}`, '3/3');
+  drain = false; clock += 1; await rd();
+  const post = await rd();
+  check('L cache', 'a result computed while draining is not stored: after it clears the earlier genuine result is served', `${n}/${post.n}`, '3/2');
+  let calls = 0; let boom = true;
+  const flaky = createReadinessCache({ check: async () => { calls++; if (boom) throw new Error('x'); return { ready: true, failing: [], degraded: [] }; }, ttlMs: 2000, now: () => clock });
+  let threw1 = false; try { await flaky(); } catch { threw1 = true; }
+  boom = false; const ok = await flaky();
+  check('L cache', 'a failed check is not cached and does not wedge later probes', `${threw1}/${calls}/${ok.ready}`, 'true/2/true');
+  let c3 = 0; const off = createReadinessCache({ check: async () => { c3++; return { ready: true }; }, ttlMs: 0, now: () => clock });
+  await Promise.all([off(), off()]); await off();
+  check('L cache', 'ttlMs 0 turns the cache off (every probe checks)', c3, 3);
+}
+
 let g = '';
 for (const r of rows) { if (r.g !== g) { g = r.g; console.log(`\n${g}`); }
   console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.n}` + (r.ok ? '' : `\n         expected ${r.e}, got ${r.a}`)); }
 console.log(`\n${'-'.repeat(56)}\n${pass} passed, ${fail} failed\n`);
+clearInterval(keepAlive);
 process.exit(fail === 0 ? 0 : 1);

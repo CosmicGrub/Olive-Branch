@@ -23,15 +23,20 @@
  * throwaway row's scheduled instant into the past (the clock), after the worker has
  * materialised it. Without --db-container that step is reported SKIP, not PASS.
  *
- * SAFETY. It only ever touches the containers you name, refuses the owner's long-lived
- * stacks by name, writes only rows whose display names carry its own random marker, and
- * deletes exactly those at the end. Exit code is non-zero if any link FAILs.
+ * SAFETY. It only ever touches the containers you name, writes only rows whose display
+ * names carry its own random marker, and deletes exactly those at the end. Before sending
+ * a single request it works out WHO answers on --base (which running container publishes
+ * that port), refuses the owner's long-lived stacks whether they were named or not, and
+ * checks that --server-container really is the one on that port and --db-container its own
+ * database (same compose project). If it cannot tell, it refuses (tools/smoke_target.mjs).
+ * Exit code is non-zero if any link FAILs.
  */
 import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { DateTime } from 'luxon';
+import { judgeSmokeTarget, parseDockerListing } from './smoke_target.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (name, env, dflt) => {
@@ -51,14 +56,23 @@ const WAIT_S = Number(opt('wait', 'SMOKE_WAIT_S', '60'));
 const PIN = '2468';
 const MARK = `smoke-${randomBytes(4).toString('hex')}`;
 
-// The owner's long-lived stacks. This script writes rows; it must never be pointed at them.
-const PROTECTED = [/^olive-live/, /^olive-sim/, /^wt-sec3/, /^olive-healthrls/, /^olive-prod/, /^jitsi/];
-for (const c of [DB_CONTAINER, SERVER_CONTAINER].filter(Boolean)) {
-  if (PROTECTED.some((re) => re.test(c)) && !flag('i-know-this-is-not-a-test-stack')) {
-    console.error(`refusing to touch container "${c}": it belongs to a long-lived stack. Use the olive-fresh-* stack.`);
-    process.exit(2);
-  }
+// The owner's long-lived stacks. This script writes rows; it must never be pointed at them,
+// by container name OR by --base (the port is what it actually talks to).
+let listing = null;
+try {
+  listing = parseDockerListing(execFileSync('docker',
+    ['ps', '--format', '{{.Names}}\t{{.Ports}}\t{{.Label "com.docker.compose.project"}}'],
+    { encoding: 'utf8', timeout: 20_000 }));
+} catch { listing = null; /* docker unreachable: judgeSmokeTarget fails closed */ }
+const verdict = judgeSmokeTarget({ base: BASE, dbContainer: DB_CONTAINER, serverContainer: SERVER_CONTAINER,
+  containers: listing, override: flag('i-know-this-is-not-a-test-stack') });
+if (!verdict.ok) {
+  console.error(`refusing to run against ${BASE}:`);
+  for (const p of verdict.problems) console.error(`  - ${p}`);
+  console.error('Point --base at the olive-fresh-* stack and name its --server-container and --db-container.');
+  process.exit(2);
 }
+for (const p of verdict.problems) console.error(`warning  ${p}`);
 if (!SETUP) {
   console.error('a setup code is required: --setup-code <FAMILY_SETUP_CODE the server was started with> (or SMOKE_SETUP_CODE)');
   process.exit(2);
