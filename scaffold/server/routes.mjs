@@ -56,7 +56,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          storageKeyInUse, releaseMediaUpload,
          artifactDeliveredToChild, deliveredArtifactForIntent,
          webauthnCredentialById, updateWebauthnSignCount,
-         signUpWithAllowance, precheckSignup, childrenOf, createChildForGuardian,
+         signUpWithAllowance, precheckSignup, recoverAccount, childrenOf, createChildForGuardian,
          claimGuardianInvite, confirmGuardianInvite, declineGuardianInvite,
          guardianInvitesFor } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
@@ -75,7 +75,7 @@ import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
-import { createPairingMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { createPairingMissBudget, createRecoveryMissBudget, createUploadLimiter } from './rate_limit.mjs';
 import { cleanName as cleanIdentityName, cleanTz, cleanBirthDate } from './identity_input.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
@@ -482,6 +482,8 @@ export function ringStateFrom(results) {
 export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = {}) {
   // S-B1: global miss budget for device-pairing redeem (see rate_limit.mjs MissBudget).
   const pairingMissBudget = opts.pairingMissBudget ?? createPairingMissBudget();
+  // Same idea for POST /v1/auth/recover: a code that matches no row cannot be counted against an account.
+  const recoveryMissBudget = opts.recoveryMissBudget ?? createRecoveryMissBudget();
   // S-B6: per-principal cap on concurrent media/homework body decodes.
   const uploadLimiter = opts.uploadLimiter ?? createUploadLimiter();
   // G1: called after a message is banked so anything already due is delivered at once.
@@ -840,6 +842,52 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       return { status: 201, body: {
         token: sessionToken, expiresAt: api.sessionExpiresAt(), userId: result.userId,
         deviceId: result.deviceId, deviceCredential: result.deviceCredential } };
+    },
+  });
+
+  // POST /v1/auth/recover — NO SESSION REQUIRED: the person has lost every
+  // signed-in phone. There is no mailer and no email on the account, so the
+  // proof is TWO secrets held by two parties: an operator-issued, single-use,
+  // short-lived recovery code (tools/provision-recovery.mjs, handed over after
+  // the operator has talked to the person, the same trusted hand-over the
+  // sign-up allowance uses) AND the account's own PIN. See recoverAccount()
+  // for the transaction. Answers: unknown / expired / used / burned codes are
+  // ONE answer (403 invalid_recovery); a live code with a wrong PIN is 403
+  // pin_incorrect (the 5th wrong one burns the code: 423 recovery_locked); a
+  // locked PIN is 403 pin_locked; an account with no PIN cannot be recovered
+  // (403 pin_not_set). On success the account gets a NEW device and a session;
+  // every other guardian device of that account is signed out. Per-IP limited
+  // by index.mjs (the /v1/auth/ prefix), plus a global miss budget here.
+  api.register({
+    method: 'POST', path: '/v1/auth/recover', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      const token = typeof b.recoveryCode === 'string' ? b.recoveryCode.replace(/\s+/g, '') : '';
+      if (token.length < 20 || token.length > 128) {
+        return { status: 400, body: { error: 'recovery_code_required' } };
+      }
+      if (typeof b.pin !== 'string' || !/^[0-9]{4,8}$/.test(b.pin)) {
+        return { status: 400, body: { error: 'pin_required' } };
+      }
+      const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim().slice(0, 60) : '';
+      const budget = recoveryMissBudget.check();
+      if (budget.blocked) {
+        return { status: 429, body: { error: 'recovery_rate_limited', retryAfterSec: budget.retryAfterSec } };
+      }
+      const r = await recoverAccount(pool, { token, pin: b.pin, deviceLabel, now: new Date() });
+      if (!r.ok) {
+        // Only a guess that matched no live code spends the global budget; a wrong PIN has its own counters.
+        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit();
+        const status = r.reason === 'recovery_locked' ? 423 : 403;
+        return { status, body: { error: r.reason } };
+      }
+      const sessionToken = api.issueSessionToken({
+        userId: r.userId, roleName: 'guardian', childId: null, escalated: false, deviceId: r.deviceId });
+      return { status: 201, body: {
+        token: sessionToken, expiresAt: api.sessionExpiresAt(), userId: r.userId,
+        deviceId: r.deviceId, deviceCredential: r.deviceCredential,
+        devicesSignedOut: r.devicesSignedOut } };
     },
   });
 

@@ -104,6 +104,8 @@ void main() {
 
     test('sign-up', () => check('POST', OliveApi.authSignup, () => signUpWithAllowance(_base,
         allowanceToken: 'a' * 24, displayName: 'Sam', homeTz: 'America/Chicago', pin: '4821', deviceLabel: 'This phone', client: rec)));
+    test('get back in with a recovery code', () => check('POST', OliveApi.authRecover, () => recoverAccountWithCode(_base,
+        recoveryCode: 'a' * 24, pin: '4821', deviceLabel: 'This phone', client: rec)));
     test('add a child', () => check('POST', OliveApi.children, () => createChild(_base, 't',
         displayName: 'Ivy', birthDate: '2019-03-04', homeTz: 'America/Chicago', pin: '4821', client: rec)));
     test('list children', () => check('GET', OliveApi.meChildren, () => fetchMyChildren(_base, 't', client: rec)));
@@ -130,7 +132,8 @@ void main() {
   group('every answer a route can give has words', () {
     test('no reason in the account routes is missing from family_account_logic.dart', () {
       final List<String> paths = <String>[
-        OliveApi.authSignup, OliveApi.children, OliveApi.meChildren, OliveApi.guardianships, OliveApi.childGuardianInvites,
+        OliveApi.authSignup, OliveApi.authRecover, OliveApi.children, OliveApi.meChildren, OliveApi.guardianships,
+        OliveApi.childGuardianInvites,
         OliveApi.guardianInvite, OliveApi.guardianInviteAccept, OliveApi.guardianInviteBootstrap,
         OliveApi.guardianInviteClaim, OliveApi.guardianInviteConfirm, OliveApi.guardianInviteDecline,
         OliveApi.guardianInviteRevoke,
@@ -159,6 +162,9 @@ void main() {
     test('invite code length, name lengths and the age ceiling', () {
       final String routesSrc = File('../server/routes.mjs').readAsStringSync();
       expect(routesSrc, contains('token.length < $kAllowanceCodeMin || token.length > $kAllowanceCodeMax'));
+      // The recovery route reads its code in the same 20 to 128 window and its PIN as 4 to 8 digits.
+      expect(routesSrc, contains('b.recoveryCode.replace'));
+      expect(routesSrc, contains(r'/^[0-9]{4,8}$/.test(b.pin)'));
       expect(routesSrc, contains('cleanName(b.displayName, $kAdultNameMax)'));
       expect(routesSrc, contains('cleanName(b.displayName, $kChildNameMax)'));
       final String input = File('../server/identity_input.mjs').readAsStringSync();

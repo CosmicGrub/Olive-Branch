@@ -12,6 +12,8 @@
 //   [CreateAccountScreen]    invite-only sign-up: the invite code from whoever runs the server, your name, your time
 //                            zone, a PIN for the account.
 //   [SignInScreen]           check this phone's sign-in, or sign in on a new phone with a code from a signed-in one.
+//   [RecoverAccountScreen]   no phone is signed in any more: a recovery code from whoever runs the server, and the
+//                            account's PIN. Signs the account's earlier phones out.
 //   [AddChildScreen]         her first name, birth date, time zone, and your PIN.
 //   [InviteGrownUpScreen]    invite another grown-up (your PIN); gives a code to hand over. Olive does not send it.
 //   [JoinInviteScreen]       "I was invited": the code, who it is for, your name; waiting for their yes.
@@ -738,7 +740,12 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() => _result = ok
         ? 'Yes, this phone is signed in and it works.'
         : 'This phone has been removed from the account, or the account was closed. To sign in again, use a code from '
-            'a phone that is still signed in.');
+            'a phone that is still signed in, or a recovery code from whoever runs your server.');
+    // A dead sign-in has just been removed from this phone: show the options for a phone that is not signed in.
+    if (!ok) {
+      final AccountSnapshot fresh = await widget.service.snapshot();
+      if (mounted) setState(() => _snap = fresh);
+    }
   }
 
   @override
@@ -758,8 +765,18 @@ class _SignInScreenState extends State<SignInScreen> {
         const _Note('To sign in on this phone, open Olive on a phone of yours that is already signed in, go to Settings, '
             'then Family, and use the row that makes a code for a device. Choose My own other device. You get a short '
             'code. Enter it here.'),
-        const _Note('If no phone is signed in any more, Olive cannot sign you back in by itself. Ask whoever runs your '
-            'server for help.'),
+        const _Note('If no phone is signed in any more, ask whoever runs your server for a recovery code, then use the '
+            'button below. You will also need your account PIN.'),
+        OutlinedButton(
+            key: const Key('haveRecoveryCode'),
+            onPressed: () async {
+              final NavigatorState nav = Navigator.of(context);
+              final bool? back = await nav.push<bool>(MaterialPageRoute<bool>(
+                  builder: (BuildContext _) => RecoverAccountScreen(service: widget.service)));
+              if (back == true && mounted) nav.pop(true);
+            },
+            child: const Text('I have a recovery code')),
+        const SizedBox(height: 8),
         FilledButton(
             key: const Key('enterSignInCode'),
             onPressed: widget.baseUrl.isEmpty
@@ -784,6 +801,87 @@ class _SignInScreenState extends State<SignInScreen> {
       if (mounted) setState(() => _problem = problemFor(e, AccountAction.signIn));
     }
   }
+}
+
+// ---- get back in ------------------------------------------------------------------------------------
+
+/// A grown-up whose signed-in phones are all gone: the recovery code the person who runs the server gave them, and
+/// the account's own PIN. Two secrets from two places; neither works alone. Success signs the account's earlier
+/// phones out (the screen says so before it is pressed, so nothing is a surprise).
+class RecoverAccountScreen extends StatefulWidget {
+  const RecoverAccountScreen({super.key, required this.service});
+  final FamilyAccountService service;
+
+  @override
+  State<RecoverAccountScreen> createState() => _RecoverAccountScreenState();
+}
+
+class _RecoverAccountScreenState extends State<RecoverAccountScreen> {
+  final TextEditingController _code = TextEditingController();
+  final TextEditingController _pin = TextEditingController();
+  bool _busy = false;
+  bool _done = false;
+  AccountProblem? _problem;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _pin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    if (cleanRecoveryCode(_code.text) == null) {
+      return setState(() => _problem = const AccountProblem(
+          'Enter the recovery code you were given. It is long, and has no spaces.', ProblemKind.fixInput));
+    }
+    if (!looksLikePin(_pin.text)) {
+      return setState(() => _problem = const AccountProblem('Enter your PIN. It is 4 to 8 digits.', ProblemKind.fixInput));
+    }
+    final String pin = _pin.text;
+    final bool? ok = await _guarded<bool>(() async {
+      await widget.service.recoverAccount(recoveryCode: _code.text, pin: pin);
+      return true;
+    },
+        action: AccountAction.recover,
+        setBusy: (bool b) => setState(() => _busy = b),
+        setProblem: (AccountProblem? p) => setState(() => _problem = p));
+    // The PIN is not kept on screen once sent.
+    _pin.clear();
+    if (ok == true) {
+      _code.clear();
+      if (mounted) setState(() => _done = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _Page(
+        title: 'Get back into your account',
+        children: <Widget>[
+          if (_done) ...<Widget>[
+            const _Note("You're back in. This phone is now signed in to your account.", key: Key('recoverDone')),
+            const _Note('Any other phone that was signed in to this account has been signed out. The other grown-ups in '
+                'your family can see in the history that the account was recovered.'),
+            FilledButton(
+                key: const Key('recoverContinue'),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Continue')),
+          ] else ...<Widget>[
+            const _Note('Ask whoever runs your Olive server for a recovery code. It works once, for a few days, and it '
+                'does nothing without your account PIN.'),
+            const _Note('When you use it, this phone becomes your sign-in and every other phone signed in to your account '
+                'is signed out. If you still have one of them, sign in with a code from it instead.'),
+            _ProblemBox(_problem),
+            _TextBox(key: const Key('recoveryCode'), controller: _code, label: 'Recovery code', enabled: !_busy),
+            _PinBox(key: const Key('recoveryPin'), controller: _pin, label: 'Your account PIN', enabled: !_busy),
+            FilledButton(
+                key: const Key('submitRecovery'),
+                onPressed: _busy ? null : _submit,
+                child: Text(_busy ? 'Checking…' : 'Get back in')),
+          ],
+        ],
+      );
 }
 
 // ---- add a child ---------------------------------------------------------------------------------
