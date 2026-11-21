@@ -438,7 +438,8 @@ void main() {
         sink.manifests
           ..clear()
           ..addAll(man0);
-        final Rig phone = await Rig.make(seed: 1, backend: f.phone.backend, clock: f.phone.clock);
+        final Rig phone = f.phone;
+        await phone.svc.staging.clear(BackupKind.family);
         int n = 0;
         sink.onOp = (String op) {
           if (++n == die) throw StateError('killed');
@@ -456,7 +457,8 @@ void main() {
         final RestoreOpen o = await re.open(source: sink, key: f.key, kind: BackupKind.family);
         await re.apply(o);
         final Map<String, String> got = await fresh.hashes();
-        expect(got == first || got == second, isTrue, reason: 'kill at op $die gave neither whole backup');
+        expect(<bool>[jsonEncode(got) == jsonEncode(first), jsonEncode(got) == jsonEncode(second)].contains(true), isTrue,
+            reason: 'kill at op $die gave neither whole backup');
         if (!killed) break;
       }
       expect(die, lessThan(80), reason: 'the sweep reached a run with no kill');
@@ -620,13 +622,13 @@ void main() {
       await _forge(f.phone, f.key, sink, <String, Map<String, Object?>>{
         'child.ivy.journal': <String, Object?>{'e': 'planted'},
         'device.devicekey': <String, Object?>{'seed': 'planted'},
-        'device.localpin': <String, Object?>{'x': 1},
+        'guardian.mom.localpin': <String, Object?>{'x': 1},
         'child.ivy.care': <String, Object?>{'n': 'ok'},
       });
       final Rig fresh = await Rig.make(seed: 2);
       final RestoreEngine re = fresh.svc.restoreEngine();
       final RestoreOpen o = await re.open(source: sink, key: f.key, kind: BackupKind.family);
-      expect(o.refusedAreas, contains('journal'));
+      expect(o.refusedAreas, containsAll(<String>['journal', 'devicekey', 'localpin']));
       await re.apply(o);
       expect((await fresh.services.store.namespaces()).where((String n) => n.contains('journal') || n.contains('devicekey')), isEmpty);
       expect(await fresh.services.area('care', ownerId: 'ivy').get('n'), 'ok');
@@ -703,7 +705,14 @@ void main() {
           expect(await w.target.state.journal(), isNull);
           break;
         }
-        expect(after, before, reason: 'a kill at write $k left the phone changed');
+        // Either every area is as it was, or the restore had already committed and every area is restored whole:
+        // never a mixture.
+        final bool wholeAfter = (after['guardian.mom.learn']!['read'] as List).toSet().containsAll(<Object?>{'mine', 'x', 'y'}) &&
+            after.containsKey('child.ivy.coordination') &&
+            after.containsKey('guardian.mom.familyledger') &&
+            (after['child.ivy.care'] as Map).containsKey('n1');
+        expect(<bool>[after.toString() == before.toString(), wholeAfter].contains(true), isTrue,
+            reason: 'a kill at write $k left a mixture');
         expect(await w.target.state.journal(), isNull, reason: 'journal cleared at write $k');
         expect((await w.target.services.store.namespaces()).where((String n) => n.startsWith('device.restoreundo.')), isEmpty);
       }

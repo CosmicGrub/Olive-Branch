@@ -517,7 +517,8 @@ class RestoreEngine {
         targets.add(<String, Object?>{'ns': ns, 'had': raw != null});
       }
       await state.putJournal(<String, Object?>{
-        'id': restoreId, 'state': 'applying', 'at': _nowMs, 'kind': opened.kind.name, 'targets': targets,
+        'id': restoreId, 'state': 'applying', 'at': _nowMs, 'kind': opened.kind.name, 'seq': opened.newestSeq,
+        'targets': targets,
       });
       for (final MapEntry<String, Map<String, Object?>> w in writes.entries) {
         await _nsByName(w.key).replaceAll(w.value);
@@ -532,9 +533,16 @@ class RestoreEngine {
       }
       final Map<String, Object?>? j = await state.journal();
       await state.putJournal(<String, Object?>{...?j, 'state': 'applied'}); // the commit
-      await _cleanupUndo();
-      await state.clearJournal();
-      await _finished(opened, restoreId);
+      // Committed. Nothing below may turn this into a failure: the records are in, and whatever tidying did not get done
+      // (the safety copies, the journal, the note of what was restored) is finished by recoverInterrupted() at the
+      // next start.
+      try {
+        await _cleanupUndo();
+        await state.clearJournal();
+        await _finished(opened, restoreId);
+      } catch (_) {
+        // left for the next start
+      }
       return RestoreOutcome(
           restoredNamespaces: <String>[for (final PlannedArea a in changing) a.target.namespace],
           setAside: conflicts.length,
@@ -587,6 +595,14 @@ class RestoreEngine {
     }
     if (j['state'] == 'applied') {
       await _cleanupUndo();
+      // The note of what was restored, which the restore itself may not have got to write before it was stopped.
+      final Object? kindName = j['kind'], seq = j['seq'];
+      final BackupKind? kind = BackupKind.values.where((BackupKind k) => k.name == kindName).firstOrNull;
+      if (kind != null && seq is int) {
+        await state.recordRestored(_nowMs, seq);
+        await state.setLastSeq(kind, seq);
+      }
+      await state.clearClearanceRecord();
       await state.clearJournal();
       return const RecoveryReport(rolledBack: false, finished: true, stuck: false);
     }

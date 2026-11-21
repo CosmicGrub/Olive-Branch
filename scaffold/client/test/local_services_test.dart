@@ -119,7 +119,7 @@ void main() {
       expect(all, contains('journal'));
     });
 
-    test('the only device-wide areas are the role, the three device pairing records and the optional account note; coordinates are never a field (P3)', () {
+    test('the only device-wide areas are the role, the three device pairing records, the optional account note and the three backup areas; coordinates are never a field (P3)', () {
       // Owner requirement 2026-11-08: the role is kept once per device and holds one word. The pairing records
       // (2026-11-08, section 8.5.11) are the only other areas not owned by a child or a grown-up: a signing
       // key, the certificate a grown-up's device signed, and a PIN verifier. All sealed, all small, no PIN.
@@ -127,10 +127,15 @@ void main() {
       // Sealed, small, and never a name, PIN, invite code or sign-in key.
       final List<LocalDataEntry> device =
           localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
-      expect(device.map((LocalDataEntry e) => e.area).toList(),
-          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account']);
+      // Backup (section 8.16.8) adds three more, all sealed: its own small state, the copies a restore set aside, and
+      // the safety copy that exists only while a restore runs. They are the only device areas allowed to be large,
+      // because they hold documents (what the phone had), not records about the device.
+      expect(device.map((LocalDataEntry e) => e.area).toList(), <String>[
+        'role', 'devicekey', 'childpairing', 'adultunlock', 'account', 'backupstate', 'backupaside', 'restoreundo',
+      ]);
+      const Set<String> documents = <String>{'backupaside', 'restoreundo', 'backupstate'};
       for (final LocalDataEntry e in device) {
-        expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
+        if (!documents.contains(e.area)) expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
         if (e.area != 'role') expect(e.encrypted, isTrue, reason: '${e.area} is sealed');
       }
       expect(device.first.what.toLowerCase(), contains('not a name'));

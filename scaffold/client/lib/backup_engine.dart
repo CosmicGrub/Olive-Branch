@@ -200,7 +200,7 @@ class BackupEngine {
       try {
         final int q = await s.highestSeq(setId);
         if (q > top) top = q;
-      } catch (_) {
+      } on BackupSinkException {
         // an unreachable destination just does not raise the number; its own numbering is checked when it is reached
       }
     }

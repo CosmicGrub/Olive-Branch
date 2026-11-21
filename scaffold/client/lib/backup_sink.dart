@@ -272,19 +272,19 @@ class DirectoryBackupSink extends ChunkedBackupSink {
   }
 
   @override
-  Future<bool> hasChunk(String set, String id) {
+  Future<bool> hasChunk(String set, String id) async {
     _check(set, chunk: id);
     return _io(() => _chunk(set, id).exists());
   }
 
   @override
-  Future<void> putChunk(String set, String id, Uint8List bytes) {
+  Future<void> putChunk(String set, String id, Uint8List bytes) async {
     _check(set, chunk: id);
     return _io(() => _writeAtomic(_chunk(set, id), bytes));
   }
 
   @override
-  Future<Uint8List?> getChunk(String set, String id) {
+  Future<Uint8List?> getChunk(String set, String id) async {
     _check(set, chunk: id);
     return _io(() async {
       final File f = _chunk(set, id);
@@ -293,7 +293,7 @@ class DirectoryBackupSink extends ChunkedBackupSink {
   }
 
   @override
-  Future<void> deleteChunk(String set, String id) {
+  Future<void> deleteChunk(String set, String id) async {
     _check(set, chunk: id);
     return _io(() async {
       final File f = _chunk(set, id);
@@ -302,13 +302,13 @@ class DirectoryBackupSink extends ChunkedBackupSink {
   }
 
   @override
-  Future<void> putManifest(String set, String name, Uint8List bytes) {
+  Future<void> putManifest(String set, String name, Uint8List bytes) async {
     _check(set, manifest: name);
     return _io(() => _writeAtomic(_manifest(set, name), bytes));
   }
 
   @override
-  Future<List<String>> listManifests(String set) {
+  Future<List<String>> listManifests(String set) async {
     _check(set);
     return _io(() async {
       final Directory d = Directory('${root.path}$_sep$set${_sep}manifests');
@@ -328,7 +328,7 @@ class DirectoryBackupSink extends ChunkedBackupSink {
   }
 
   @override
-  Future<Uint8List?> getManifest(String set, String name) {
+  Future<Uint8List?> getManifest(String set, String name) async {
     _check(set, manifest: name);
     return _io(() async {
       final File f = _manifest(set, name);
@@ -337,7 +337,7 @@ class DirectoryBackupSink extends ChunkedBackupSink {
   }
 
   @override
-  Future<void> deleteManifest(String set, String name) {
+  Future<void> deleteManifest(String set, String name) async {
     _check(set, manifest: name);
     return _io(() async {
       final File f = _manifest(set, name);
