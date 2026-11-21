@@ -447,6 +447,16 @@ class AdultWindow extends ChangeNotifier {
     }
   }
 
+  /// A device of another pairing version knocked on this window (see [PairingFailure.versionMismatch]). Shown on the
+  /// grown-up's phone only; it carries no name, key or count, and does not touch the window's tries.
+  bool versionMismatchSeen = false;
+
+  void _noteVersionMismatch() {
+    if (versionMismatchSeen) return;
+    versionMismatchSeen = true;
+    notifyListeners();
+  }
+
   /// One incoming message. Null means "no answer". Never throws on a malformed message. [source] names where it
   /// came from (a LAN address as the transport sees it); null (the in-process path) is never limited.
   Future<Map<String, dynamic>?> handle(Map<String, dynamic> m, {String? source}) async {
@@ -508,6 +518,9 @@ class AdultWindow extends ChangeNotifier {
       case 'hello':
         if (state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.hello, kSourceMaxHello)) return null;
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
+        // A tablet of another pairing version cannot finish: remember that it knocked, so THIS phone can say so in
+        // plain words. The window still answers; the tablet stops by its own check and shows only its calm card.
+        if (m['pv'] != kPairingProtocolVersion) _noteVersionMismatch();
         // The window id this hello was addressed by: the session id (a QR) or the discovery handle (nearby).
         final Uint8List helloId = sidOk ? sid : discoveryHandle;
         if (_allowedChildKey != null) {
@@ -545,7 +558,10 @@ class AdultWindow extends ChangeNotifier {
       case 'pake1':
         if (state != WindowState.open) return null;
         // An older (or newer) build cannot derive the same key: stay silent, uncounted, before anything else.
-        if (m['pv'] != kPairingProtocolVersion) return null;
+        if (m['pv'] != kPairingProtocolVersion) {
+          _noteVersionMismatch();
+          return null;
+        }
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
         // Mode B: a pake1 from anyone but the scanned, hello-verified child is dropped WITHOUT being counted, so a
         // device that merely photographed the child's picture cannot use up the window's budget.
@@ -722,7 +738,9 @@ class ChildPairing {
       familyKey: familyKey, graceUntilMs: graceUntilMs, childAge: childAge);
 }
 
-enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed }
+/// Why a pairing attempt did not finish. [versionMismatch] is for the GROWN-UP's phone only: the other side runs a
+/// different pairing version. The child's surface never branches on it (one calm fallback for every failure).
+enum PairingFailure { unreachable, notMatched, declined, timedOut, malformed, versionMismatch }
 
 class PairingResult {
   const PairingResult.ok(ChildPairing this.pairing) : failure = null;
@@ -790,7 +808,7 @@ class ChildPairingClient {
       });
       if (hello == null || hello['t'] != 'hello-ok') return const PairingResult.failed(PairingFailure.unreachable);
       // A window of another version (an older build never states one): stop before any PAKE message, calmly.
-      if (hello['pv'] != kPairingProtocolVersion) return const PairingResult.failed(PairingFailure.notMatched);
+      if (hello['pv'] != kPairingProtocolVersion) return const PairingResult.failed(PairingFailure.versionMismatch);
       if (sid == null) {
         // Found by handle: the session id is whatever the window that answered says it is. It is a nonce, not a
         // secret; the channel identifier below binds it into the key exchange either way.

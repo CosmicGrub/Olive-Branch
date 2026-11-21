@@ -9,6 +9,8 @@
 // ADULT device: the list of child devices it certified ('pairedkids'), so "Forget this tablet" can revoke one.
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
+
 import 'device_keys.dart';
 import 'local_pin.dart';
 import 'local_store.dart';
@@ -120,8 +122,50 @@ class LocalStoreChildPairingRepository implements ChildPairingRepository {
   }
 }
 
+/// What a read of the grown-up's list of paired tablets found. A list that merely came back short is not the same as
+/// an empty one: [skipped] counts entries that were stored but could not be read, and [unreadable] says the store
+/// itself could not be read (or held something that is not a list). Callers that would say "no tablet" must check
+/// [verifiablyEmpty], never `kids.isEmpty`.
+class PairedKidsLoad {
+  const PairedKidsLoad(this.kids, {this.skipped = 0, this.unreadable = false});
+
+  /// Every entry that read cleanly.
+  final List<PairedKid> kids;
+
+  /// Stored entries that could not be read. They are left exactly as they were on disk.
+  final int skipped;
+
+  /// The store could not be read at all, so nothing is known.
+  final bool unreadable;
+
+  /// True only when the list was read in full and holds nothing: safe to say "no tablet is connected".
+  bool get verifiablyEmpty => !unreadable && skipped == 0 && kids.isEmpty;
+
+  /// Some of what is stored could not be shown (a skipped entry or an unreadable store).
+  bool get incomplete => unreadable || skipped > 0;
+}
+
+/// Raised when a tablet cannot be recorded because the list could not be read first. Writing over a list that was
+/// not read could erase tablets already recorded, so nothing is written.
+class PairedKidsUnreadable implements Exception {
+  const PairedKidsUnreadable();
+  @override
+  String toString() => 'PairedKidsUnreadable';
+}
+
+/// Bumped after every successful change to a paired-tablet list, so a screen that shows it (the guardian home's one
+/// sentence) can read it again without being rebuilt.
+final ChangeNotifier kPairedKidsChanged = _PairedKidsChanged();
+
+class _PairedKidsChanged extends ChangeNotifier {
+  void bump() => notifyListeners();
+}
+
 abstract class PairedKidsRepository {
   Future<List<PairedKid>> load();
+
+  /// Like [load] but says what could not be read. Never throws for a damaged store.
+  Future<PairedKidsLoad> loadChecked();
   Future<void> add(PairedKid kid);
   Future<void> forget(String certId);
   Future<void> setPhoneOnly(String certId, bool value);
@@ -132,14 +176,25 @@ class MemoryPairedKidsRepository implements PairedKidsRepository {
   @override
   Future<List<PairedKid>> load() async => List<PairedKid>.of(_l);
   @override
-  Future<void> add(PairedKid kid) async => _l.add(kid);
+  Future<PairedKidsLoad> loadChecked() async => PairedKidsLoad(List<PairedKid>.of(_l));
   @override
-  Future<void> forget(String certId) async => _l.removeWhere((PairedKid k) => k.certId == certId);
+  Future<void> add(PairedKid kid) async {
+    _l.add(kid);
+    (kPairedKidsChanged as _PairedKidsChanged).bump();
+  }
+
+  @override
+  Future<void> forget(String certId) async {
+    _l.removeWhere((PairedKid k) => k.certId == certId);
+    (kPairedKidsChanged as _PairedKidsChanged).bump();
+  }
+
   @override
   Future<void> setPhoneOnly(String certId, bool value) async {
     for (int i = 0; i < _l.length; i++) {
       if (_l[i].certId == certId) _l[i] = _withPhoneOnly(_l[i], value);
     }
+    (kPairedKidsChanged as _PairedKidsChanged).bump();
   }
 }
 
@@ -152,36 +207,80 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
   final LocalNamespace _ns;
   static const String _key = 'kids';
 
-  @override
-  Future<List<PairedKid>> load() async {
-    final Object? raw = await _ns.get(_key);
-    if (raw is! List) return <PairedKid>[];
-    final List<PairedKid> out = <PairedKid>[];
-    for (final Object? e in raw) {
-      if (e is! Map) continue;
-      try {
-        out.add(PairedKid(
-            certId: e['certId'] as String, childDeviceKey: unb64(e['cpk'] as String), childId: e['cid'] as String,
-            deviceName: e['dn'] as String, issuedAtMs: e['iat'] as int, phoneOnly: e['po'] == true));
-      } catch (_) {}
+  PairedKid? _parse(Object? e) {
+    if (e is! Map) return null;
+    try {
+      return PairedKid(
+          certId: e['certId'] as String, childDeviceKey: unb64(e['cpk'] as String), childId: e['cid'] as String,
+          deviceName: e['dn'] as String, issuedAtMs: e['iat'] as int, phoneOnly: e['po'] == true);
+    } catch (_) {
+      return null;
     }
-    return out;
   }
 
-  Future<void> _write(List<PairedKid> l) => _ns.put(_key, <Object?>[
-        for (final PairedKid k in l)
-          <String, Object?>{'certId': k.certId, 'cpk': b64(k.childDeviceKey), 'cid': k.childId, 'dn': k.deviceName, 'iat': k.issuedAtMs, if (k.phoneOnly) 'po': true},
-      ]);
+  /// The stored list in order: each slot is the parsed tablet, or null with the raw value kept for the entries that
+  /// could not be read. Null overall when the store could not be read, or holds something that is not a list.
+  Future<List<({PairedKid? kid, Object? raw})>?> _slots() async {
+    final Object? raw;
+    try {
+      raw = await _ns.get(_key);
+    } catch (_) {
+      return null;
+    }
+    if (raw == null) return <({PairedKid? kid, Object? raw})>[];
+    if (raw is! List) return null;
+    return <({PairedKid? kid, Object? raw})>[for (final Object? e in raw) (kid: _parse(e), raw: e)];
+  }
 
   @override
-  Future<void> add(PairedKid kid) async => _write(<PairedKid>[...await load(), kid]);
+  Future<PairedKidsLoad> loadChecked() async {
+    final List<({PairedKid? kid, Object? raw})>? slots = await _slots();
+    if (slots == null) return const PairedKidsLoad(<PairedKid>[], unreadable: true);
+    // A file that was damaged (or from a newer or unknown version) is set aside and the area starts empty, so "nothing
+    // stored" after such a recovery is NOT "no tablet": the list could not be read. Writing stays allowed (the set-aside
+    // copy is kept on disk, and refusing would stop any tablet ever being recorded again); once a list is written the
+    // area is no longer empty and reads normally.
+    if (slots.isEmpty && _ns.recovery != RecoveryKind.none) return const PairedKidsLoad(<PairedKid>[], unreadable: true);
+    return PairedKidsLoad(
+      <PairedKid>[for (final s in slots) if (s.kid != null) s.kid!],
+      skipped: slots.where((s) => s.kid == null).length,
+    );
+  }
 
   @override
-  Future<void> forget(String certId) async =>
-      _write((await load()).where((PairedKid k) => k.certId != certId).toList());
+  Future<List<PairedKid>> load() async => (await loadChecked()).kids;
+
+  static Object? _json(PairedKid k) =>
+      <String, Object?>{'certId': k.certId, 'cpk': b64(k.childDeviceKey), 'cid': k.childId, 'dn': k.deviceName, 'iat': k.issuedAtMs, if (k.phoneOnly) 'po': true};
+
+  /// Applies [change] to the readable tablets and writes the list back. Entries that could not be read are written
+  /// back exactly as they were, in place, never dropped: a bad entry is never erased by a change to a good one. When the
+  /// list itself cannot be read nothing is written and [PairedKidsUnreadable] is thrown.
+  Future<void> _mutate(List<PairedKid> Function(List<PairedKid> current) change, {PairedKid? append}) async {
+    final List<({PairedKid? kid, Object? raw})>? slots = await _slots();
+    if (slots == null) throw const PairedKidsUnreadable();
+    final List<PairedKid> next = change(<PairedKid>[for (final s in slots) if (s.kid != null) s.kid!]);
+    final Map<String, PairedKid> byId = <String, PairedKid>{for (final PairedKid k in next) k.certId: k};
+    final List<Object?> out = <Object?>[];
+    for (final s in slots) {
+      if (s.kid == null) {
+        out.add(s.raw);
+      } else if (byId.containsKey(s.kid!.certId)) {
+        out.add(_json(byId[s.kid!.certId]!));
+      }
+    }
+    if (append != null) out.add(_json(append));
+    await _ns.put(_key, out);
+    (kPairedKidsChanged as _PairedKidsChanged).bump();
+  }
 
   @override
-  Future<void> setPhoneOnly(String certId, bool value) async => _write(<PairedKid>[
-        for (final PairedKid k in await load()) k.certId == certId ? _withPhoneOnly(k, value) : k,
-      ]);
+  Future<void> add(PairedKid kid) => _mutate((List<PairedKid> l) => l, append: kid);
+
+  @override
+  Future<void> forget(String certId) => _mutate((List<PairedKid> l) => l.where((PairedKid k) => k.certId != certId).toList());
+
+  @override
+  Future<void> setPhoneOnly(String certId, bool value) =>
+      _mutate((List<PairedKid> l) => <PairedKid>[for (final PairedKid k in l) k.certId == certId ? _withPhoneOnly(k, value) : k]);
 }

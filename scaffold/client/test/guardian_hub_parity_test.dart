@@ -340,20 +340,22 @@ void main() {
       expect(guardianStateLine(childName: 'Ivy', sentence: 'Ivy is just home', connected: false), 'Ivy is just home');
     });
     test('otherwise, in priority: not connected, offline, then the part of her day', () {
-      expect(guardianStateLine(childName: 'Ivy', connected: false, dayPart: 'school'), contains('isn’t connected yet'));
+      expect(guardianStateLine(childName: 'Ivy', connected: false, tabletPaired: false, dayPart: 'school'), contains('isn’t connected yet'));
       expect(guardianStateLine(childName: 'Ivy', connected: true), contains('You are offline'));
       expect(guardianStateLine(childName: 'Ivy', connected: true, dayPart: 'after_school'),
           'It is ${dayPartLabel('after_school').toLowerCase()} for Ivy.');
     });
     test('a blank sentence is not a sentence', () {
-      expect(guardianStateLine(childName: 'Ivy', sentence: '  ', connected: false), contains('isn’t connected yet'));
+      expect(guardianStateLine(childName: 'Ivy', sentence: '  ', connected: false, tabletPaired: false), contains('isn’t connected yet'));
     });
     test('it never claims a mood, a place or a status it was not given', () {
-      for (final String s in <String>[
-        guardianStateLine(childName: 'Ivy', connected: false),
+      for (final String? s in <String?>[
+        guardianStateLine(childName: 'Ivy', connected: false, tabletPaired: false),
+        guardianStateLine(childName: 'Ivy', connected: false, tabletPaired: true),
         guardianStateLine(childName: 'Ivy', connected: true),
         guardianStateLine(childName: 'Ivy', connected: true, dayPart: 'wake'),
       ]) {
+        if (s == null) continue;
         expect(s.toLowerCase(), isNot(matches(RegExp(r'happy|sad|upset|at (school|home|dad|mom)|location|where'))), reason: s);
       }
     });

@@ -26,7 +26,12 @@ import 'form_factors.dart' as ff show Posture, Viewport, postureFor;
 /// descriptions supplied by the caller; this widget decides only which one
 /// is shown, never what either one contains.
 class CoverCollapse extends StatelessWidget {
-  const CoverCollapse({super.key, required this.full, required this.collapsed});
+  const CoverCollapse({super.key, required this.full, required this.collapsed, this.chromeHeight = 0});
+
+  /// Height of chrome the caller's Scaffold put ABOVE this widget (an app bar). The posture belongs to the screen, not
+  /// to what an app bar leaves over, so it is added back before the posture is read: a cover screen stays a cover
+  /// screen when the screen gains a bar (the guardian home's Settings gear).
+  final double chromeHeight;
 
   /// The screen's ordinary layout — shown at every posture except foldCover.
   final Widget full;
@@ -38,7 +43,7 @@ class CoverCollapse extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
     final posture =
-        ff.postureFor(ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight));
+        ff.postureFor(ff.Viewport(w: constraints.maxWidth, h: constraints.maxHeight + chromeHeight));
     return posture == ff.Posture.foldCover ? collapsed : full;
   });
 }
