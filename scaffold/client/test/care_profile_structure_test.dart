@@ -78,12 +78,14 @@ void main() {
     }
   });
 
-  test('the areas are named only by the store, the catalogue and the wipe screen', () {
+  test('the areas are named only by the store, the catalogue, the wipe screen and the backup classification', () {
     final Set<String> files = <String>{
       for (final File f in Directory('lib').listSync().whereType<File>().where((File f) => f.path.endsWith('.dart')))
         if (RegExp(r'''['"](aboutchild|aboutplans)['"]''').hasMatch(_code(f.path))) f.uri.pathSegments.last,
     };
-    expect(files, <String>{'care_profile_store.dart', 'local_services.dart', 'clear_local_data_screen.dart'});
+    // backup_classes.dart must name EVERY catalogued area (a test fails if one has no decision), so it names these two
+    // as grown-up family records. It holds no data and no behaviour: only the id and the decision.
+    expect(files, <String>{'care_profile_store.dart', 'local_services.dart', 'clear_local_data_screen.dart', 'backup_classes.dart'});
   });
 
   test('the profile screens are the guardian shell: they import no child screen and no pairing file', () {
