@@ -261,21 +261,21 @@ void main() {
       expect(w.attemptsLeft, 5);
     });
 
-    test('a window that answers like version 1 (details in the clear, no version) -> calm notMatched, no further message sent', () async {
+    test('a window that answers like version 1 (details in the clear, no version) -> calm versionMismatch, no further message sent', () async {
       final DeviceKey ck = await _key();
       final _Fixed t = _Fixed(<String, dynamic>{
         't': 'hello-ok', 'sid': b64(_b(16, 1)), 'afp': 'x', 'apk': 'x', 'an': 'Mom', 'fid': 'f',
       });
       final PairingResult r = await _client(ck, t).pair(sid: _b(16, 1), password: '4829');
-      expect(r.failure, PairingFailure.notMatched);
+      expect(r.failure, PairingFailure.versionMismatch);
       expect(t.sent.length, 1);
     });
 
-    test('a window announcing another version than this build speaks -> calm notMatched', () async {
+    test('a window announcing another version than this build speaks -> calm versionMismatch', () async {
       final DeviceKey ck = await _key();
       final PairingResult r = await _client(ck, _Fixed(<String, dynamic>{'t': 'hello-ok', 'pv': kPairingProtocolVersion + 1, 'sid': b64(_b(16, 1))}))
           .pair(sid: _b(16, 1), password: '4829');
-      expect(r.failure, PairingFailure.notMatched);
+      expect(r.failure, PairingFailure.versionMismatch);
     });
 
     test('a child announcing a higher version than the window speaks is answered with the window\'s own version', () async {
