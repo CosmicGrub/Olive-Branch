@@ -72,7 +72,7 @@ const Map<String, SyncKind> kSyncKinds = <String, SyncKind>{
 const List<String> kSyncNeverAreas = <String>[
   'journal', 'worries', 'feelings', 'teen', 'mymarks', 'memorybox', 'lists', 'pictures', 'stories', 'jokes', 'lessons',
   'collections', 'ladder', 'nicknames', 'homegrowth', 'onboarding', 'profile', 'playsave', 'daytime', 'outbox',
-  'localpin', 'devicekey', 'adultunlock', 'childpairing', 'role', 'pairedkids', 'learn', 'compass',
+  'localpin', 'devicekey', 'adultunlock', 'childpairing', 'role', 'pairedkids', 'learn', 'compass', 'updatestage',
 ];
 
 Uint8List _u32(int v) => Uint8List.fromList(<int>[(v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]);
