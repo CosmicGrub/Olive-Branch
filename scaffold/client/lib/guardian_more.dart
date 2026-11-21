@@ -58,6 +58,7 @@ import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
 import 'family_account_entry.dart';
+import 'recovery_paths_entry.dart' show openRecoverySafety;
 import 'family_account_store.dart' show forgetAccountOnThisPhone;
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
@@ -840,6 +841,16 @@ class GuardianMoreScreen extends StatelessWidget {
             subtitle: 'Link a second phone so it can reset a forgotten PIN. Works with no internet',
             onTap: () => _open(context, GuardianPhonesScreen(pin: local!.services.pin,
               recovery: local.services.recovery!, myLabel: 'A grown-up'))),
+        // Optional, like the account: shown only where the build can reach a server. Connected (signed in): the printed
+        // recovery sheet, one trusted helper, notices and helping another grown-up. Not connected: "Lost your phone?".
+        if (live)
+          SettingsRow(id: 'lostphonesafety', icon: Icons.phonelink_erase_outlined, title: 'Lost phone safety',
+            subtitle: 'A printed recovery sheet and one trusted helper, so a lost phone never means a lost family',
+            onTap: () => openRecoverySafety(context, baseUrl: baseUrl!))
+        else if (local?.onLostPhone != null)
+          SettingsRow(id: 'lostphone', icon: Icons.phonelink_erase_outlined, title: 'Lost your phone?',
+            subtitle: 'Get back into your family on this phone. Nothing is lost',
+            onTap: () => local!.onLostPhone!(context)),
         SettingsRow(id: 'controls', icon: Icons.shield_outlined, title: 'Parental controls',
           subtitle: live ? 'Hide or pace anything $childName sees. Messages are always on' : 'Needs a live session',
           onTap: () => live

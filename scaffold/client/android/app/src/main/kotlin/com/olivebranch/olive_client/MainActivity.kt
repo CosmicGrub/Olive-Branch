@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.view.WindowManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -36,6 +40,10 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private var lastKnownMode: String = "none"
+
+    // The printed recovery sheet (sheet_printer.dart): the page is rendered by a WebView that is held only until the
+    // platform's print service has taken it, and let go of when the app closes.
+    private var printView: WebView? = null
 
     // §16.2 #6 — WrapperJitsiMeetActivity (a different Gradle module; see
     // KioskBridge.ACTION_CALL_LOCK_TASK_EXITED's own doc comment for why this
@@ -80,6 +88,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        printView?.destroy()
+        printView = null
         IncomingCallBridge.onDestroyed()
         super.onDestroy()
     }
@@ -139,6 +149,28 @@ class MainActivity : FlutterActivity() {
                     startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         android.net.Uri.fromParts("package", packageName, null)))
                     result.success(null)
+                } catch (e: Exception) {
+                    result.error("unavailable", null, null)
+                }
+            } else result.notImplemented()
+        }
+        // The printed recovery sheet (sheet_printer.dart): hands one small page to the phone's own print dialog. The
+        // page is text passed in by the app; nothing is saved to a file and nothing is sent anywhere by this code.
+        MethodChannel(messenger, "olive/print_sheet").setMethodCallHandler { call, result ->
+            if (call.method == "print") {
+                try {
+                    val title = call.argument<String>("title") ?: "Olive recovery sheet"
+                    val html = call.argument<String>("html") ?: ""
+                    val view = WebView(this)
+                    view.webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(v: WebView, url: String?) {
+                            val manager = getSystemService(Context.PRINT_SERVICE) as PrintManager
+                            manager.print(title, v.createPrintDocumentAdapter(title), PrintAttributes.Builder().build())
+                        }
+                    }
+                    printView = view
+                    view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                    result.success(true)
                 } catch (e: Exception) {
                     result.error("unavailable", null, null)
                 }

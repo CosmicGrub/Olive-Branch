@@ -56,10 +56,15 @@ Widget _pinField(Key key, TextEditingController c, VoidCallback onSubmit, {Strin
 
 /// "I forgot my PIN" on THIS phone. Pops with true once a new PIN is really stored.
 class ForgotPinScreen extends StatefulWidget {
-  const ForgotPinScreen({super.key, required this.pin, required this.recovery, this.scannerBuilder});
+  const ForgotPinScreen({super.key, required this.pin, required this.recovery, this.scannerBuilder, this.onLostPhone});
   final LocalPinService pin;
   final GuardianRecovery? recovery;
   final ScannerBuilder? scannerBuilder;
+
+  /// Opens "Lost your phone?" (recovery_paths_screens.dart). Null in a build or a test that does not offer it. It is the
+  /// way back for a grown-up whose PIN is forgotten because the phone is gone: a new phone, an account, and the family
+  /// that comes back with it.
+  final VoidCallback? onLostPhone;
 
   @override
   State<ForgotPinScreen> createState() => _ForgotPinScreenState();
@@ -149,6 +154,18 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
   @override
   Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
 
+  /// "I lost my phone, or I'm on a new phone": the other way back, for when no linked phone can help.
+  Widget _lostPhone() => widget.onLostPhone == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: OutlinedButton.icon(
+              key: const Key('forgotLostPhone'),
+              icon: const Icon(Icons.phonelink_erase_outlined),
+              onPressed: widget.onLostPhone,
+              label: const Text("I lost my phone, or I'm on a new phone")),
+        );
+
   Widget _buildSensitive(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return Scaffold(
@@ -162,6 +179,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                 Icon(Icons.lock_reset_outlined, size: 40, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 12),
                 const Text(kNoRecoveryWords, key: Key('forgotNoRecovery')),
+                _lostPhone(),
                 const SizedBox(height: 16),
                 OutlinedButton(
                     key: const Key('forgotBack'), onPressed: () => Navigator.of(context).maybePop(false), child: const Text('Back')),
@@ -184,6 +202,7 @@ class _ForgotPinScreenState extends State<ForgotPinScreen> {
                 if (_message != null)
                   Padding(padding: const EdgeInsets.only(top: 12), child: Text(_message!, key: const Key('forgotMessage'))),
                 TextButton(key: const Key('forgotFresh'), onPressed: _fresh, child: const Text('New picture')),
+                _lostPhone(),
               ]),
             _F.newPin => ListView(children: <Widget>[
                 Text('They said yes', key: const Key('forgotApproved'), style: tt.titleMedium),

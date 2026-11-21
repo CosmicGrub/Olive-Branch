@@ -860,7 +860,9 @@ export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promi
 export type SecurityEventKind =
   | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
   | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added'
-  | 'account_recovered';
+  | 'account_recovered'
+  | 'recovery_sheet_made' | 'recovery_helper_named' | 'recovery_helper_removed'
+  | 'recovery_started' | 'recovery_approved' | 'recovery_stopped';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -882,6 +884,17 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   invite_created: 'A guardian invite was created',
   guardian_added: 'A grown-up was given access to a child',
   account_recovered: 'A guardian account was recovered on a new device; its earlier devices were signed out',
+  recovery_sheet_made: 'A recovery sheet was made for a guardian account',
+  recovery_helper_named: 'A trusted helper was named for a guardian account',
+  recovery_helper_removed: 'The trusted helper of a guardian account was removed',
+  recovery_started: 'Getting a guardian account back on a new phone was started; it waits before anything changes',
+  'recovery_started:parent': 'A grown-up started getting another grown-up back in on a new phone; it waits 48 hours',
+  'recovery_started:sheet': 'A recovery sheet was used to start getting a guardian account back; it waits 72 hours',
+  recovery_approved: 'A grown-up said yes to getting an account back on a new phone',
+  recovery_stopped: 'Getting an account back on a new phone was stopped; nothing changed',
+  'recovery_stopped:helper': 'The trusted helper said no, so getting an account back on a new phone was stopped',
+  'recovery_stopped:grownup': 'A grown-up stopped getting an account back on a new phone; nothing changed',
+  'recovery_stopped:wrong_guesses': 'Getting an account back on a new phone was stopped after too many wrong tries',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -6106,4 +6119,725 @@ export function dbPort(pool: pg.Pool): DbPort {
     siblingLinkFor: (childA: string, childB: string) => siblingLinkFor(pool, childA, childB),
     isDeviceRevoked: (deviceId: string) => isPairedDeviceRevoked(pool, deviceId),
   };
+}
+
+// ============================================================================
+//  RECOVERY PATHS (migration 0055): losing a phone without losing anything.
+//
+//  Two ways back that need no operator, and a helper who can only say yes:
+//
+//    two or more grown-ups  ANOTHER grown-up of the family starts the recovery
+//                           of the one who lost their phone (that IS their
+//                           yes: it needs their own PIN), the family waits 48
+//                           hours with a notice on every phone, anyone can
+//                           stop it, then the new phone finishes with the
+//                           code the helping grown-up handed over plus the
+//                           lost-phone owner's own PIN (or their sheet).
+//    one grown-up           the printed recovery sheet starts it, the family
+//                           (here: every phone the account still has, and the
+//                           helper if one was named) waits 72 hours, the
+//                           helper's yes is needed if one was named, then the
+//                           new phone finishes. The sheet is spent.
+//
+//  The account that comes back is the SAME app_user row: the same family,
+//  children and history. No second account is made, no row is copied, moved or
+//  deleted, and the older phones are signed out (never deleted) at the end.
+//
+//  Wrong guesses are counted on the request they were made against (five and
+//  it is over), never on the account's own PIN lockout, so a stranger can end
+//  THEIR attempt but can never lock the real owner out of their own phone.
+//
+//  Every function here runs as `system`: the routes decide who may ask, and
+//  the four tables let no other role read or write them.
+// ============================================================================
+
+/** The waiting period with another grown-up (SD-2). */
+export const RECOVERY_WAIT_SECOND_PARENT_MS = 48 * 3_600_000;
+/** The waiting period with no other grown-up (SD-2). */
+export const RECOVERY_WAIT_SOLE_PARENT_MS = 72 * 3_600_000;
+/** The floor the table also enforces: never below 24 hours, whatever else changes. */
+export const RECOVERY_WAIT_FLOOR_MS = 24 * 3_600_000;
+/** A request that nobody finishes ends by itself after this long. */
+export const RECOVERY_REQUEST_TTL_MS = 10 * 24 * 3_600_000;
+export const RECOVERY_REQUEST_MAX_OPEN = 3;
+export const RECOVERY_REQUEST_MAX_PER_DAY = 5;
+/** Wrong PINs at the end of a recovery before THAT request is over. */
+export const RECOVERY_REQUEST_MAX_WRONG = 5;
+export const RECOVERY_HELPER_INVITE_TTL_HOURS = 72;
+
+// Crockford base32: no I, L, O or U, so a key read aloud or copied from paper survives a smudge.
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export type RecoveryCodeKind = 'sheet' | 'request' | 'helper-invite';
+const CODE_LENGTH: Record<RecoveryCodeKind, number> = { sheet: 24, request: 20, 'helper-invite': 16 };
+
+function newCrockford(n: number): string {
+  let s = '';
+  for (let i = 0; i < n; i++) s += CROCKFORD[randomInt(32)];
+  return s;
+}
+function groupCode(raw: string): string { return raw.match(/.{1,4}/g)!.join('-'); }
+
+/** A human-friendly code of the right length for its purpose, in groups of four ("K7Q2-M9XD-..."). */
+export function newRecoveryCode(kind: RecoveryCodeKind): string {
+  return groupCode(newCrockford(CODE_LENGTH[kind]));
+}
+
+/**
+ * What a person typed, as the canonical code, or null when it cannot be one:
+ * spaces, dashes and case are ignored, O reads as 0, I and L read as 1 (the
+ * usual smudges), anything else outside the alphabet is no code at all.
+ */
+export function normaliseRecoveryCode(kind: RecoveryCodeKind, raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > 64) return null;
+  const s = raw.toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+  if (s.length !== CODE_LENGTH[kind]) return null;
+  for (const ch of s) if (!CROCKFORD.includes(ch)) return null;
+  return s;
+}
+
+/** SHA-256 hex of a normalised code. The purpose is part of the hash, so a helper invite can never be a sheet key. */
+export function recoveryCodeDigest(kind: RecoveryCodeKind, normalised: string): string {
+  return createHash('sha256').update(`olive-recovery-${kind}-v1:${normalised}`, 'utf8').digest('hex');
+}
+
+/** The helper's own long-lived key: 32 CSPRNG bytes, shown once, held by the helper's phone. */
+export function newRecoveryHelperKey(): string { return randomBytes(32).toString('base64url'); }
+export function recoveryHelperKeyDigest(key: string): string {
+  return createHash('sha256').update(`olive-recovery-helper-key-v1:${key}`, 'utf8').digest('hex');
+}
+
+function eqHex(a: string, b: string): boolean {
+  const x = Buffer.from(a, 'utf8'), y = Buffer.from(b, 'utf8');
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** Grown-ups that may help or stop each other: both are real parents, neither restricted, neither observer-only. */
+const PARENT_PAIR_SQL = `
+  SELECT 1 FROM effective_guardianship a
+    JOIN effective_guardianship b ON b.child_id = a.child_id
+    JOIN app_user ua ON ua.id = a.user_id AND ua.deactivated_at IS NULL
+    JOIN app_user ub ON ub.id = b.user_id AND ub.deactivated_at IS NULL
+   WHERE a.user_id = $1 AND b.user_id = $2 AND a.user_id <> b.user_id
+     AND a.role = 'guardian' AND b.role = 'guardian'
+     AND a.restricted = false AND b.restricted = false
+     AND a.observer_only = false AND b.observer_only = false
+   LIMIT 1`;
+
+async function areParentsOf(q: Query, a: string, b: string): Promise<boolean> {
+  return (await q(PARENT_PAIR_SQL, [a, b])).length > 0;
+}
+
+/** The other grown-ups of this account (same rule as [PARENT_PAIR_SQL]), with whether each has a phone that still works. */
+async function otherParentsOf(
+  q: Query, userId: string,
+): Promise<Array<{ userId: string; name: string; hasLivePhone: boolean }>> {
+  const rows = await q(
+    `SELECT DISTINCT u.id, u.display_name,
+            EXISTS (SELECT 1 FROM paired_device d
+                     WHERE d.role = 'guardian' AND d.target_id = u.id AND d.revoked_at IS NULL) AS live
+       FROM effective_guardianship a
+       JOIN effective_guardianship b ON b.child_id = a.child_id AND b.user_id <> a.user_id
+       JOIN app_user u ON u.id = b.user_id AND u.deactivated_at IS NULL
+      WHERE a.user_id = $1 AND a.role = 'guardian' AND b.role = 'guardian'
+        AND a.restricted = false AND b.restricted = false
+        AND a.observer_only = false AND b.observer_only = false
+      ORDER BY u.display_name, u.id`, [userId]);
+  return rows.map((r: any) => ({ userId: r.id, name: r.display_name, hasLivePhone: r.live === true }));
+}
+
+// ---------------------------------------------------------------- the sheet --
+
+/** Makes (or replaces) the printed recovery key of an account. The key is returned ONCE; only its hash is kept. */
+export async function makeRecoverySheet(
+  pool: pg.Pool, input: { userId: string; now?: Date },
+): Promise<{ ok: true; key: string; sheetId: string; replacedOlder: boolean; cancelledOpen: number }
+          | { ok: false; reason: 'account_not_found' }> {
+  const now = input.now ?? new Date();
+  const key = newRecoveryCode('sheet');
+  const digest = recoveryCodeDigest('sheet', normaliseRecoveryCode('sheet', key)!);
+  return withSession(pool, { roleName: 'system', userId: input.userId, childId: null }, async (q) => {
+    const u = await q(`SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [input.userId]);
+    if (!u.length) return { ok: false, reason: 'account_not_found' } as const;
+    const old = await q(
+      `UPDATE recovery_sheet SET retired_at = $2, retired_reason = 'replaced'
+        WHERE user_id = $1 AND retired_at IS NULL RETURNING id`, [input.userId, now.toISOString()]);
+    // The old key is no longer trusted: a recovery that was started with it stops.
+    const stopped = await q(
+      `UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = 'sheet_replaced'
+        WHERE user_id = $1 AND mode = 'sole_parent' AND completed_at IS NULL AND cancelled_at IS NULL
+        RETURNING id`, [input.userId, now.toISOString()]);
+    const rows = await q(
+      `INSERT INTO recovery_sheet (user_id, key_hash, created_at) VALUES ($1, $2, $3) RETURNING id`,
+      [input.userId, digest, now.toISOString()]);
+    await insertSecurityEvent(q, input.userId, 'recovery_sheet_made');
+    return { ok: true, key, sheetId: rows[0].id, replacedOlder: old.length > 0, cancelledOpen: stopped.length } as const;
+  });
+}
+
+/** "Type it back from the paper": checks the key against the live sheet and records that it was kept. */
+export async function checkRecoverySheet(
+  pool: pg.Pool, input: { userId: string; key: string; now?: Date },
+): Promise<{ ok: true; confirmedAt: string } | { ok: false; reason: 'no_sheet' | 'wrong_key' }> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('sheet', input.key);
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, key_hash, confirmed_at FROM recovery_sheet
+        WHERE user_id = $1 AND retired_at IS NULL FOR UPDATE`, [input.userId]);
+    if (!rows.length) return { ok: false, reason: 'no_sheet' } as const;
+    if (!norm || !eqHex(recoveryCodeDigest('sheet', norm), rows[0].key_hash)) return { ok: false, reason: 'wrong_key' } as const;
+    const upd = await q(
+      `UPDATE recovery_sheet SET confirmed_at = COALESCE(confirmed_at, $2), last_checked_at = $2
+        WHERE id = $1 RETURNING confirmed_at`, [rows[0].id, now.toISOString()]);
+    return { ok: true, confirmedAt: new Date(upd[0].confirmed_at).toISOString() } as const;
+  });
+}
+
+export interface RecoverySheetState {
+  exists: boolean; createdAt: string | null; confirmedAt: string | null; lastCheckedAt: string | null;
+  /** The most recent sheet was spent by a recovery and no new one has been made. */
+  spentNeedsNew: boolean;
+}
+export async function recoverySheetOf(pool: pg.Pool, userId: string): Promise<RecoverySheetState> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT created_at, confirmed_at, last_checked_at, retired_at, retired_reason
+         FROM recovery_sheet WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT 1`, [userId]);
+    const iso = (v: any) => (v ? new Date(v).toISOString() : null);
+    if (!rows.length) return { exists: false, createdAt: null, confirmedAt: null, lastCheckedAt: null, spentNeedsNew: false };
+    const r = rows[0];
+    const live = r.retired_at === null;
+    return { exists: live, createdAt: live ? iso(r.created_at) : null, confirmedAt: live ? iso(r.confirmed_at) : null,
+             lastCheckedAt: live ? iso(r.last_checked_at) : null,
+             spentNeedsNew: !live && r.retired_reason === 'used' };
+  });
+}
+
+// --------------------------------------------------------------- the helper --
+
+function cleanHelperLabel(raw: string): string | null {
+  const s = (raw ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (s.length < 1 || s.length > 40 || s.includes('@')) return null;
+  return s;
+}
+
+/** Names the ONE trusted helper (a first name) and mints the single-use invite to hand them. Naming another removes the first. */
+export async function inviteRecoveryHelper(
+  pool: pg.Pool, input: { userId: string; label: string; now?: Date; ttlHours?: number },
+): Promise<{ ok: true; helperId: string; code: string; expiresAt: string; replacedOlder: boolean }
+          | { ok: false; reason: 'invalid_label' | 'account_not_found' }> {
+  const now = input.now ?? new Date();
+  const label = cleanHelperLabel(input.label);
+  if (!label) return { ok: false, reason: 'invalid_label' };
+  const ttl = input.ttlHours ?? RECOVERY_HELPER_INVITE_TTL_HOURS;
+  if (!(ttl > 0 && ttl <= 24 * 14)) throw new Error('inviteRecoveryHelper: ttlHours out of range');
+  const code = newRecoveryCode('helper-invite');
+  const digest = recoveryCodeDigest('helper-invite', normaliseRecoveryCode('helper-invite', code)!);
+  return withSystemSession(pool, async (q) => {
+    const u = await q(`SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [input.userId]);
+    if (!u.length) return { ok: false, reason: 'account_not_found' } as const;
+    const old = await q(
+      `UPDATE recovery_helper SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
+      [input.userId, now.toISOString()]);
+    const rows = await q(
+      `INSERT INTO recovery_helper (user_id, label, invite_hash, invite_expires_at, created_at)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, invite_expires_at`,
+      [input.userId, label, digest, new Date(now.getTime() + ttl * 3_600_000).toISOString(), now.toISOString()]);
+    await insertSecurityEvent(q, input.userId, 'recovery_helper_named');
+    return { ok: true, helperId: rows[0].id, code, expiresAt: new Date(rows[0].invite_expires_at).toISOString(),
+             replacedOlder: old.length > 0 } as const;
+  });
+}
+
+/** The person handed the invite opens it on their own phone: it becomes their helper key. Single use, short lived. */
+export async function acceptRecoveryHelperInvite(
+  pool: pg.Pool, input: { code: string; now?: Date },
+): Promise<{ ok: true; helperKey: string; accountName: string; label: string } | { ok: false; reason: 'invalid_invite' }> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('helper-invite', input.code);
+  if (!norm) return { ok: false, reason: 'invalid_invite' };
+  const digest = recoveryCodeDigest('helper-invite', norm);
+  const helperKey = newRecoveryHelperKey();
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT h.id, h.label, h.invite_expires_at, h.accepted_at, h.revoked_at, u.display_name, u.deactivated_at
+         FROM recovery_helper h JOIN app_user u ON u.id = h.user_id
+        WHERE h.invite_hash = $1 FOR UPDATE OF h`, [digest]);
+    const h = rows[0];
+    if (!h || h.accepted_at || h.revoked_at || h.deactivated_at || new Date(h.invite_expires_at) <= now) {
+      return { ok: false, reason: 'invalid_invite' } as const;
+    }
+    const cas = await q(
+      `UPDATE recovery_helper SET accepted_at = $2, key_hash = $3
+        WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL RETURNING id`,
+      [h.id, now.toISOString(), recoveryHelperKeyDigest(helperKey)]);
+    if (cas.length !== 1) return { ok: false, reason: 'invalid_invite' } as const;
+    return { ok: true, helperKey, accountName: h.display_name, label: h.label } as const;
+  });
+}
+
+/** Removes the helper (and any invite not yet used). Their key stops working at once. */
+export async function removeRecoveryHelper(
+  pool: pg.Pool, input: { userId: string; now?: Date },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE recovery_helper SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
+      [input.userId, now.toISOString()]);
+    if (rows.length) await insertSecurityEvent(q, input.userId, 'recovery_helper_removed');
+    return rows.length > 0;
+  });
+}
+
+export interface RecoveryHelperState {
+  state: 'none' | 'invited' | 'active'; label: string | null; invitedAt: string | null;
+  inviteExpiresAt: string | null; acceptedAt: string | null;
+}
+export async function recoveryHelperOf(pool: pg.Pool, userId: string, now: Date = new Date()): Promise<RecoveryHelperState> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT label, created_at, invite_expires_at, accepted_at FROM recovery_helper
+        WHERE user_id = $1 AND revoked_at IS NULL`, [userId]);
+    const none = { state: 'none', label: null, invitedAt: null, inviteExpiresAt: null, acceptedAt: null } as const;
+    if (!rows.length) return none;
+    const r = rows[0];
+    const iso = (v: any) => (v ? new Date(v).toISOString() : null);
+    if (r.accepted_at) return { state: 'active', label: r.label, invitedAt: iso(r.created_at),
+      inviteExpiresAt: null, acceptedAt: iso(r.accepted_at) } as const;
+    // an invite nobody opened in time is as good as none
+    if (new Date(r.invite_expires_at) <= now) return none;
+    return { state: 'invited', label: r.label, invitedAt: iso(r.created_at),
+      inviteExpiresAt: iso(r.invite_expires_at), acceptedAt: null } as const;
+  });
+}
+
+async function helperByKey(q: Query, key: unknown): Promise<{ id: string; userId: string } | null> {
+  if (typeof key !== 'string' || key.length < 20 || key.length > 128) return null;
+  const rows = await q(
+    `SELECT h.id, h.user_id FROM recovery_helper h JOIN app_user u ON u.id = h.user_id AND u.deactivated_at IS NULL
+      WHERE h.key_hash = $1 AND h.accepted_at IS NOT NULL AND h.revoked_at IS NULL`,
+    [recoveryHelperKeyDigest(key)]);
+  return rows.length ? { id: rows[0].id, userId: rows[0].user_id } : null;
+}
+
+export interface HelperRequestView {
+  requestId: string; accountName: string; startedAt: string; readyAt: string; confirmed: boolean;
+}
+/**
+ * What a helper can see: the recovery requests, still open, that name THEM, with the first name of the account
+ * and the times. Not the children, not the family, not any other request. null = not (or no longer) a helper.
+ */
+export async function helperOpenRequests(
+  pool: pg.Pool, input: { helperKey: string; now?: Date },
+): Promise<HelperRequestView[] | null> {
+  const now = input.now ?? new Date();
+  return withSystemSession(pool, async (q) => {
+    const h = await helperByKey(q, input.helperKey);
+    if (!h) return null;
+    const rows = await q(
+      `SELECT r.id, r.created_at, r.ready_at, r.helper_confirmed_at, u.display_name
+         FROM recovery_request r JOIN app_user u ON u.id = r.user_id
+        WHERE r.helper_id = $1 AND r.user_id = $2 AND r.completed_at IS NULL AND r.cancelled_at IS NULL
+          AND r.expires_at > $3
+        ORDER BY r.created_at DESC`, [h.id, h.userId, now.toISOString()]);
+    return rows.map((r: any) => ({
+      requestId: r.id, accountName: r.display_name, startedAt: new Date(r.created_at).toISOString(),
+      readyAt: new Date(r.ready_at).toISOString(), confirmed: r.helper_confirmed_at !== null }));
+  });
+}
+
+/**
+ * The helper's ONE power: "yes, that is them" or "no". A yes records the confirmation (it does not shorten the
+ * wait); a no ends the request. Only a request that names THIS helper, of the account that named them, still open.
+ * Everything else is one answer, `not_found`.
+ */
+export async function helperAnswer(
+  pool: pg.Pool, input: { helperKey: string; requestId: string; answer: 'yes' | 'no'; now?: Date },
+): Promise<{ ok: true; result: 'confirmed' | 'stopped' } | { ok: false; reason: 'invalid_helper' | 'not_found' }> {
+  const now = input.now ?? new Date();
+  return withSystemSession(pool, async (q) => {
+    const h = await helperByKey(q, input.helperKey);
+    if (!h) return { ok: false, reason: 'invalid_helper' } as const;
+    if (typeof input.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.requestId)) {
+      return { ok: false, reason: 'not_found' } as const;
+    }
+    const rows = await q(
+      `SELECT id, user_id, helper_id, mode, expires_at, completed_at, cancelled_at
+         FROM recovery_request WHERE id = $1 FOR UPDATE`, [input.requestId]);
+    const r = rows[0];
+    if (!r || r.helper_id !== h.id || r.user_id !== h.userId || r.mode !== 'sole_parent' ||
+        r.completed_at || r.cancelled_at || new Date(r.expires_at) <= now) {
+      return { ok: false, reason: 'not_found' } as const;
+    }
+    if (input.answer === 'yes') {
+      await q(`UPDATE recovery_request SET helper_confirmed_at = COALESCE(helper_confirmed_at, $2) WHERE id = $1`,
+        [r.id, now.toISOString()]);
+      return { ok: true, result: 'confirmed' } as const;
+    }
+    await q(
+      `UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = 'helper' WHERE id = $1`,
+      [r.id, now.toISOString()]);
+    await insertSecurityEvent(q, r.user_id, 'recovery_stopped', { variant: 'helper' });
+    return { ok: true, result: 'stopped' } as const;
+  });
+}
+
+// ------------------------------------------------------------ the recovery --
+
+export type StartRecoveryError =
+  | 'not_family'             // the other grown-up is not a parent of this family (or no such account): ONE answer
+  | 'invalid_sheet'          // the key matches no live sheet
+  | 'ask_other_grownup'      // the sheet is right, but another grown-up with a working phone must help instead
+  | 'too_many_open' | 'too_many_recent';
+
+async function recoveryLoadCaps(q: Query, userId: string, now: Date): Promise<StartRecoveryError | null> {
+  const open = await q(
+    `SELECT count(*)::int AS n FROM recovery_request
+      WHERE user_id = $1 AND completed_at IS NULL AND cancelled_at IS NULL AND expires_at > $2`,
+    [userId, now.toISOString()]);
+  if (open[0].n >= RECOVERY_REQUEST_MAX_OPEN) return 'too_many_open';
+  const recent = await q(
+    `SELECT count(*)::int AS n FROM recovery_request WHERE user_id = $1 AND created_at > $2`,
+    [userId, new Date(now.getTime() - 24 * 3_600_000).toISOString()]);
+  if (recent[0].n >= RECOVERY_REQUEST_MAX_PER_DAY) return 'too_many_recent';
+  return null;
+}
+
+/**
+ * Two or more grown-ups. `helperUserId` (who has already shown their own PIN at the route) starts the recovery of
+ * `targetUserId`, a parent of the same family. That IS the second grown-up's yes. Returns the code the helping
+ * grown-up hands the person on their new phone. Nothing changes for anyone until the 48 hours are over.
+ */
+export async function startRecoveryForGrownUp(
+  pool: pg.Pool, input: { helperUserId: string; targetUserId: string; now?: Date },
+): Promise<{ ok: true; requestId: string; code: string; readyAt: string; expiresAt: string; targetName: string }
+          | { ok: false; reason: StartRecoveryError }> {
+  const now = input.now ?? new Date();
+  const code = newRecoveryCode('request');
+  const digest = recoveryCodeDigest('request', normaliseRecoveryCode('request', code)!);
+  return withSystemSession(pool, async (q) => {
+    // Serialise every start for this account, so the caps cannot be slipped by racing calls.
+    await q(`SELECT pg_advisory_xact_lock(hashtext('recovery_start:' || $1::text))`, [input.targetUserId]);
+    if (input.helperUserId === input.targetUserId || !(await areParentsOf(q, input.helperUserId, input.targetUserId))) {
+      return { ok: false, reason: 'not_family' } as const;
+    }
+    const cap = await recoveryLoadCaps(q, input.targetUserId, now);
+    if (cap) return { ok: false, reason: cap } as const;
+    const ready = new Date(now.getTime() + RECOVERY_WAIT_SECOND_PARENT_MS);
+    const rows = await q(
+      `INSERT INTO recovery_request
+         (user_id, mode, started_by_kind, secret_hash, created_at, expires_at, approved_by, approved_at, ready_at)
+       VALUES ($1, 'second_parent', 'parent', $2, $3, $4, $5, $3, $6) RETURNING id`,
+      [input.targetUserId, digest, now.toISOString(),
+       new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(), input.helperUserId, ready.toISOString()]);
+    // a notice in the history of every child either grown-up guards (the one who started it is the actor)
+    await insertSecurityEvent(q, input.helperUserId, 'recovery_started', { variant: 'parent' });
+    const t = await q(`SELECT display_name FROM app_user WHERE id = $1`, [input.targetUserId]);
+    return { ok: true, requestId: rows[0].id, code, readyAt: ready.toISOString(),
+             expiresAt: new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(),
+             targetName: t[0].display_name } as const;
+  });
+}
+
+/**
+ * One grown-up (or every other grown-up's phone is gone). The printed sheet starts it; no session is needed.
+ * The caller (the route) has already spent a miss from the global budget if this answers `invalid_sheet`.
+ */
+export async function startRecoveryWithSheet(
+  pool: pg.Pool, input: { key: string; deviceLabel?: string; now?: Date },
+): Promise<{ ok: true; requestId: string; code: string; readyAt: string; expiresAt: string;
+             helperRequired: boolean; accountName: string }
+          | { ok: false; reason: StartRecoveryError }> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('sheet', input.key);
+  if (!norm) return { ok: false, reason: 'invalid_sheet' };
+  const sheetDigest = recoveryCodeDigest('sheet', norm);
+  const code = newRecoveryCode('request');
+  const digest = recoveryCodeDigest('request', normaliseRecoveryCode('request', code)!);
+  const label = (input.deviceLabel ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60);
+  return withSystemSession(pool, async (q) => {
+    const peek = await q(`SELECT user_id FROM recovery_sheet WHERE key_hash = $1 AND retired_at IS NULL`, [sheetDigest]);
+    if (!peek.length) return { ok: false, reason: 'invalid_sheet' } as const;
+    const userId: string = peek[0].user_id;
+    await q(`SELECT pg_advisory_xact_lock(hashtext('recovery_start:' || $1::text))`, [userId]);
+    // re-decide under the lock: the sheet may have been replaced or spent a moment ago
+    const live = await q(
+      `SELECT s.id, u.display_name FROM recovery_sheet s JOIN app_user u ON u.id = s.user_id AND u.deactivated_at IS NULL
+        WHERE s.key_hash = $1 AND s.retired_at IS NULL FOR UPDATE OF s`, [sheetDigest]);
+    if (!live.length) return { ok: false, reason: 'invalid_sheet' } as const;
+    // another grown-up with a working phone: the safe way back is THEIR yes, not a sheet alone
+    if ((await otherParentsOf(q, userId)).some((p) => p.hasLivePhone)) {
+      return { ok: false, reason: 'ask_other_grownup' } as const;
+    }
+    const cap = await recoveryLoadCaps(q, userId, now);
+    if (cap) return { ok: false, reason: cap } as const;
+    const helper = await q(
+      `SELECT id FROM recovery_helper WHERE user_id = $1 AND accepted_at IS NOT NULL AND revoked_at IS NULL`, [userId]);
+    const ready = new Date(now.getTime() + RECOVERY_WAIT_SOLE_PARENT_MS);
+    const rows = await q(
+      `INSERT INTO recovery_request
+         (user_id, mode, started_by_kind, secret_hash, device_label, created_at, expires_at, ready_at,
+          helper_id, helper_required)
+       VALUES ($1, 'sole_parent', 'sheet', $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [userId, digest, label, now.toISOString(), new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(),
+       ready.toISOString(), helper.length ? helper[0].id : null, helper.length > 0]);
+    await insertSecurityEvent(q, userId, 'recovery_started', { variant: 'sheet' });
+    return { ok: true, requestId: rows[0].id, code, readyAt: ready.toISOString(),
+             expiresAt: new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(),
+             helperRequired: helper.length > 0, accountName: live[0].display_name } as const;
+  });
+}
+
+export type RecoveryPhase =
+  | 'waiting'              // the waiting period is not over
+  | 'waiting_for_helper'   // the wait is over, the named helper has not said yes
+  | 'ready'                // the new phone can finish now
+  | 'stopped' | 'done' | 'expired';
+
+export interface RecoveryRequestStatus {
+  requestId: string; phase: RecoveryPhase; mode: 'second_parent' | 'sole_parent'; accountName: string;
+  createdAt: string; readyAt: string; expiresAt: string; helperRequired: boolean; helperConfirmed: boolean;
+  stoppedBy: string | null;
+}
+
+function phaseOf(r: any, now: Date): RecoveryPhase {
+  if (r.completed_at) return 'done';
+  if (r.cancelled_at) return r.cancelled_by_kind === 'expired' ? 'expired' : 'stopped';
+  if (new Date(r.expires_at) <= now) return 'expired';
+  if (new Date(r.ready_at) > now) return 'waiting';
+  if (r.helper_required && !r.helper_confirmed_at) return 'waiting_for_helper';
+  return 'ready';
+}
+
+/** What the new phone asks while it waits. Unknown, malformed: one answer. A finished or stopped code answers its end, never credentials. */
+export async function recoveryStatusByCode(
+  pool: pg.Pool, input: { code: string; now?: Date },
+): Promise<{ ok: true; status: RecoveryRequestStatus } | { ok: false; reason: 'invalid_recovery' }> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('request', input.code);
+  if (!norm) return { ok: false, reason: 'invalid_recovery' };
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT r.*, u.display_name FROM recovery_request r JOIN app_user u ON u.id = r.user_id
+        WHERE r.secret_hash = $1`, [recoveryCodeDigest('request', norm)]);
+    if (!rows.length) return { ok: false, reason: 'invalid_recovery' } as const;
+    const r = rows[0];
+    return { ok: true, status: {
+      requestId: r.id, phase: phaseOf(r, now), mode: r.mode, accountName: r.display_name,
+      createdAt: new Date(r.created_at).toISOString(), readyAt: new Date(r.ready_at).toISOString(),
+      expiresAt: new Date(r.expires_at).toISOString(), helperRequired: r.helper_required,
+      helperConfirmed: r.helper_confirmed_at !== null,
+      stoppedBy: r.cancelled_by_kind ?? null } } as const;
+  });
+}
+
+/** The new phone gives up. Only the holder of the code can do it. */
+export async function cancelRecoveryByCode(
+  pool: pg.Pool, input: { code: string; now?: Date },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('request', input.code);
+  if (!norm) return false;
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = 'new_phone'
+        WHERE secret_hash = $1 AND completed_at IS NULL AND cancelled_at IS NULL RETURNING id`,
+      [recoveryCodeDigest('request', norm), now.toISOString()]);
+    return rows.length === 1;
+  });
+}
+
+export interface RecoveryNoticeView {
+  requestId: string; phase: RecoveryPhase; mode: 'second_parent' | 'sole_parent';
+  accountUserId: string; accountName: string; aboutMe: boolean;
+  startedByName: string | null;   // the grown-up who started it (second_parent); null for the sheet
+  startedByMe: boolean;           // the viewer is the grown-up who started it (their own yes)
+  createdAt: string; readyAt: string; helperRequired: boolean; helperConfirmed: boolean;
+  endedAt: string | null; stoppedBy: string | null;
+}
+
+/**
+ * What a signed-in grown-up sees, on EVERY phone they have: recoveries of their own account, recoveries of the
+ * other grown-ups of the family (so they can stop them), and the last few that ended (so a stopped or finished
+ * one is never a mystery). The people who can help (this grown-up's parents of the family) are listed too.
+ */
+export async function recoveryNoticesFor(
+  pool: pg.Pool, input: { userId: string; now?: Date },
+): Promise<{ open: RecoveryNoticeView[]; recentEnded: RecoveryNoticeView[];
+            canHelp: Array<{ userId: string; name: string }> }> {
+  const now = input.now ?? new Date();
+  return withSystemSession(pool, async (q) => {
+    const parents = await otherParentsOf(q, input.userId);
+    const ids = [input.userId, ...parents.map((p) => p.userId)];
+    const rows = await q(
+      `SELECT r.*, u.display_name AS account_name, s.display_name AS starter_name
+         FROM recovery_request r
+         JOIN app_user u ON u.id = r.user_id
+         LEFT JOIN app_user s ON s.id = r.approved_by
+        WHERE r.user_id = ANY($1::uuid[])
+          AND (r.completed_at IS NULL AND r.cancelled_at IS NULL
+               OR COALESCE(r.completed_at, r.cancelled_at) > $2)
+        ORDER BY r.created_at DESC LIMIT 30`,
+      [ids, new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString()]);
+    const views: RecoveryNoticeView[] = rows.map((r: any) => ({
+      requestId: r.id, phase: phaseOf(r, now), mode: r.mode, accountUserId: r.user_id,
+      accountName: r.account_name, aboutMe: r.user_id === input.userId, startedByName: r.starter_name ?? null,
+      startedByMe: r.approved_by !== null && r.approved_by === input.userId,
+      createdAt: new Date(r.created_at).toISOString(), readyAt: new Date(r.ready_at).toISOString(),
+      helperRequired: r.helper_required, helperConfirmed: r.helper_confirmed_at !== null,
+      endedAt: r.completed_at ? new Date(r.completed_at).toISOString()
+             : r.cancelled_at ? new Date(r.cancelled_at).toISOString() : null,
+      stoppedBy: r.cancelled_by_kind ?? null }));
+    const isOpen = (v: RecoveryNoticeView) => v.phase === 'waiting' || v.phase === 'waiting_for_helper' || v.phase === 'ready';
+    return { open: views.filter(isOpen), recentEnded: views.filter((v) => !isOpen(v)).slice(0, 5),
+             canHelp: parents.map((p) => ({ userId: p.userId, name: p.name })) };
+  });
+}
+
+/**
+ * Anyone can stop it: the account's own phones, or another grown-up of the family (each after their own PIN, which
+ * the route has already checked). No waiting period of its own. Not found, not yours, already over: ONE answer.
+ */
+export async function cancelRecoveryAsGrownUp(
+  pool: pg.Pool, input: { userId: string; requestId: string; now?: Date },
+): Promise<{ ok: true; by: 'owner_phone' | 'other_parent' } | { ok: false; reason: 'not_found' }> {
+  const now = input.now ?? new Date();
+  if (typeof input.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.requestId)) return { ok: false, reason: 'not_found' };
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT id, user_id, completed_at, cancelled_at FROM recovery_request WHERE id = $1 FOR UPDATE`, [input.requestId]);
+    const r = rows[0];
+    if (!r || r.completed_at || r.cancelled_at) return { ok: false, reason: 'not_found' } as const;
+    const own = r.user_id === input.userId;
+    if (!own && !(await areParentsOf(q, input.userId, r.user_id))) return { ok: false, reason: 'not_found' } as const;
+    const by = own ? 'owner_phone' : 'other_parent';
+    await q(`UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = $3, cancelled_by_user = $4 WHERE id = $1`,
+      [r.id, now.toISOString(), by, input.userId]);
+    await insertSecurityEvent(q, input.userId, 'recovery_stopped', { variant: 'grownup' });
+    return { ok: true, by } as const;
+  });
+}
+
+export type FinishRecoveryError =
+  | 'invalid_recovery'      // unknown, stopped, finished, expired, malformed: ONE answer
+  | 'too_early'             // the waiting period is not over
+  | 'waiting_for_helper'    // the wait is over but the named helper has not said yes
+  | 'proof_required'        // second_parent: neither a PIN nor the sheet was given
+  | 'wrong_proof'           // a wrong PIN or key (counted on this request)
+  | 'too_many_wrong';       // that was the wrong guess that ended this request
+
+/**
+ * The new phone finishes. ONE transaction decides everything under row locks, so racing finishes and a racing
+ * cancel give exactly one outcome:
+ *
+ *   1. the request is found by the digest of its code and locked; an unknown, stopped, finished or expired one is
+ *      `invalid_recovery` (a replayed code does nothing);
+ *   2. the waiting period must be over (`too_early`), and the named helper, if there is one, must have said yes;
+ *   3. two or more grown-ups: the owner proves it with their own PIN or their sheet (wrong ones are counted on
+ *      THIS request, five end it, and the account's own PIN lockout is never touched). One grown-up: the sheet
+ *      already proved it at the start;
+ *   4. only then: the request is finished (compare-and-swap), the SAME account gets a new device, every other
+ *      guardian device of it is signed out, the sheet that was used is spent, a PIN chosen on the new phone
+ *      replaces the old one, any other open request for the account ends, and a notice is written.
+ *
+ * Nothing is created, copied, moved or deleted apart from those rows: the family, the children and every record
+ * stay exactly where they were, under the same account id.
+ */
+export async function finishRecovery(
+  pool: pg.Pool,
+  input: { code: string; pin?: string | null; sheetKey?: string | null; newPinHash?: string | null;
+           deviceLabel?: string; now?: Date },
+): Promise<
+  | { ok: true; userId: string; deviceId: string; deviceCredential: string; devicesSignedOut: number;
+      sheetSpent: boolean; mode: 'second_parent' | 'sole_parent' }
+  | { ok: false; reason: FinishRecoveryError; readyAt?: string }
+> {
+  const now = input.now ?? new Date();
+  const norm = normaliseRecoveryCode('request', input.code);
+  if (!norm) return { ok: false, reason: 'invalid_recovery' };
+  const digest = recoveryCodeDigest('request', norm);
+  const peek = await withSystemSession(pool, async (q) => {
+    const r = await q(`SELECT user_id FROM recovery_request WHERE secret_hash = $1`, [digest]);
+    return r.length ? (r[0].user_id as string) : null;
+  });
+  if (!peek) return { ok: false, reason: 'invalid_recovery' };
+  // pin_credential's owner-only policy admits a read or write only when the actor is that user (see recoverAccount).
+  return withSession(pool, { roleName: 'system', userId: peek, childId: null }, async (q) => {
+    const rows = await q(`SELECT * FROM recovery_request WHERE secret_hash = $1 FOR UPDATE`, [digest]);
+    const r = rows[0];
+    if (!r || r.user_id !== peek || r.completed_at || r.cancelled_at) return { ok: false, reason: 'invalid_recovery' } as const;
+    if (new Date(r.expires_at) <= now) {
+      await q(`UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = 'expired' WHERE id = $1`,
+        [r.id, now.toISOString()]);
+      return { ok: false, reason: 'invalid_recovery' } as const;
+    }
+    const user = await q(`SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [peek]);
+    if (!user.length) return { ok: false, reason: 'invalid_recovery' } as const;
+    if (new Date(r.ready_at) > now) {
+      return { ok: false, reason: 'too_early', readyAt: new Date(r.ready_at).toISOString() } as const;
+    }
+    if (r.helper_required && !r.helper_confirmed_at) return { ok: false, reason: 'waiting_for_helper' } as const;
+
+    let proof: 'pin' | 'sheet' | 'sheet_at_start' = 'sheet_at_start';
+    if (r.mode === 'second_parent') {
+      const hasPin = typeof input.pin === 'string' && /^[0-9]{4,8}$/.test(input.pin);
+      const keyNorm = input.sheetKey ? normaliseRecoveryCode('sheet', input.sheetKey) : null;
+      if (!hasPin && !keyNorm) return { ok: false, reason: 'proof_required' } as const;
+      let matched = false;
+      if (keyNorm) {
+        const s = await q(`SELECT key_hash FROM recovery_sheet WHERE user_id = $1 AND retired_at IS NULL`, [peek]);
+        matched = s.length > 0 && eqHex(recoveryCodeDigest('sheet', keyNorm), s[0].key_hash);
+        if (matched) proof = 'sheet';
+      }
+      if (!matched && hasPin) {
+        const p = await q(`SELECT pin_hash FROM pin_credential WHERE user_id = $1`, [peek]);
+        matched = p.length > 0 && verifyPin(input.pin as string, p[0].pin_hash);
+        if (matched) proof = 'pin';
+      }
+      if (!matched) {
+        const burned = r.failed_attempts + 1 >= RECOVERY_REQUEST_MAX_WRONG;
+        await q(
+          `UPDATE recovery_request SET failed_attempts = failed_attempts + 1,
+                  cancelled_at = CASE WHEN $2::boolean THEN $3::timestamptz ELSE NULL END,
+                  cancelled_by_kind = CASE WHEN $2::boolean THEN 'too_many_wrong' ELSE NULL END
+            WHERE id = $1`, [r.id, burned, now.toISOString()]);
+        if (burned) await insertSecurityEvent(q, peek, 'recovery_stopped', { variant: 'wrong_guesses' });
+        return { ok: false, reason: burned ? 'too_many_wrong' : 'wrong_proof' } as const;
+      }
+    }
+
+    const done = await q(
+      `UPDATE recovery_request SET completed_at = $2, proof_used = $3
+        WHERE id = $1 AND completed_at IS NULL AND cancelled_at IS NULL RETURNING id`,
+      [r.id, now.toISOString(), proof]);
+    if (done.length !== 1) throw new Error('finishRecovery: request CAS lost');
+    const device = await enrolGuardianDevice(q, peek, input.deviceLabel || r.device_label || '', now);
+    await q(`UPDATE recovery_request SET completed_device_id = $2 WHERE id = $1`, [r.id, device.deviceId]);
+    const out = await q(
+      `UPDATE paired_device SET revoked_at = $2
+        WHERE role = 'guardian' AND target_id = $1 AND revoked_at IS NULL AND id <> $3 RETURNING id`,
+      [peek, now.toISOString(), device.deviceId]);
+    if (input.newPinHash) {
+      await q(
+        `INSERT INTO pin_credential (user_id, pin_hash, failed_attempts, locked_until, updated_at)
+         VALUES ($1, $2, 0, NULL, now())
+         ON CONFLICT (user_id) DO UPDATE SET pin_hash = EXCLUDED.pin_hash, failed_attempts = 0,
+                                              locked_until = NULL, updated_at = now()`,
+        [peek, input.newPinHash]);
+    }
+    // A sheet that did its job is spent: its paper is in someone's drawer, and a used key is never used twice.
+    const spent = (proof !== 'pin')
+      ? await q(
+          `UPDATE recovery_sheet SET retired_at = $2, retired_reason = 'used'
+            WHERE user_id = $1 AND retired_at IS NULL RETURNING id`, [peek, now.toISOString()])
+      : [];
+    await q(
+      `UPDATE recovery_request SET cancelled_at = $2, cancelled_by_kind = 'replaced_by_recovery'
+        WHERE user_id = $1 AND id <> $3 AND completed_at IS NULL AND cancelled_at IS NULL`,
+      [peek, now.toISOString(), r.id]);
+    await insertSecurityEvent(q, peek, 'account_recovered');
+    return { ok: true, userId: peek, ...device, devicesSignedOut: out.length, sheetSpent: spent.length > 0,
+             mode: r.mode } as const;
+  });
 }

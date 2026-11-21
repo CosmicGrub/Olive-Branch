@@ -14,6 +14,7 @@ import 'device_identity.dart';
 import 'family_account_screens.dart';
 import 'family_account_service.dart';
 import 'family_account_store.dart';
+import 'recovery_paths_service.dart' show RecoveryPathsService, buildRecoveryPathsService;
 import 'guardian_local_scope.dart';
 import 'local_family.dart' show LocalFamily, kHomeZoneDevice;
 import 'local_services.dart';
@@ -37,10 +38,12 @@ void openFamilyAccount(
 }) {
   final LocalFamily? f = GuardianLocalScope.maybeOf(context)?.family;
   final FamilyAccountService service = buildFamilyAccountService(baseUrl);
+  final RecoveryPathsService recovery = buildRecoveryPathsService(baseUrl, service);
   Navigator.of(context)
       .push<void>(MaterialPageRoute<void>(
         builder: (BuildContext _) => FamilyAccountScreen(
           service: service,
+          recovery: recovery,
           baseUrl: baseUrl,
           suggestedName: f?.guardianName,
           suggestedChildName: f?.childName,
@@ -49,5 +52,8 @@ void openFamilyAccount(
           onCodeRedeemed: onCodeRedeemed,
         ),
       ))
-      .whenComplete(service.dispose);
+      .whenComplete(() {
+    recovery.dispose();
+    service.dispose();
+  });
 }
