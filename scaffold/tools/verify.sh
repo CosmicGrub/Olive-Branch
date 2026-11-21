@@ -645,6 +645,18 @@ else
 fi
 
 echo ""
+echo "── Dev-only simulate-connect define ───────────────────────────"
+# Not counted into TOTAL_PASS. The dev-only simulate-connect define (see tools/check-simulate-connect.mjs) lets ONE device show the
+# connect flow with a simulated other end ("Simulate her tablet" / "Simulate a phone"). Only tools/device-sync.sh may pass it, and only
+# when asked (SIMULATE_CONNECT=1); this fails if any other script, workflow, Dockerfile or release config does.
+if node tools/test/simulate_connect_guard.test.mjs >/tmp/sc.out 2>&1 && node tools/check-simulate-connect.mjs >>/tmp/sc.out 2>&1; then
+  echo "  simulate connect define    $(grep -c 'PASS' /tmp/sc.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/sc.out
+  echo "  SIMULATE CONNECT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually

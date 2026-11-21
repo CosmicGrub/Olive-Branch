@@ -117,7 +117,7 @@ class ConnectChildScreen extends StatefulWidget {
     this.simulate = kSimulateConnect,
   });
 
-  /// DEV-ONLY (a build made with OLIVE_SIMULATE_CONNECT=true, see connect_simulation.dart): offers "Simulate her tablet" so one
+  /// DEV-ONLY (a build with the dev-only simulate define, see connect_simulation.dart): offers "Simulate her tablet" so one
   /// device can show this whole flow with a simulated tablet. Always false in a normal build.
   final bool simulate;
 

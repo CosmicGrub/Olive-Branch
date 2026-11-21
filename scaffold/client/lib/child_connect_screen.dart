@@ -88,7 +88,7 @@ class ChildConnectScreen extends StatefulWidget {
     this.codeRetryEvery = const Duration(seconds: 1),
   });
 
-  /// DEV-ONLY (OLIVE_SIMULATE_CONNECT=true, see connect_simulation.dart): offers "Simulate a phone" so one device can show this
+  /// DEV-ONLY (the dev-only simulate define, see connect_simulation.dart): offers "Simulate a phone" so one device can show this
   /// flow with a simulated grown-up's phone. Always false in a normal build.
   final bool simulate;
 
