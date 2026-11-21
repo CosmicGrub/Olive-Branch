@@ -44,7 +44,11 @@ jobs:
       PGBIN: /usr/lib/postgresql/16/bin
       PORT: '5432'
     steps:
+      # Full history, not the default depth-1: tools/verify.sh's privacy gate diffs this branch
+      # against origin/main (merge-base) and fails CLOSED when it cannot resolve the base.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.2'

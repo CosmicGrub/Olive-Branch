@@ -99,6 +99,59 @@ LIVE="docker compose -p olive-live --env-file .env.live -f docker-compose.prod.y
 - The development PC has limited RAM. Running several Flutter and Gradle processes at once exhausted it (git and Docker failed to fork). Keep at most two or three heavy jobs at a time; run Gradle with `--no-daemon` and a 1 GB heap or run `./gradlew --stop` after builds; run `flutter test` with at most two jobs; push early.
 - On low memory, `git push` can fail with an out-of-memory error; use `-c http.postBuffer=52428800 -c core.compression=0`.
 
+## Heavy-job slots (`scaffold/tools/slot.sh`)
+
+At most two heavy jobs (a `flutter test`, a full node suite run, a build) run at once on the shared machine. A slot is a directory `slot1` or `slot2` under the shared lock directory (`OLIVE_LOCK_DIR`, default `/z/wt-locks` in Git Bash) holding two files: `stamp` (UTC time taken or last renewed) and `owner` (a label you choose, never a login). `mkdir` is the atomic take. Use the script, not hand-made directories:
+
+```
+bash scaffold/tools/slot.sh acquire any --owner my-task [--wait 600]   # takes the first free slot
+bash scaffold/tools/slot.sh renew   1   --owner my-task                # a job that runs longer than the window
+bash scaffold/tools/slot.sh release 1   --owner my-task                # always, also on failure (use a trap)
+bash scaffold/tools/slot.sh status                                     # slot1 FREE | HELD | UNSTAMPED | STALE
+```
+
+- `acquire` never takes over a held slot and never removes anything. When both are busy it exits 1 and says who holds them.
+- **Stale** means the stamp is older than 90 minutes (`SLOT_STALE_MIN`) **and** no flutter, dart or node test process is running. A stale lock is **reported** in the `status` output and in your report; it is **not** removed by anyone but its owner. An old stamp with a test still running is a long job, not a stale lock: the owner should `renew`.
+- `release` and `renew` refuse (exit 3) unless `--owner` matches the lock's `owner` file, stale or not. A lock without an `owner` file (hand-made) cannot be released with the script; its creator removes it.
+- A lock whose directory exists but has no readable stamp is `UNSTAMPED` and counts as held.
+- Always release in a `trap ... EXIT` so a failed test run does not strand the slot. Heavy Gradle builds belong to the device lane only; run `flutter test -j 1`.
+
+## Privacy gate (`scaffold/tools/privacy-gate.mjs`)
+
+The repository is public. The gate reads the lines a change **adds** and exits non-zero (1) on any hit; exit 2 means it could not read the diff, which also fails (it does not say clean when it cannot look). It catches:
+
+| rule | what |
+| --- | --- |
+| `identity` | the current OS/git user name, host name and e-mail local part, plus anything in `PRIVACY_GATE_EXTRA` (comma list), read at run time so the names never have to be written in the repo; a public `github.com/owner/repo` or `ghcr.io/owner` path is not counted |
+| `path` | drive-letter paths, `/Users/x`, `/home/x`, `/mnt/c/...`, git-bash `/c/Users/...`, UNC shares; a placeholder segment (`<name>`, `...`, `you`, `runner`) is fine |
+| `email` | e-mail addresses; `example.*`, `.test`/`.invalid`, `noreply@...` and `git@github.com` are fine |
+| `ip` | IPv4/IPv6/MAC addresses; loopback, `0.0.0.0`, the emulator alias `10.0.2.x`, the RFC 5737 and RFC 3849 documentation ranges and netmasks are fine |
+| `secret` | cloud/API keys and tokens, private-key blocks, JWTs, URL credentials, quoted password/token assignments with a high-entropy value |
+| `private-link` | claude.ai artifact/chat/share links, shared Google/Notion/Dropbox/OneDrive documents, tunnel hosts, webhook URLs |
+| `sensitive-file` | `google-services.json`, `GoogleService-Info.plist`, keystores, `key.properties`, `local.properties`, `.env` (not `.env.example`), `*.pem`/`*.p12` |
+| `device` | a literal `adb -s <serial>` / `ANDROID_SERIAL=<serial>`, default Windows machine names (pass serials at run time through the environment, never commit them) |
+
+```
+node scaffold/tools/privacy-gate.mjs                       # what is STAGED (run before every commit)
+node scaffold/tools/privacy-gate.mjs --range origin/main...HEAD   # everything the branch adds
+node scaffold/tools/privacy-gate.mjs --text msg.txt        # a commit message or PR body
+git diff --cached | node scaffold/tools/privacy-gate.mjs --stdin
+```
+
+It also runs inside `tools/verify.sh` (the "Privacy gate" block, branch against `origin/main` plus anything staged; override the base with `PRIVACY_BASE`), so CI runs it on every pull request (the verify job checks out full history for this). Hits print a redacted excerpt, never the full value.
+
+- A genuine placeholder is waived for **one line and one rule** with a comment such as `privacy-gate: allow ip`. There is no file-level or wildcard waiver, and a sensitive file name cannot be waived at all (rename the fixture instead, for example `google-services.sample.json`).
+- It folds zero-width and full-width characters and percent-encoding before matching, and long lines are scanned in windows so a hostile 1 MB line cannot hang it.
+- What it cannot do: recognise a secret with no known shape, or a name it was never told. Read your own diff as well.
+
+## Windows: `npm run test:stack` aborting after "126 passed, 0 failed"
+
+`packages/api/test/stack.test.mjs` is the only suite that opens real sockets. Calling `process.exit()` (even from `setImmediate`) while those TCP handles are still closing races the exit-time teardown against a thread still posting to the event loop, and libuv aborts the process with `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76`; npm then reports exit code 127 on a fully green run. Delaying the exit narrows the window but does not close it (measured: 1 to 5 ms crashed every run, 20 ms one in five, 50 ms and more none, which is a timing window, not a leak in the suite). The suite now sets `process.exitCode` and lets the event loop drain, which never races. Any new suite that opens sockets should do the same: **never `process.exit()` after real sockets on Windows**. It is a Node/libuv Windows teardown race, not a defect in the code under test; Linux CI never shows it.
+
+## Reading a failed widget run
+
+`tools/verify.sh` names the failing Dart tests through `scaffold/tools/list-test-failures.sh`. The `flutter test --reporter compact` log has no "Failing tests" section; each failing test is a progress frame such as `00:04 +1 -1: group name of the test [E]`, and the script prints one `FAILED: <name>` per such frame (a test file that cannot load shows as `FAILED: loading <path>`). Use it on any saved log: `bash scaffold/tools/list-test-failures.sh run.log` (or pipe the log in). Exit 3 means the counter shows failures but no name was found, so read the raw log.
+
 ## Pausing and resuming
 
 - "Pause" means only PRs and CI continue; no new work. Record the resume order in the roadmap and decisions files.
