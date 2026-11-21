@@ -327,7 +327,7 @@ const unusedQuery: Query = async () => {
 const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const UUID_PARAMS: ReadonlySet<string> = new Set([
   'childId', 'inviteId', 'codeId', 'deviceId', 'sessionId', 'messageId', 'expenseId',
-  'medicationId', 'letterId', 'artifactId', 'passkeyId',
+  'medicationId', 'letterId', 'artifactId', 'passkeyId', 'vaultId', 'uploadId', 'restoreId',
 ]);
 
 export interface ApiOptions {

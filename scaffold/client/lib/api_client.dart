@@ -464,6 +464,33 @@ class OliveApi {
   // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
   // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
   static const authRecover = '/v1/auth/recover';
+  // Encrypted family backup (db/migrations/0054_family_backup.sql, MASTERFILE 7.22). Server half only: a
+  // grown-up's phone seals the backup before it leaves, the server stores opaque bytes. No screen calls
+  // these yet; the constants keep the route-drift test honest.
+  static const backupLimits = '/v1/backup/limits';
+  static const backupVaults = '/v1/backup/vaults';
+  static const backupVault = '/v1/backup/vaults/:vaultId';
+  static const backupVaultJoin = '/v1/backup/vaults/:vaultId/join';
+  static const backupVaultEvents = '/v1/backup/vaults/:vaultId/events';
+  static const backupVaultPause = '/v1/backup/vaults/:vaultId/pause';
+  static const backupVaultResume = '/v1/backup/vaults/:vaultId/resume';
+  static const backupVaultHelper = '/v1/backup/vaults/:vaultId/helper';
+  static const backupVaultHelperRemove = '/v1/backup/vaults/:vaultId/helper/remove';
+  static const backupUploads = '/v1/backup/vaults/:vaultId/uploads';
+  static const backupUpload = '/v1/backup/vaults/:vaultId/uploads/:uploadId';
+  static const backupUploadChunk = '/v1/backup/vaults/:vaultId/uploads/:uploadId/chunks/:index';
+  static const backupUploadCommit = '/v1/backup/vaults/:vaultId/uploads/:uploadId/commit';
+  static const backupUploadAbort = '/v1/backup/vaults/:vaultId/uploads/:uploadId/abort';
+  static const backupVersions = '/v1/backup/vaults/:vaultId/versions';
+  static const backupVersionDelete = '/v1/backup/vaults/:vaultId/versions/:seq/delete';
+  static const backupVersionUndelete = '/v1/backup/vaults/:vaultId/versions/:seq/undelete';
+  static const backupRestoreChallenge = '/v1/backup/vaults/:vaultId/restores/challenge';
+  static const backupRestores = '/v1/backup/vaults/:vaultId/restores';
+  static const backupRestoreApprove = '/v1/backup/vaults/:vaultId/restores/:restoreId/approve';
+  static const backupRestoreCancel = '/v1/backup/vaults/:vaultId/restores/:restoreId/cancel';
+  static const backupRestoreToken = '/v1/backup/vaults/:vaultId/restores/:restoreId/token';
+  static const backupRestoreChunk = '/v1/backup/vaults/:vaultId/restores/:restoreId/versions/:seq/chunks/:index';
+  static const backupRestoreComplete = '/v1/backup/vaults/:vaultId/restores/:restoreId/complete';
   static const meChildren = '/v1/me/children';
   static const children = '/v1/children';
   static const childGuardianInvites = '/v1/children/:childId/guardian-invites';
