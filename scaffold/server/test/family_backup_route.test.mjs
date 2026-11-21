@@ -15,6 +15,7 @@
  *   I. helper       one trusted helper for a single parent; can ONLY confirm; steps down when a second parent joins
  *   J. isolation    row level security under the runtime role, table by table
  *   K. limits       rate limits, the kill switch, child sessions, no-token requests, content-free notices
+ *   L. pressure     a full allowance sets the oldest aside (never refuses), abort/sweep racing a commit, two parents at once
  *
  * Needs a NOSUPERUSER NOBYPASSRLS DATABASE_URL (app_owner or app_runtime) and an ADMIN_DATABASE_URL for setup and
  * cleanup. Prints "N passed, M failed" for verify.sh.
@@ -576,7 +577,8 @@ let NEW; // A's new phone
   const cB = (await call('POST', `${V(VA)}/restores/challenge`, B.tok, {})).body;
   const rqB = await call('POST', `${V(VA)}/restores`, B.tok, { pin: B.pin, challengeId: cB.challengeId,
     signature: sign(null, restoreChallengeMessage({ vaultId: VA, userId: B.userId, deviceId: B.deviceId, nonce: Buffer.from(cB.nonce, 'hex') }), FAMILY.privateKey).toString('base64') });
-  check('H pause', 'with the other parent paused, nobody can say yes, so the wait is the longer 72 hours', `${rqB.status} ${rqB.body.restore.waitHours} ${rqB.body.restore.approvalRequired}`, '201 72 false');
+  check('H pause', 'pausing the other parent does NOT remove the second yes: the 48-hour wait and the approval still apply', `${rqB.status} ${rqB.body.restore.waitHours} ${rqB.body.restore.approvalRequired}`, '201 48 true');
+  check('H pause', 'and the paused parent cannot say yes either (a pause is no way to get a restore through)', st(await call('POST', `${V(VA)}/restores/${rqB.body.restore.restoreId}/approve`, NEW.tok, { pin: NEW.pin })), '403 reach_paused');
   const seen = await call('GET', V(VA), NEW.tok);
   check('H pause', 'the PAUSED parent still sees the restore, and sees nothing else', `${seen.body.pendingRestore?.restoreId === rqB.body.restore.restoreId} ${seen.body.liveVersions}`, 'true undefined');
   const stop = await call('POST', `${V(VA)}/restores/${rqB.body.restore.restoreId}/cancel`, NEW.tok, {});
@@ -752,6 +754,80 @@ let NEW; // A's new phone
   // a parent whose guardianship has ended keeps no reach even if the membership row is still there
   await admin.query(`UPDATE guardianship SET closed_at = now(), closed_reason = 'revoked', valid = tstzrange(now() - interval '2 days', now() - interval '1 minute') WHERE user_id = $1 AND child_id = $2`, [NEW.userId, CA]);
   check('K limits', 'a grown-up who is no longer a guardian of any child has no reach, whatever the membership says', st(await call('GET', `${V(VA)}/versions`, NEW.tok)), '403 not_a_guardian');
+  await unlockPin(NEW.userId);
+  const ex = {
+    pause: await call('POST', `${V(VA)}/pause`, NEW.tok, { targetUserId: B.userId, pin: NEW.pin }),
+    helper: await call('POST', `${V(VA)}/helper`, NEW.tok, { helperUserId: H.userId, pin: NEW.pin }),
+    challenge: await call('POST', `${V(VA)}/restores/challenge`, NEW.tok, {}),
+    status: await call('GET', V(VA), NEW.tok),
+    events: await call('GET', `${V(VA)}/events`, NEW.tok),
+    begin: await call('POST', `${V(VA)}/uploads`, NEW.tok, mkBackup(VA, head).body),
+  };
+  for (const [k, r] of Object.entries(ex)) check('K limits', `an ended parent gets nothing from ${k}`, st(r), '403 not_a_guardian');
+}
+
+// ===========================================================================
+// L . NOTHING LOST UNDER PRESSURE: abort/commit races, full allowance, two parents setting up at once
+// ===========================================================================
+{
+  const Q = await signup('quota', '8642');
+  await mkChild(Q, 'Pip');
+  const rq = await call('POST', '/v1/backup/vaults', Q.tok, { recoveryVerifier: VERIFIER, pin: Q.pin });
+  const VQ = rq.body.vaultId; vaults.push(VQ);
+  await admin.query(`UPDATE backup_vault SET quota_bytes = 3200, keep_versions = 10 WHERE id = $1`, [VQ]);
+  const codes = [];
+  for (let i = 0; i < 7; i++) codes.push((await backupOnce(Q, VQ, { size: 1500 })).commit?.status);
+  check('L pressure', 'a family whose history outgrows its allowance keeps being backed up (the oldest are set aside, never refused)', codes.join(), '201,201,201,201,201,201,201');
+  const lq = await call('GET', `${V(VQ)}/versions`, Q.tok);
+  check('L pressure', '...the newest two stay live and every older one is only set aside, still listed', lq.body.versions.map((v) => v.state[0]).join(''), 'tttttll');
+  const keptBytes = Number((await admin.query(`SELECT COALESCE(sum(size_bytes),0) n FROM backup_chunk WHERE vault_id = $1`, [VQ])).rows[0].n);
+  check('L pressure', '...and no byte was given up (set-aside copies outside the allowance never block a backup)', keptBytes, 7 * 1500);
+  const tooBig = await call('POST', `${V(VQ)}/uploads`, Q.tok, mkBackup(VQ, await headOf(Q, VQ), { size: 3100 }).body);
+  check('L pressure', 'a backup that cannot fit even alone is refused plainly, and nothing was set aside for it', `${st(tooBig)} ${(await call('GET', `${V(VQ)}/versions`, Q.tok)).body.versions.map((v) => v.state[0]).join('')}`, '507 quota_exceeded tttttll');
+
+  // abort / expiry sweep racing a commit: the committed backup's bytes must survive every interleaving
+  await admin.query(`UPDATE backup_vault SET quota_bytes = 400000 WHERE id = $1`, [VQ]);
+  const lockKey = `olive-backup:${VQ}`;
+  const verdicts = [];
+  for (let trial = 0; trial < 6; trial++) {
+    const hd = await headOf(Q, VQ);
+    const bb = mkBackup(VQ, hd, { size: 3000 });
+    const b = await call('POST', `${V(VQ)}/uploads`, Q.tok, bb.body);
+    await putChunks(Q, VQ, b.body.uploadId, bb);
+    const holder = new pg.Client({ connectionString: ADMIN_DATABASE_URL });
+    await holder.connect();
+    await holder.query('BEGIN');
+    await holder.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [lockKey]);
+    const go = [
+      call('POST', `${V(VQ)}/uploads/${b.body.uploadId}/commit`, Q.tok),
+      trial % 2 ? call('POST', `${V(VQ)}/uploads/${b.body.uploadId}/abort`, Q.tok) : reclaimVault(pool, VQ, new Date(Date.now() + 10 * 86400000)),
+    ];
+    await new Promise((r) => setTimeout(r, 150));
+    await holder.query('COMMIT'); await holder.end();
+    const [c] = await Promise.all(go);
+    const up = (await admin.query(`SELECT state FROM backup_upload WHERE id = $1`, [b.body.uploadId])).rows[0].state;
+    const chunks = Number((await admin.query(`SELECT count(*) n FROM backup_chunk WHERE upload_id = $1`, [b.body.uploadId])).rows[0].n);
+    const ver = Number((await admin.query(`SELECT count(*) n FROM backup_version WHERE upload_id = $1`, [b.body.uploadId])).rows[0].n);
+    // either the backup is fully there (201, committed, all pieces) or it never became a version at all
+    verdicts.push(c.status === 201 ? (up === 'committed' && chunks === bb.chunks.length && ver === 1 ? 'kept' : `LOST ${up} ${chunks} ${ver}`)
+      : (ver === 0 ? 'never-stored' : `LOST ${c.status} ${up} ${chunks} ${ver}`));
+  }
+  check('L pressure', 'abort or the expiry sweep racing a commit never leaves a stored backup without its bytes', verdicts.every((v) => v === 'kept' || v === 'never-stored') ? 'ok' : verdicts.join(' | '), 'ok');
+  // the pieces of any upload that has a recorded version cannot be deleted, whatever the upload says
+  const lastUp = (await admin.query(`SELECT upload_id FROM backup_version WHERE vault_id = $1 AND state = 'live' ORDER BY seq DESC LIMIT 1`, [VQ])).rows[0].upload_id;
+  const del = await admin.query(`DELETE FROM backup_chunk WHERE upload_id = $1`, [lastUp]).then(() => 'deleted', () => 'refused');
+  check('L pressure', 'the database refuses to delete the pieces of a committed backup', del, 'refused');
+
+  // two grown-ups of one family setting up at the same moment get ONE vault
+  const P1 = await signup('twin1', '1122'); const P2 = await signup('twin2', '3344');
+  const CP = await mkChild(P1, 'Twin'); await edge(CP, P2.userId);
+  const [t1, t2] = await Promise.all([
+    call('POST', '/v1/backup/vaults', P1.tok, { recoveryVerifier: VERIFIER, pin: P1.pin }),
+    call('POST', '/v1/backup/vaults', P2.tok, { recoveryVerifier: VERIFIER, pin: P2.pin })]);
+  for (const t of [t1, t2]) if (t.body.vaultId) vaults.push(t.body.vaultId);
+  check('L pressure', 'two parents setting up at once: exactly one vault is made, the other is told to join it', [t1.status, t2.status].sort().join(), '201,409');
+  const nv = Number((await admin.query(`SELECT count(DISTINCT m.vault_id) n FROM backup_vault_member m WHERE m.user_id = ANY($1::uuid[])`, [[P1.userId, P2.userId]])).rows[0].n);
+  check('L pressure', 'so the family history is never split', nv, 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -400,7 +400,9 @@ BEGIN
     RAISE EXCEPTION 'a stored backup chunk is immutable';
   ELSE -- DELETE
     SELECT state INTO u_state FROM backup_upload WHERE id = OLD.upload_id;
-    IF u_state IN ('aborted', 'expired') THEN RETURN OLD; END IF;
+    -- an unfinished upload's bytes are expendable, but never once a version was recorded for the upload
+    IF u_state IN ('aborted', 'expired')
+       AND NOT EXISTS (SELECT 1 FROM backup_version v WHERE v.upload_id = OLD.upload_id) THEN RETURN OLD; END IF;
     SELECT true, v.purged_at INTO v_found, v_purged FROM backup_version v WHERE v.upload_id = OLD.upload_id;
     IF v_found AND v_purged IS NOT NULL THEN RETURN OLD; END IF;
     RAISE EXCEPTION 'backup bytes cannot be deleted before their recovery window has passed';

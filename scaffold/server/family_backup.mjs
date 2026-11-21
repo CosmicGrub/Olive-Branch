@@ -147,6 +147,19 @@ async function needActive(q, vaultId, userId) {
   return null;
 }
 
+/**
+ * The same gate for the routes that run as the system role (pause, helper, restore): an ACTIVE member who
+ * is still a grown-up of a child. A parent whose guardianship has ended keeps no reach, even if the
+ * membership row has not been removed yet.
+ */
+async function needActiveMember(q, vaultId, userId, notFound = 'vault_not_found') {
+  const s = await myState(q, vaultId, userId);
+  if (s === null) return err(404, notFound);
+  if (s !== 'active') return err(403, 'reach_paused');
+  if (!(await stillAGuardian(q, userId))) return err(403, 'not_a_guardian');
+  return null;
+}
+
 // ------------------------------------------------------------ space ----------
 async function spaceUsed(q, vaultId, now) {
   // stored: the versions in use. setAside: tombstoned versions kept for their recovery window; they have
@@ -171,6 +184,7 @@ async function spaceUsed(q, vaultId, now) {
  */
 export async function reclaimVault(pool, vaultId, now = new Date()) {
   return withSystemSession(pool, async (q) => {
+    await lockVault(q, vaultId);
     const exp = await q(
       `UPDATE backup_upload SET state = 'expired'
         WHERE vault_id = $1 AND state = 'open' AND expires_at <= $2 RETURNING id`, [vaultId, now]);
@@ -215,6 +229,12 @@ export async function createVault(pool, { userId, recoveryVerifier, now, cfg = b
   const verifier = hex32(recoveryVerifier);
   if (!verifier) return err(400, 'recovery_verifier_invalid');
   return withSystemSession(pool, async (q) => {
+    // Two grown-ups starting a backup at the same moment must not make two: serialise on each child they
+    // share (locks taken in one fixed order, so two parents can never wait on each other).
+    const kids = await q(
+      `SELECT DISTINCT child_id::text AS child_id FROM effective_guardianship
+        WHERE user_id = $1 AND role = 'guardian' AND restricted = false ORDER BY 1`, [userId]);
+    for (const k of kids) await q(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [`olive-backup-family:${k.child_id}`]);
     const mine = await q(`SELECT count(*)::int AS n FROM backup_vault_member WHERE user_id = $1`, [userId]);
     if (mine[0].n >= cfg.maxVaultsPerUser) return err(409, 'too_many_vaults');
     // One backup per family: if another grown-up of this family already keeps one, join it instead of
@@ -322,6 +342,7 @@ export async function vaultStatus(pool, { userId, vaultId, now }) {
   const base = await asGuardian(pool, userId, async (q) => {
     const state = await myState(q, vaultId, userId);
     if (state === null) return err(404, 'vault_not_found');
+    if (!(await stillAGuardian(q, userId))) return err(403, 'not_a_guardian');
     const restores = await q(
       `SELECT ${RESTORE_COLS} FROM backup_restore_request r
         WHERE r.vault_id = $1 AND r.state = 'pending' ORDER BY r.created_at DESC LIMIT 1`, [vaultId]);
@@ -397,7 +418,7 @@ export async function beginUpload(pool, { userId, deviceId, vaultId, body, now, 
     const gate = await needActive(q, vaultId, userId);
     if (gate) return gate;
     await lockVault(q, vaultId);
-    const [vault] = await q(`SELECT quota_bytes FROM backup_vault WHERE id = $1`, [vaultId]);
+    const [vault] = await q(`SELECT quota_bytes, recovery_window_days FROM backup_vault WHERE id = $1`, [vaultId]);
     // idempotent: the phone's own id for this attempt (a lost response leaves no second upload behind)
     const prior = await q(
       `SELECT id, state, base_seq, size_bytes, chunk_size, chunk_count, encode(blob_sha256,'hex') AS blob_sha256,
@@ -424,11 +445,24 @@ export async function beginUpload(pool, { userId, deviceId, vaultId, body, now, 
     if (open[0].n >= cfg.maxOpenUploads) return err(429, 'too_many_uploads');
     const sp = await spaceUsed(q, vaultId, now);
     const quota = Number(vault.quota_bytes);
-    // The newest versions in use plus anything still uploading must fit the quota; the copies set aside
-    // for the recovery window have their own allowance of the same size, so they never crowd out a backup.
-    if (sp.stored + sp.reserved + size > quota || sp.setAside > quota) {
-      return { status: 507, body: { error: 'quota_exceeded', quotaBytes: quota, usedBytes: sp.stored + sp.reserved,
-        setAsideBytes: sp.setAside }, retryAfterReclaim: true };
+    // The versions in use plus anything still uploading must fit the quota. When they do not, the OLDEST
+    // versions in use are set aside (never the newest, never deleted: their bytes are kept for the recovery
+    // window and can be brought back) so a family never stops being backed up because its history grew.
+    // The set-aside copies are outside this quota, so they never block a new backup.
+    let used = sp.stored + sp.reserved;
+    if (used + size > quota) {
+      const live = await q(`SELECT id, size_bytes FROM backup_version WHERE vault_id = $1 AND state = 'live' ORDER BY seq ASC`, [vaultId]);
+      const take = [];
+      for (let i = 0; i < live.length - 1 && used + size > quota; i++) { take.push(live[i].id); used -= Number(live[i].size_bytes); }
+      if (used + size > quota) {
+        return { status: 507, body: { error: 'quota_exceeded', quotaBytes: quota, usedBytes: sp.stored + sp.reserved,
+          setAsideBytes: sp.setAside }, retryAfterReclaim: true };
+      }
+      const purgeAfter = new Date(now.getTime() + vault.recovery_window_days * DAY);
+      for (const id of take) {
+        await q(`UPDATE backup_version SET state = 'tombstone', tombstone_reason = 'retention', tombstoned_at = $2,
+                        tombstoned_by = NULL, purge_after = $3 WHERE id = $1 AND state = 'live'`, [id, now, purgeAfter]);
+      }
     }
     const u = await q(
       `INSERT INTO backup_upload (vault_id, user_id, device_id, client_ref, base_seq, seq, size_bytes, chunk_size, chunk_count,
@@ -508,6 +542,8 @@ export async function abortUpload(pool, { userId, deviceId, vaultId, uploadId, n
   const r = await asGuardian(pool, userId, async (q) => {
     const gate = await needActive(q, vaultId, userId);
     if (gate) return gate;
+    // Same lock as commit: an abort can never land in the middle of a commit and reclaim its bytes.
+    await lockVault(q, vaultId);
     const { u, fail } = await ownOpenUpload(q, { vaultId, uploadId, deviceId, now });
     if (fail) return fail;
     if (u.state === 'committed') return err(409, 'upload_committed');
@@ -563,7 +599,9 @@ export async function commitUpload(pool, { userId, deviceId, vaultId, uploadId, 
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       [vaultId, u.seq, uploadId, u.prev_chain_hash, u.chain_hash, u.blob_sha256, u.size_bytes, u.chunk_size,
         u.chunk_count, u.manifest, u.signature, deviceId, userId, now]);
-    await q(`UPDATE backup_upload SET state = 'committed', committed_at = $2 WHERE id = $1 AND state = 'open'`, [uploadId, now]);
+    const done = await q(`UPDATE backup_upload SET state = 'committed', committed_at = $2 WHERE id = $1 AND state = 'open' RETURNING id`, [uploadId, now]);
+    // Never report a stored backup whose upload did not move to 'committed' (its bytes would be reclaimable).
+    if (done.length !== 1) throw new Error('backup commit lost its upload row');
 
     // Retention: never an overwrite. The newest N stay live; older ones become TOMBSTONES whose bytes are kept
     // for the recovery window.
@@ -651,6 +689,7 @@ export async function listEvents(pool, { userId, vaultId, afterSeq = 0, limit = 
     const mem = await myState(q, vaultId, userId);
     const helper = await q(`SELECT 1 FROM backup_vault_helper WHERE vault_id = $1 AND user_id = $2 AND removed_at IS NULL`, [vaultId, userId]);
     if (mem === null && !helper.length) return err(404, 'vault_not_found');
+    if (mem !== null && !(await stillAGuardian(q, userId))) return err(403, 'not_a_guardian');
     const rows = await q(
       `SELECT seq, scope, kind, summary, created_at, restore_id FROM backup_vault_event
         WHERE vault_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`, [vaultId, after, lim]);
@@ -663,9 +702,8 @@ export async function listEvents(pool, { userId, vaultId, afterSeq = 0, limit = 
 export async function setMemberPaused(pool, { actorId, vaultId, targetId, paused, now }) {
   return withSystemSession(pool, async (q) => {
     await lockVault(q, vaultId);
-    const actor = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, actorId]);
-    if (!actor.length) return err(404, 'vault_not_found');
-    if (actor[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, actorId);
+    if (gate) return gate;
     if (actorId === targetId) return err(409, 'cannot_pause_yourself');
     const t = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, targetId]);
     if (!t.length) return err(404, 'member_not_found');
@@ -689,9 +727,8 @@ const HELPER_ROLES = ['guardian', 'trusted_adult', 'step_parent', 'foster_parent
 export async function nameHelper(pool, { actorId, vaultId, helperId, now }) {
   return withSystemSession(pool, async (q) => {
     await lockVault(q, vaultId);
-    const actor = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, actorId]);
-    if (!actor.length) return err(404, 'vault_not_found');
-    if (actor[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, actorId);
+    if (gate) return gate;
     if (helperId === actorId) return err(409, 'helper_must_be_someone_else');
     const members = await q(`SELECT count(*)::int AS n FROM backup_vault_member WHERE vault_id = $1`, [vaultId]);
     // A helper is for a single grown-up. With two parents the second parent IS the safeguard.
@@ -716,9 +753,8 @@ export async function nameHelper(pool, { actorId, vaultId, helperId, now }) {
 export async function removeHelper(pool, { actorId, vaultId, now }) {
   return withSystemSession(pool, async (q) => {
     await lockVault(q, vaultId);
-    const actor = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, actorId]);
-    if (!actor.length) return err(404, 'vault_not_found');
-    if (actor[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, actorId);
+    if (gate) return gate;
     const r = await q(`UPDATE backup_vault_helper SET removed_at = $2, removed_by = $3
                         WHERE vault_id = $1 AND removed_at IS NULL RETURNING id`, [vaultId, now, actorId]);
     if (!r.length) return err(404, 'no_helper');
@@ -731,9 +767,8 @@ export async function removeHelper(pool, { actorId, vaultId, now }) {
 export async function restoreChallenge(pool, { userId, deviceId, vaultId, now, cfg = backupConfig(), nonce }) {
   const n = nonce ?? (await import('node:crypto')).randomBytes(32);
   return withSystemSession(pool, async (q) => {
-    const m = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, userId]);
-    if (!m.length) return err(404, 'vault_not_found');
-    if (m[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, userId);
+    if (gate) return gate;
     // a few outstanding challenges per device, no more
     const recent = await q(
       `SELECT count(*)::int AS n FROM backup_restore_challenge WHERE device_id = $1 AND created_at > $2`,
@@ -759,9 +794,8 @@ export async function requestRestore(pool, { userId, deviceId, vaultId, challeng
   if (!sig || typeof challengeId !== 'string') return err(400, 'invalid_restore_request');
   return withSystemSession(pool, async (q) => {
     await lockVault(q, vaultId);
-    const m = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, userId]);
-    if (!m.length) return err(404, 'vault_not_found');
-    if (m[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, userId);
+    if (gate) return gate;
     // The challenge is single-use whether or not the signature turns out right.
     let used;
     try {
@@ -785,9 +819,13 @@ export async function requestRestore(pool, { userId, deviceId, vaultId, challeng
     if (perDevice[0].n >= cfg.maxRequestsPerDevicePerDay || perVault[0].n >= cfg.maxRequestsPerVaultPerDay) {
       return err(429, 'restore_requests_limited', { retryAfterSec: 3600 });
     }
-    // Who could say yes? Another ACTIVE grown-up, or a helper who has settled in. If nobody, the wait is longer.
+    // Who could say yes? Another grown-up of this family (a PAUSED one still counts: pausing someone must
+    // never remove the second yes), or a helper who has settled in. If nobody, the wait is longer.
     const others = await q(
-      `SELECT count(*)::int AS n FROM backup_vault_member WHERE vault_id = $1 AND state = 'active' AND user_id <> $2`, [vaultId, userId]);
+      `SELECT count(*)::int AS n FROM backup_vault_member m
+        WHERE m.vault_id = $1 AND m.user_id <> $2
+          AND EXISTS (SELECT 1 FROM effective_guardianship g
+                       WHERE g.user_id = m.user_id AND g.role = 'guardian' AND g.restricted = false)`, [vaultId, userId]);
     const helper = await q(
       `SELECT count(*)::int AS n FROM backup_vault_helper WHERE vault_id = $1 AND removed_at IS NULL AND user_id <> $2
           AND named_at <= $3`, [vaultId, userId, new Date(now.getTime() - cfg.helperSettleHours * HOUR)]);
@@ -833,6 +871,7 @@ export async function approveRestore(pool, { userId, vaultId, restoreId, now, cf
     const who = await standing(q, vaultId, userId, cfg, now);
     if (!who) return err(404, 'restore_not_found');
     if (who.kind === 'member' && who.state !== 'active') return err(403, 'reach_paused');
+    if (who.kind === 'member' && !(await stillAGuardian(q, userId))) return err(403, 'not_a_guardian');
     if (who.kind === 'helper' && !who.settled) return err(403, 'helper_not_settled');
     await expireDue(q, vaultId, now);
     const r = await q(`SELECT id, requested_by, state, approval_required, approved_at FROM backup_restore_request WHERE id = $1 AND vault_id = $2`, [restoreId, vaultId]);
@@ -875,9 +914,8 @@ export async function cancelRestore(pool, { userId, vaultId, restoreId, now, cfg
 export async function issueRestoreToken(pool, { userId, deviceId, vaultId, restoreId, now, cfg = backupConfig() }) {
   return withSystemSession(pool, async (q) => {
     await lockVault(q, vaultId);
-    const m = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, userId]);
-    if (!m.length) return err(404, 'restore_not_found');
-    if (m[0].state !== 'active') return err(403, 'reach_paused');
+    const gate = await needActiveMember(q, vaultId, userId, 'restore_not_found');
+    if (gate) return gate;
     await expireDue(q, vaultId, now);
     const r = await q(`SELECT ${RESTORE_COLS}, r.requested_by, r.device_id, r.token_issue_count
                          FROM backup_restore_request r WHERE r.id = $1 AND r.vault_id = $2`, [restoreId, vaultId]);
@@ -922,8 +960,8 @@ async function checkRestoreToken(q, { userId, deviceId, vaultId, token, now, cfg
         WHERE id = $1 RETURNING token_failures`, [row.id, cfg.maxTokenFailures]);
     return err(403, 'restore_token_invalid', f[0].token_failures >= cfg.maxTokenFailures ? { revoked: true } : {});
   }
-  const m = await q(`SELECT state FROM backup_vault_member WHERE vault_id = $1 AND user_id = $2`, [vaultId, userId]);
-  if (!m.length || m[0].state !== 'active') return err(403, 'reach_paused');
+  const gate = await needActiveMember(q, vaultId, userId, 'restore_token_invalid');
+  if (gate) return gate;
   return { good: row };
 }
 
