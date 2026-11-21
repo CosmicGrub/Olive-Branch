@@ -33,14 +33,16 @@
 #  EXIT CODES   0 ok   1 slot(s) busy / not acquired   2 usage error   3 refused
 #
 #  ENVIRONMENT
-#    OLIVE_LOCK_DIR        lock root            (default /z/wt-locks)
+#    OLIVE_LOCK_DIR        lock root shared by every worktree that takes a slot: set it to the one
+#                          directory this machine agrees on. Unset, a per-user temp directory is used,
+#                          so checkouts that did not agree on a root do NOT see each other.
 #    SLOT_STALE_MIN        stale window, minutes (default 90)
 #    SLOT_COUNT            number of slots       (default 2)
 #    SLOT_PROC_LIST_FILE   test hook: file of process command lines to use
 #                          instead of asking the OS
 # ============================================================================
 set -u
-ROOT="${OLIVE_LOCK_DIR:-/z/wt-locks}"
+ROOT="${OLIVE_LOCK_DIR:-${TMPDIR:-/tmp}/olive-slot-locks}"
 STALE_MIN="${SLOT_STALE_MIN:-90}"
 COUNT="${SLOT_COUNT:-2}"
 

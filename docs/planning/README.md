@@ -10,13 +10,15 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [HOSTING-AND-CALLS.md](HOSTING-AND-CALLS.md) | Where the server runs and how calls work: options researched, the chosen direction, what was scrapped, store-distribution and multi-family readiness plans. |
 | [OPERATIONS-RUNBOOK.md](OPERATIONS-RUNBOOK.md) | How to resume work: CI rules and gotchas, the merge procedure, the device-push recipe, the Docker stack, memory limits. |
 | [GAP-REGISTER.md](GAP-REGISTER.md) | Every gap between the planned family features (persistent QR, village welcome, About Mia, care guides, family sync) and the shipped code and spec, classed blocking / spec amendment / build item / decision / assurance gate, with evidence, fix and owner. |
-| [FAMILY-IDENTITY-DESIGN.md](FAMILY-IDENTITY-DESIGN.md) | Design (not built): one family id and key, a signed ledger, a second grown-up joining, removal, key rotation, the server family tenant. |
-| [VILLAGE-WELCOME-DESIGN.md](VILLAGE-WELCOME-DESIGN.md) | Design (not built): adults approving new adults, permission profiles, time boxes, pause and end, the limits agreement. |
+| [FAMILY-IDENTITY-DESIGN.md](FAMILY-IDENTITY-DESIGN.md) | Design: one family id and key, a signed ledger, a second grown-up joining, removal, key rotation, the server family tenant. The ledger, the two keys and the local-family migration are built but not wired into pairing (MASTERFILE 8.5.12); the rest is not built. |
+| [VILLAGE-WELCOME-DESIGN.md](VILLAGE-WELCOME-DESIGN.md) | Design: adults approving new adults, permission profiles, time boxes, pause and end, the limits agreement. The request, approval and profile screens are built headless and are not reachable from the app (MASTERFILE 8.28); the rest is not built. |
 | [PERSISTENT-QR-PAIRING.md](PERSISTENT-QR-PAIRING.md) | The persistent pairing picture: design, decisions and build status (built in PR #197, not run on two real devices). |
-| [QR-VETTING-BRAINSTORM.md](QR-VETTING-BRAINSTORM.md) | The owner-facing brainstorm: welcoming devices and people, the About Mia profile and the care guides, adopted decisions. (The reshaped version is on open PR #198.) |
+| [QR-VETTING-BRAINSTORM.md](QR-VETTING-BRAINSTORM.md) | The owner-facing brainstorm: welcoming devices and people, the About Mia profile and the care guides, adopted decisions. |
 | [EXTERNAL-CRYPTO-REVIEW-BRIEF.md](EXTERNAL-CRYPTO-REVIEW-BRIEF.md) | The brief for an outside cryptographer to review the pairing key exchange. Predates PRs #196 and #197; refresh before sending. |
 | [TWO-DEVICE-PAIRING-TEST-PLAN.md](TWO-DEVICE-PAIRING-TEST-PLAN.md) | The run sheet for the first real two-device pairing test. Its discovery step predates PR #196; update before running. |
 | [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design; the first slice (emergency card, copy-and-paste update) is built but not reachable from any menu: how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
+
+Snapshot: the status columns of this folder were re-read on 2026-11-21 against `origin/main` at 58c25ff (merged through PR #234). The sources of truth for what is built are MASTERFILE, the CHANGELOG and the code; where this folder and they disagree, they win.
 
 Related documents elsewhere in the repo:
 

@@ -61,14 +61,14 @@ New-NetFirewallRule -DisplayName "Olive Jitsi media" -Direction Inbound -Protoco
 
 ## The self-signed certificate
 
-The stack serves a self-signed certificate. The app does not turn off verification and has no trust-all. It trusts **one pinned public certificate** (`client/android/app/src/main/res/raw/jitsi_dev_cert.pem`) for **one LAN address** (the marked block in `network_security_config.xml`, main and debug); every other host keeps the platform's normal verification. If the PC's IP changes:
+The stack serves a self-signed certificate. The app does not turn off verification and has no trust-all. **Only a debug build** trusts **one pinned public certificate** for **the LAN address you gave the generator**; a release build trusts the platform's own certificate authorities and nothing else (its network config has no per-host entry, no bundled certificate and no address). The pinned certificate and the address live in a gitignored overlay (`client/android/app/src/debugLan/`) that `generate-dev-cert.sh` writes; nothing LAN-specific is committed. If the PC's IP changes, or you want a fresh certificate (this is also the rotation):
 
 ```
-./generate-dev-cert.sh <new LAN IP>     # new cert with the right names, rewrites the trust scope in lockstep
-./calls-off.sh && ./calls-on.sh         # nginx picks up the new cert
+./generate-dev-cert.sh <LAN IP>         # new key pair and certificate with the right names; rewrites the overlay in lockstep
+./calls-off.sh && ./calls-on.sh         # nginx picks up the new certificate
 ```
 
-then rebuild and reinstall the app (a certificate baked into an installed app does not update itself) and commit the new public certificate and scope.
+then rebuild and reinstall the **debug** app (a certificate baked into an installed app does not update itself). A release build will not reach a Jitsi that serves a self-signed certificate; give a release build a certificate from a real authority.
 
 ## Troubleshooting
 

@@ -1,6 +1,6 @@
 # OLIVE BRANCH -- family simulation: a THROWAWAY, isolated stack.
 # Project name `olive-sim`; own volumes; host ports 5481 (db) and 8141 (server),
-# both bound to 127.0.0.1 only. Never touches olive-dev-*/olive-live-*/jitsi-*.
+# both bound to 127.0.0.1 only. Never touches a container outside the olive-sim project.
 #   bash tools/family-sim/up.sh      bring up, build, migrate, wait healthy
 #   bash tools/family-sim/down.sh    tear down, removes ONLY olive-sim volumes
 # DEV_LOGIN=1 is acceptable ONLY because this stack is local, loopback-bound,

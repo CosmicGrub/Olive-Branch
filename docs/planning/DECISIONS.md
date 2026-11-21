@@ -11,7 +11,7 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 
 ## Product rules
 
-- A child sees no counts, scores, streaks, rewards, trophies, location or error text (prohibitions P1-P11, `MASTERFILE.md` §2.1).
+- **What a child never sees (owner rule, one list).** (1) A PIN screen of any kind other than the adult-gate keypad, which is for a grown-up. (2) Error text. (3) Counts, scores, streaks, rewards or trophies. (4) Location. (5) Diagnoses. (6) Care notes. (7) Profile entries (the "About her" profile). (8) Care guides. This list is the rule; it is **not** the P-table. `MASTERFILE.md` §2.1 P1 to P11 are a different, shorter list of permanent bans: P2 (scores and streaks shown to a child) and P3 (location) cover items 3 and 4, and P7 covers the journal. Items 1, 2 and 5 to 8 are owner rules enforced by the code and its tests (MASTERFILE 8.5.0, 8.19.2, 8.24.8, 12.5), so cite them by this list, not as "P1 to P11". One open owner question is whether the calendar countdown on her home ("sleeps") is allowed under item 3.
 - Messages can never be hidden. The settings hub stays in More.
 - Mommy/Daddy are the defaults for a locked age 5-15 and a child's own nicknames always win; before pairing the placeholder is "Your grown-up".
 - "Watched" means played through. Deletion has a 6 to 12 month recovery window (default 12). Reflections live on the phone and on the account.
@@ -39,9 +39,9 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 - One role per device. "Someone else" stays as a fourth role.
 - Pairing codes use digits 0-9.
 
-## The village and the family (adopted 2026-11-14; not built)
+## The village and the family (adopted 2026-11-14; the welcome screens are built headless and not reachable, the rest is not built)
 
-Source: the owner's "go with all recommendations" and "go with your recommendations". Design in `VILLAGE-WELCOME-DESIGN.md` and `FAMILY-IDENTITY-DESIGN.md`; MASTERFILE section 8.28 marks all of it PLANNED. Open conflicts are in `GAP-REGISTER.md`.
+Source: the owner's "go with all recommendations" and "go with your recommendations". Design in `VILLAGE-WELCOME-DESIGN.md` and `FAMILY-IDENTITY-DESIGN.md`; MASTERFILE section 8.28 says what is built (the request, approval and profile screens, headless, not reachable from the app) and marks the rest PLANNED. Open conflicts are in `GAP-REGISTER.md`.
 
 - Already-connected grown-ups approve new grown-ups ("welcome" them to the village), with or without limits. A scan or a code is an introduction, never a key; a newcomer can never grant themselves trust.
 - Only a parent starts a welcome; a carer can only suggest one.
@@ -53,12 +53,12 @@ Source: the owner's "go with all recommendations" and "go with your recommendati
 - Device roles map to presets as in MASTERFILE 8.5.8: Mom, Dad and Someone else are labels; the welcoming grown-ups choose the preset; a Helper page is not a device role.
 - One family object (family id, family key, signed ledger) for every grown-up and child device is the foundation; "no family object, no village".
 
-## Care guides and the About Mia profile (adopted 2026-11-14; nothing built)
+## Care guides and the About Mia profile (adopted 2026-11-14; About Mia is built on this device and sharing it is planned; the care-guide engine is built and gated and no guide ships)
 
 - Care guides are a sourced, offline library named "Care guides", for grown-ups and welcomed carers only; never on a child screen. US first, other countries noted for later.
 - **The spec rule against shipping medical text may be lifted only after a clinician has reviewed each guide. That review is a hard gate**; a first-aid instructor also reviews choking and CPR. Until a guide is signed off it stays out of the build. Guides show a last-reviewed date; updates ride app releases.
 - Every step, threshold and number is sourced from a page that was opened, or left out and listed. Disagreements are shown with the cautious reading flagged. No medicine doses.
-- About Mia is a guardian-only, on-device, sealed profile that grows the care binder: parents write every word, the app advises nothing, all parents can read and edit with a plain (not evidentiary) edit history, health history and moods are parents-only and locked, Today's heads-up ends at midnight, no one under 13 ever sees it (a teen's separate sheet is planned and open, OPEN-DECISIONS #48). The care-note "not evidence" rule has a stated exception for persistence and attribution only (MASTERFILE 12.5). The nine decisions in the QR brainstorm's "About the child" list (that text is on open PR #198, not yet in the repo; the decisions are recorded here) are adopted under "go with your recommendations"; the owner can reverse any.
+- About Mia is a guardian-only, on-device, sealed profile that grows the care binder: parents write every word, the app advises nothing, all parents can read and edit with a plain (not evidentiary) edit history, health history and moods are parents-only and locked, Today's heads-up ends at midnight, no one under 13 ever sees it (a teen's separate sheet is planned and open, OPEN-DECISIONS #48). The care-note "not evidence" rule has a stated exception for persistence and attribution only (MASTERFILE 12.5). The nine decisions in the QR brainstorm's "About the child" list (`QR-VETTING-BRAINSTORM.md`) are adopted under "go with your recommendations"; the owner can reverse any.
 
 ## Play together
 

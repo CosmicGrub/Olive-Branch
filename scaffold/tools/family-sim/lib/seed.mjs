@@ -77,14 +77,6 @@ export async function cleanup(admin, { userIds, childIds }) {
   } catch (e) { await admin.query('ROLLBACK'); throw e; }
 }
 
-/**
- * The local start/end of a day-part laid across real time. A part that would wrap the child's local midnight
- * (the window sits at "now + a few minutes", so this happens for about ten minutes a day in each timezone)
- * is clamped to end at the last second of the day instead of being dropped: dropping it left a family with no
- * bedtime part and made "a message banks" fail with daypart_undefined whenever CI ran near local midnight.
- * Returns null only when there is no room at all before midnight.
- */
-
 export async function seedFamily(admin, fam, { plan = null } = {}) {
   for (const g of fam.guardians) {
     await admin.query(`INSERT INTO app_user (id, display_name, home_tz) VALUES ($1,$2,$3)`, [g.id, g.name, fam.tz]);

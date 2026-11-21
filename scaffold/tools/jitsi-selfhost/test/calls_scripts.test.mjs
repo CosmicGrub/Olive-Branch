@@ -119,30 +119,54 @@ for (const f of ['calls-on.sh', 'calls-off.sh', 'nsc-scope.sh', 'generate-dev-ce
 }
 
 // ---- nsc-scope: narrow, reversible, base config untouched --------------------------------------
+// The Jitsi trust block lives ONLY in the tracked template (documentation-range address) and in the
+// gitignored debug overlay rendered from it; the committed main and debug configs carry none.
 const nscMain = join(SELF, '../../client/android/app/src/main/res/xml/network_security_config.xml');
 const nscDebug = join(SELF, '../../client/android/app/src/debug/res/xml/network_security_config.xml');
-for (const src of [nscMain, nscDebug]) {
-  const copy = join(tmp, 'nsc.xml'); copyFileSync(src, copy);
+const nscTemplate = join(SELF, 'network_security_config.debug.template.xml');
+{
+  const copy = join(tmp, 'nsc.xml'); copyFileSync(nscTemplate, copy);
   const before = readFileSync(copy, 'utf8').replace(/\r/g, '');
+  ok(/192\.0\.2\.10/.test(before) && !/192\.168\./.test(before), 'the template uses a documentation-range address, not a LAN one');
   const baseCfg = before.slice(before.indexOf('<base-config'), before.indexOf('</base-config>'));
   const sh = (ips) => spawnSync('bash', ['-c', `. "${toPosix(join(SELF, 'nsc-scope.sh'))}"; nsc_rewrite "${toPosix(copy)}" ${ips}`], { encoding: 'utf8' });
-  let o = sh('10.1.2.3 10.1.2.4');
+  let o = sh('198.51.100.3 198.51.100.4');
   let x = readFileSync(copy, 'utf8').replace(/\r/g, '');
-  ok(o.status === 0 && /<domain includeSubdomains="false">10\.1\.2\.3<\/domain>/.test(x) && /10\.1\.2\.4/.test(x), 'rewrite lists exactly the given LAN IPs');
-  ok(!/192\.168\.1\.156/.test(x.slice(x.indexOf('OLIVE-LAN-JITSI-BEGIN'))), 'the previous IP is gone');
+  ok(o.status === 0 && /<domain includeSubdomains="false">198.51.100.3<\/domain>/.test(x) && /198.51.100.4/.test(x), 'rewrite lists exactly the given LAN IPs');
+  ok(!/192\.0\.2\.10/.test(x.slice(x.indexOf('OLIVE-LAN-JITSI-BEGIN'))), 'the template address is gone');
   ok(x.includes(baseCfg), 'the base-config (system CAs, no cleartext) is byte-identical');
-  ok(!/trust-anchors[^>]*>\s*<certificates src="user"/.test(x) && !/src="user"/.test(x), 'user-installed CAs are never trusted');
+  ok(!/src="user"/.test(x), 'user-installed CAs are never trusted');
   ok((x.match(/@raw\/jitsi_dev_cert/g) || []).length === 1, 'the pinned cert is referenced exactly once');
   o = sh('');
   x = readFileSync(copy, 'utf8').replace(/\r/g, '');
   ok(!/@raw\/jitsi_dev_cert/.test(x.replace(/<!--[\s\S]*?-->/g, '')), 'with no LAN IP the extra trust disappears entirely');
 }
-// the committed configs: pinned cert only for the one LAN host, nothing global
+// the committed main and debug configs: no pinned cert, no per-host trust block, no LAN address
 for (const src of [nscMain, nscDebug]) {
-  const x = readFileSync(src, 'utf8').replace(/\r/g, '').replace(/<!--[\s\S]*?-->/g, '');
-  const base = x.slice(x.indexOf('<base-config'), x.indexOf('</base-config>'));
-  ok(!/jitsi_dev_cert/.test(base), 'committed config: the pinned cert is not in the base config');
-  ok(/<domain-config cleartextTrafficPermitted="false">\s*<domain includeSubdomains="false">\d+\.\d+\.\d+\.\d+<\/domain>\s*<trust-anchors>\s*<certificates src="@raw\/jitsi_dev_cert"/.test(x), 'committed config: pinned cert scoped to one LAN IP, cleartext off');
+  const raw = readFileSync(src, 'utf8').replace(/\r/g, '');
+  ok(!/jitsi_dev_cert|@raw|OLIVE-LAN-JITSI/.test(raw), 'committed config carries no pinned Jitsi block');
+  ok(!/192\.168\.|10\.(?!0\.2\.2)\d+\.\d+\.\d+/.test(raw), 'committed config names no LAN address');
+}
+ok(!/<domain-config/.test(readFileSync(nscMain, 'utf8')), 'the release config has no domain-config');
+
+// ---- generate-dev-cert.sh writes only the gitignored overlay, from the template ----------------
+{
+  const cfgDir = join(tmp, 'jitsi-cfg'); const overlay = join(tmp, 'overlay-res');
+  const g = spawnSync('bash', [join(SELF, 'generate-dev-cert.sh'), '198.51.100.7'], {
+    encoding: 'utf8',
+    env: { ...process.env, CONFIG: toPosix(cfgDir), OLIVE_OVERLAY_DIR: toPosix(overlay) },
+  });
+  ok(g.status === 0, `generate-dev-cert.sh exits 0 (got ${g.status}: ${g.stderr})`);
+  const pem = (() => { try { return readFileSync(join(overlay, 'raw', 'jitsi_dev_cert.pem'), 'utf8'); } catch { return ''; } })();
+  ok(/BEGIN CERTIFICATE/.test(pem) && !/PRIVATE KEY/.test(pem), 'the overlay holds the public certificate only');
+  const ox = (() => { try { return readFileSync(join(overlay, 'xml', 'network_security_config.xml'), 'utf8'); } catch { return ''; } })();
+  ok(/<domain includeSubdomains="false">198.51.100.7<\/domain>/.test(ox) && /@raw\/jitsi_dev_cert/.test(ox), 'the overlay config trusts the pinned cert for the given address');
+  ok(!/192\.0\.2\.10/.test(ox), 'the documentation-range placeholder was replaced');
+  const root = join(SELF, '../../client/android/app/src');
+  let leaked = false;
+  for (const p of ['main/res/raw/jitsi_dev_cert.pem', 'debug/res/raw/jitsi_dev_cert.pem']) { try { statSync(join(root, p)); leaked = true; } catch { /* absent is right */ } }
+  ok(!leaked, 'the generator never writes the cert into a committed source set');
+  ok(/OLIVE_OVERLAY_DIR|debugLan/.test(readFileSync(join(SELF, 'generate-dev-cert.sh'), 'utf8')), 'the default overlay is the gitignored debugLan dir');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

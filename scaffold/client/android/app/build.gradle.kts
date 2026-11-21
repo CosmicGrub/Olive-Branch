@@ -48,6 +48,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Debug-only LAN trust for the self-hosted Jitsi. tools/jitsi-selfhost/generate-dev-cert.sh
+    // writes a GITIGNORED overlay at src/debugLan/res (the pinned dev certificate plus a
+    // network-security-config naming the LAN address). When it exists, debug builds use it in
+    // place of src/debug/res; release builds never see either (main trusts system CAs only).
+    sourceSets {
+        getByName("debug") {
+            val lanOverlay = file("src/debugLan/res")
+            res.setSrcDirs(listOf(if (lanOverlay.isDirectory) lanOverlay else file("src/debug/res")))
+        }
+    }
+
     defaultConfig {
         // Real, unique application ID -- not the Flutter template default.
         // Matches `namespace` above; keep both in sync if this ever changes,

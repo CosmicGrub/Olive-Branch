@@ -5,7 +5,7 @@ this directory's own numbering does not track it in lockstep. This
 directory is implementation; the three canonical documents remain the
 source of truth.
 
-## Layout
+## Layout (Phase 0 snapshot; the scaffold has grown well past it)
 
 ```
 scaffold/
@@ -50,44 +50,30 @@ this illustrative Layout section to match.
 
 ```bash
 npm install
-npm run test             # all packages  → now chains 43 sub-suite
-                          #   invocations (42 unique -- test:games2 is
-                          #   invoked twice), well past the four below;
-                          #   see tools/verify.sh for the current
-                          #   combined total (that script also runs six
-                          #   more Postgres-dependent suites this chain
-                          #   does not -- test:db, test:auth-credentials,
-                          #   test:db:export, test:message-capture,
-                          #   test:messages-route, test:calls-route)
-npm run test:golden      # time engine   →  24
-npm run test:delivery    # delivery      →  37
-npm run test:graph       # family graph  →  59
-npm run test:session     # session+lock  →  67
+npm run test             # every package suite, chained (the list lives in package.json)
+npm run verify           # the full gate, the CI entry point (bash tools/verify.sh): build, every suite,
+                         # the Postgres-dependent suites, the docs checks
 
-# database (needs a live Postgres 16) — apply every migration in order,
-# idempotently, via the real runner (see tools/migrate.mjs; this replaced
-# hand-listing each file one at a time after that produced two real
-# incidents — a suite run against a database missing a migration, and one
-# run twice against the same database):
+# database (needs a live Postgres 16) -- apply every migration in order,
+# idempotently, via the real runner (tools/migrate.mjs). It replaced
+# hand-listing each file after that produced two real incidents: a suite run
+# against a database missing a migration, and one run twice against the same one:
 PSQL_CMD="psql" node tools/migrate.mjs
-psql -f db/test/0001_constraints.test.sql     # 24 PASS
+psql -f db/test/0001_constraints.test.sql
 psql -f db/test/0002_seed.sql
-bash db/test/run_concurrency.sh               #  7 PASS
-psql -f db/test/0003_session.test.sql         # 14 PASS  (non-superuser only)
+bash db/test/run_concurrency.sh
+psql -f db/test/0003_session.test.sql         # non-superuser only
 psql -f db/test/0004_e2e_message.test.sql
 psql -f db/test/0005_court.test.sql
 ```
 
-The four package suites above (`24 + 37 + 59 + 67 = 187`, reconfirmed by
-actually running all four, unchanged since Phase 0) plus the three counted
-DB suites (`0001_constraints.test.sql` 24, `run_concurrency.sh` 7,
-`0003_session.test.sql` 14) still total **232 assertions, all green** —
-this is the same 232 the doc has always claimed, not a new figure. But both
-`npm run test` and `db/test/` have since grown well past what this section
-originally covered (48 npm test sub-suites now exist, plus the two DB
-suites added above, neither counted in the 232). See `CHANGELOG.md`'s
-latest entry for the current repo-wide combined total — **6010** as of
-v0.49.40 (JS/server + Flutter), not this file's 232.
+**No test count is quoted in this file.** The numbers that used to live here
+(a Phase 0 total, a later one and a sub-suite count) were true on the day
+they were written and are wrong now. The one current figure is the
+`COMPUTED TOTAL` line that CI prints (and `npm run verify` computes); it is the
+only source for an assertion total anywhere in the repository, and nobody
+edits a total by hand. The per-suite probe counts in the "Layout" tree above are
+Phase 0 numbers and are kept only as history.
 
 > The database suites must run as a `NOSUPERUSER NOBYPASSRLS` role. Run as
 > `postgres` they measure nothing — superusers bypass RLS even with FORCE.

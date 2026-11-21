@@ -9,6 +9,9 @@
   dart:io does not read this file; lib/server_transport_policy.dart enforces the
   same rule (https only in release, optional SPKI pinning) for the API client.
   The debug source set overrides this file to allow localhost and 10.0.2.2.
+  Nothing else is trusted here: no domain-config, no raw certificate, no address.
+  The self-hosted Jitsi dev certificate is a DEBUG-only overlay (see
+  tools/jitsi-selfhost/README.md) and never reaches a release build.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -16,19 +19,4 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <!-- OLIVE-LAN-JITSI-BEGIN (rewritten by tools/jitsi-selfhost/generate-dev-cert.sh; do not hand-edit)
-         The owner's self-hosted Jitsi (CALL_PROVIDER=jitsi, MASTERFILE 16.2 #6). Its https endpoint
-         serves a SELF-SIGNED cert. The ONLY extra trust in the whole app is this: the one pinned
-         public cert in res/raw, honoured for the one LAN address below and nothing else. The base
-         config above is untouched (system CAs only, no cleartext), so every other host, including
-         the Olive API, keeps the platform's normal verification. No TrustAll anywhere.
-         A cert that matches no listed host is useless; a new LAN IP means regenerate + rebuild. -->
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="false">192.168.1.156</domain>
-        <trust-anchors>
-            <certificates src="@raw/jitsi_dev_cert" />
-            <certificates src="system" />
-        </trust-anchors>
-    </domain-config>
-    <!-- OLIVE-LAN-JITSI-END -->
 </network-security-config>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and older (API 30 and below) full-backup rules; the same exclusions as
+  data_extraction_rules.xml, for the same reason (see there). The local store is
+  sealed with a Keystore key that cannot be restored onto another phone.
+-->
+<full-backup-content>
+    <exclude domain="root" path="app_flutter" />
+    <exclude domain="file" path="olive_store" />
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    <exclude domain="sharedpref" path="FlutterSharedPreferences.xml" />
+</full-backup-content>

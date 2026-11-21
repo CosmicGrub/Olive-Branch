@@ -177,6 +177,17 @@ const plant = (root, slot, { stamp, owner, ageMin }) => {
   check(g, '...and each winner got a different slot', new Set(results.filter((x) => x.code === 0).map((x) => x.out.match(/slot\d/)?.[0])).size, 2);
 }
 
+// ---------------------------------------------------------------- Z
+{
+  const g = 'no machine-specific default lock root';
+  const tmpRoot = fresh();
+  const env = { ...process.env, SLOT_PROC_LIST_FILE: fwd(PROCS), TMPDIR: fwd(tmpRoot) };
+  delete env.OLIVE_LOCK_DIR;
+  const r = spawnSync('bash', [SH, 'status'], { encoding: 'utf8', env });
+  check(g, 'with OLIVE_LOCK_DIR unset the lock root is a temp directory, not a drive path', `${r.status}/${existsSync(join(tmpRoot, 'olive-slot-locks'))}`, '0/true');
+  check(g, 'slot.sh no longer names the shared lock directory of one machine', readFileSync(join(here, '..', 'slot.sh'), 'utf8').includes('/z/' + 'wt-locks'), false);
+}
+
 rmSync(base, { recursive: true, force: true });
 let gname = '';
 for (const r of rows) {

@@ -4,8 +4,8 @@
 # Found by actually bringing the stack up, not assumed: docker-jitsi-meet's
 # default CONFIG layout bind-mounts host directories straight into the
 # containers (${CONFIG}/storage/prosody:/var/lib/prosody, etc). On Docker
-# Desktop for Windows, host paths under a Windows drive (C:\Users\... /
-# /c/Users/... from Git Bash) go through a file-sharing translation layer
+# Desktop for Windows, host paths under a Windows drive (<drive>:\<path>\... /
+# /<drive>/<path>/... from Git Bash) go through a file-sharing translation layer
 # that does not preserve POSIX ownership — Prosody's container (uid 1000,
 # "s6") cannot write into a bind-mounted Windows directory no matter what
 # it's chmod'd to on the Windows side, so it can never generate its
@@ -30,7 +30,7 @@
 # upstream so they're still inspectable from Windows Explorer.
 #
 # Not needed at all if this is ever run from inside a native Linux host or a
-# WSL2 distro's own filesystem instead of a /c/Users/... or C:\Users\...
+# WSL2 distro's own filesystem instead of a /<drive>/<path>/... or <drive>:\<path>\...
 # path — this is a Windows-bind-mount-specific workaround, not a
 # docker-jitsi-meet bug.
 services:
