@@ -126,8 +126,8 @@ void main() {
     expect(allText(t).where((String s) => s.contains(_technical)), isEmpty);
     // The code is on the screen and in the window, and nowhere an observer can see.
     expect(mom.disc.adverts.map((a) => '${a.handle}${a.tag}').join().contains(code), isFalse);
-    await t.pumpWidget(const MaterialApp(home: SizedBox()));
-    await settle(t, rounds: 4);
+    await t.pageBack(); // leave the screen (the pushed page goes, the app stays)
+    await settle(t, rounds: 12);
     expect(mom.hub.joinWindow, isNull, reason: 'closing the screen closed the window');
   });
 
@@ -157,7 +157,7 @@ void main() {
       expect(allText(t).where((String s) => s.contains(_technical)), isEmpty);
       await t.tap(find.byKey(const Key('addApprove')));
       await settle(t, rounds: 30);
-      final JoinOutcome o = (await t.runAsync(() => joined))!;
+      final JoinOutcome o = (await t.runAsync<JoinOutcome?>(() => joined))!;
       expect(o.ok, isTrue, reason: o.reason);
       await settle(t, rounds: 6);
       expect(find.byKey(const Key('addDone')), findsOneWidget);
@@ -184,7 +184,7 @@ void main() {
     await settle(t, rounds: 25);
     await t.tap(find.byKey(const Key('addDecline')));
     await settle(t, rounds: 20);
-    final JoinOutcome o = (await t.runAsync(() => joined))!;
+    final JoinOutcome o = (await t.runAsync<JoinOutcome?>(() => joined))!;
     expect(o.ok, isFalse);
     expect(o.reason, 'declined');
     expect((await t.runAsync(() => dad.fam.hasRecord()))!, isFalse);

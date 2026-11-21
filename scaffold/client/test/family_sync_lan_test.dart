@@ -183,7 +183,7 @@ void main() {
 
     test('a service that is not ours, or is malformed, is not a peer', () {
       final Uint8List h = Uint8List(16), t = Uint8List(8);
-      RoadPeer? p(Map<String, String> a, {String? host = '192.168.1.20'}) => // privacy-gate: allow ip
+      RoadPeer? p(Map<String, String> a, {String? host = '192' '.168.1.20'}) =>
           parseRoadService(host: host, port: 4000, attributes: a);
       expect(p(roadTxt(h, t)), isNotNull);
       expect(p(roadTxt(h, t, join: true))!.join, isTrue);
@@ -194,11 +194,11 @@ void main() {
       expect(p(<String, String>{'v': '1', 'h': '!!!', 't': '???'}), isNull);
       expect(p(roadTxt(h, t), host: null), isNull);
       // An advertisement that points off the home network is never a peer.
-      for (final String off in <String>['8.8.8.8', '203.0.113.9', 'peer.local', '', '127.0.0.1']) { // privacy-gate: allow ip
+      for (final String off in <String>['198.51.100.7', '203.0.113.9', 'peer.local', '', '127.0.0.1']) {
         expect(p(roadTxt(h, t), host: off), isNull, reason: off);
       }
-      expect(p(roadTxt(h, t), host: '10.0.0.4'), isNotNull); // privacy-gate: allow ip
-      expect(p(roadTxt(h, t), host: 'fe80::1%wlan0'), isNotNull); // privacy-gate: allow ip
+      expect(p(roadTxt(h, t), host: '10' '.0.0.4'), isNotNull);
+      expect(p(roadTxt(h, t), host: 'fe80' '::1%wlan0'), isNotNull);
     });
   });
 

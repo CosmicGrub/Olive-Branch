@@ -314,8 +314,10 @@ class FamilyJoinWindow extends ChangeNotifier {
       nowMs: nowMs(),
     );
     if (c == null) return null;
-    final LedgerState after = await c.state(nowMs: nowMs());
-    if (!after.isActiveGuardianDevice(_offer!.dev.key)) { print('DBG vote not taken ok=${after.ok} pend=${after.pending.map((p) => '${p.status}').toList()} rej=${after.rejected} devs=${after.devices.length}'); return null; } // the vote did not take: say nothing
+    // The other phone's clock may be a moment ahead of this one: a yes dated after this phone's "now" only counts once
+    // this phone's clock reaches it, so the answer is judged as of the vote's own time (the record itself is unchanged).
+    final LedgerState after = await c.state(nowMs: max(nowMs(), vote.atMs));
+    if (!after.isActiveGuardianDevice(_offer!.dev.key)) return null; // the vote did not take: say nothing
     _set(JoinState.done);
     _timer?.cancel();
     return <String, dynamic>{'t': 'j4', 'ok': 1};

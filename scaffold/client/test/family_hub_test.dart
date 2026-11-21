@@ -309,10 +309,10 @@ void main() {
       final Phone mom = await mk(1), dad = await mk(2);
       await pairUp(mom, dad);
       final Uint8List tag = await roadTag((await mom.hub.context())!.keyring, mom.hub.now());
-      for (final String host in <String>['8.8.8.8', '203.0.113.9', 'example.com', '']) { // privacy-gate: allow ip
+      for (final String host in <String>['198.51.100.7', '203.0.113.9', 'example.com', '']) {
         expect(await mom.hub.exchangeWith(RoadPeer(host: host, port: 9, handle: Uint8List(16), tag: tag)), -1);
       }
-      expect(await RoadHttpTransport('8.8.8.8', 9).send(<String, dynamic>{'t': 'x'}), isNull); // privacy-gate: allow ip
+      expect(await RoadHttpTransport('198.51.100.7', 9).send(<String, dynamic>{'t': 'x'}), isNull);
       expect(await RoadHttpTransport('127.0.0.1', 9).send(<String, dynamic>{'t': 'x'}), isNull);
     });
 

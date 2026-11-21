@@ -74,10 +74,10 @@ class FamilyHub extends ChangeNotifier {
     this.settleHours,
     Duration discoverWait = const Duration(seconds: 3),
     this.readvertiseEvery = const Duration(minutes: 4),
-  }) : _deviceKey = deviceKey,
+  }) : _deviceKey = deviceKey, // ignore: prefer_initializing_formals (a private name cannot be a named parameter)
        _discovery = discovery ?? BonsoirRoadDiscovery(),
        _now = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch),
-       _discoverWait = discoverWait {
+       _discoverWait = discoverWait { // ignore: prefer_initializing_formals
     shares = ScreenShareService(
       box: shareBox,
       identity: _shareIdentity,
