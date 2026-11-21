@@ -68,12 +68,15 @@ Future<void> _settle(WidgetTester t) async {
 
 void main() {
   testWidgets('adult screen: wrong PIN is refused; right PIN opens a window; approval names the device; done only after delivery', (t) async {
+    await t.binding.setSurfaceSize(const Size(800, 2600)); // the first screen is a long list; keep all of it built
+    addTearDown(() => t.binding.setSurfaceSize(null));
     final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1);
     await t.runAsync(() => pin.setPin('4829'));
     AdultWindow? opened;
     final MemoryPairedKidsRepository kids = MemoryPairedKidsRepository();
     await t.pumpWidget(MaterialApp(
         home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
       pin: pin,
       deviceKeys: MemoryDeviceKeyRepository(),
       kids: kids,
@@ -88,8 +91,8 @@ void main() {
     )));
 
     // The instructions describe what actually happens: a nameless picture to tap, not letters to read out.
-    expect(find.textContaining('This phone will then show a picture'), findsOneWidget);
-    expect(find.textContaining('tap the same picture'), findsOneWidget);
+    expect(find.byKey(const Key('connectIntroLine')), findsOneWidget);
+    expect(find.textContaining('Tap the matching picture on her tablet', skipOffstage: false), findsOneWidget);
     expect(find.textContaining('letters'), findsNothing);
     await t.enterText(find.byKey(const Key('connectPinField')), '1111');
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
@@ -97,12 +100,14 @@ void main() {
     expect(opened, isNull, reason: 'a wrong PIN opens nothing');
 
     await t.enterText(find.byKey(const Key('connectPinField')), '4829');
+    await t.tap(find.byKey(const Key('connectMoreWays')));
+    await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('connectOfferQr')));
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
     expect(find.byKey(const Key('connectLabel')), findsNothing, reason: 'no letters to read out: the child picks a picture');
-    expect(find.textContaining('tap the picture shown here'), findsOneWidget);
+    expect(find.textContaining('Tap the picture shown here'), findsOneWidget);
     expect(find.textContaining('letters'), findsNothing);
     expect(opened!.label, isIn(<String>['Player one', 'Player two']));
     expect(opened!.qrPayload(), isNotNull);
@@ -137,6 +142,7 @@ void main() {
     AdultWindow? opened;
     await t.pumpWidget(MaterialApp(
         home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
       pin: pin,
       deviceKeys: MemoryDeviceKeyRepository(),
       kids: _UnwritableKids(),

@@ -282,6 +282,16 @@ class AdultWindow extends ChangeNotifier {
     return true;
   }
 
+  /// True once a device that knows this window's handle (or session id) has asked it something: the screen can then say
+  /// "her tablet found this phone". It proves nothing about WHICH device it was and authorizes nothing.
+  bool tabletSeen = false;
+
+  void _sawTablet() {
+    if (tabletSeen) return;
+    tabletSeen = true;
+    notifyListeners();
+  }
+
   /// True when the window has a password to run a key exchange with (always, except in the CODE way before the code is typed).
   bool get hasPassword => _pin != null || qrSecret != null;
 
@@ -575,6 +585,7 @@ class AdultWindow extends ChangeNotifier {
       case 'rdy':
         // The CODE way: "has the grown-up typed the code yet?" One bit, from a source that knows the window's handle or session id.
         if (!awaitCode || state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.ready, kSourceMaxReady)) return null;
+        _sawTablet();
         return <String, dynamic>{'t': 'rdy-ok', 'rd': hasPassword ? 1 : 0};
       case 'hello':
         if (state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.hello, kSourceMaxHello)) return null;
@@ -583,6 +594,7 @@ class AdultWindow extends ChangeNotifier {
         // plain words. The window still answers; the tablet stops by its own check and shows only its calm card.
         if (m['pv'] != kPairingProtocolVersion) _noteVersionMismatch();
         // The window id this hello was addressed by: the session id (a QR) or the discovery handle (nearby).
+        _sawTablet();
         final Uint8List helloId = sidOk ? sid : discoveryHandle;
         if (_allowedChildKey != null) {
           // Mode B: only the scanned child, and only with proof it holds that key for THIS window. Silent drop.

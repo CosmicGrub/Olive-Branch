@@ -47,11 +47,14 @@ class _NoHost implements WindowHost {
   Future<void> readvertise() async {}
 }
 
+// Each tablet has its own key (one device is one row, so two fixtures must not share one).
+Uint8List _keyFor(String id) => Uint8List.fromList(List<int>.filled(32, id.codeUnitAt(0)));
+
 PairedKid _kid(String id, {String name = 'Tablet'}) =>
-    PairedKid(certId: id, childDeviceKey: Uint8List(32), childId: 'kid', deviceName: name, issuedAtMs: 5);
+    PairedKid(certId: id, childDeviceKey: _keyFor(id), childId: 'kid', deviceName: name, issuedAtMs: 5);
 
 Map<String, Object?> _kidJson(String id) =>
-    <String, Object?>{'certId': id, 'cpk': b64(Uint8List(32)), 'cid': 'kid', 'dn': 'Tablet', 'iat': 5};
+    <String, Object?>{'certId': id, 'cpk': b64(_keyFor(id)), 'cid': 'kid', 'dn': 'Tablet', 'iat': 5};
 
 LocalStorePairedKidsRepository _repo(LocalServices s) =>
     LocalStorePairedKidsRepository(s.area('pairedkids', ownerId: kLocalGuardianScope));
@@ -377,6 +380,7 @@ void main() {
       await t.runAsync(() => pin.setPin('4829'));
       AdultWindow? opened;
       await t.pumpWidget(MaterialApp(home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
         pin: pin, deviceKeys: MemoryDeviceKeyRepository(), kids: MemoryPairedKidsRepository(), adultName: 'Mom', childName: 'Ivy',
         makeUnlockVerifier: (String p) async => LocalPinRecord(iterations: 1, salt: Uint8List(16), hash: Uint8List(32)),
         localAddress: () async => null,
