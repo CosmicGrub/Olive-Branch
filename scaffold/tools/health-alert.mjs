@@ -44,6 +44,7 @@
  */
 import pg from 'pg';
 import { staleBackupAlarm } from './backup_lib.mjs';
+import { deliveryAlarms } from './delivery_health_lib.mjs';
 
 // 0047: HEALTH_DATABASE_URL is the dedicated monitoring login (`health_monitor`:
 // SELECT on health_check and nothing else, so it can count but never read a row).
@@ -56,6 +57,8 @@ if (!DATABASE_URL) {
 
 const client = new pg.Client({ connectionString: DATABASE_URL });
 let rows;
+let deliveryHealthRow = null;
+let deliveryHealthError = null;
 try {
   await client.connect();
   // 0047: no app.role is needed (or wanted). health_check reads through
@@ -67,6 +70,21 @@ try {
     'SELECT check_name, severity, observed, threshold, meaning FROM health_check ORDER BY severity, check_name;'
   );
   rows = res.rows;
+  // ISS-069: is a delivery worker running, and is anything due and unclaimed? delivery_health()
+  // (0057) is aggregate-only, like health_counts(): ages and counts, never a row. A database that
+  // predates it (42883) simply has no worker to watch; any other failure is itself reported below.
+  try {
+    const d = (await client.query('SELECT * FROM delivery_health()')).rows[0];
+    const n = (v) => (v === null || v === undefined ? null : Number(v));
+    deliveryHealthRow = d ? {
+      pending: Number(d.pending), ready: Number(d.ready),
+      oldestReadyAgeSec: n(d.oldest_ready_age_sec), oldestPendingAgeSec: n(d.oldest_pending_age_sec),
+      workerBeatAgeSec: n(d.worker_beat_age_sec), workerOkAgeSec: n(d.worker_ok_age_sec),
+      workerTickMs: n(d.worker_tick_ms),
+    } : null;
+  } catch (e) {
+    if (e?.code !== '42883') deliveryHealthError = e.message;
+  }
 } catch (e) {
   console.error(`ABORT: cannot query health_check — ${e.message}`);
   await client.end().catch(() => {});
@@ -94,6 +112,18 @@ if (staleBackup) {
     meaning: staleBackup.meaning,
   });
   rows.push(breaches[breaches.length - 1]);
+}
+
+// ISS-069: delivery-worker liveness and backlog ages (tools/delivery_health_lib.mjs).
+for (const a of deliveryAlarms(deliveryHealthRow, process.env)) {
+  const row = { check_name: a.checkName, severity: a.severity, observed: a.observed, threshold: a.threshold, meaning: a.meaning };
+  breaches.push(row); rows.push(row);
+}
+if (deliveryHealthError) {
+  // A monitor that cannot read the worker's state must say so, not look clean.
+  const row = { check_name: 'delivery_health_unreadable', severity: 'high', observed: 1, threshold: 0,
+    meaning: `delivery_health() could not be read (${String(deliveryHealthError).slice(0, 120)}); grant EXECUTE to the monitoring login.` };
+  breaches.push(row); rows.push(row);
 }
 
 if (breaches.length) {

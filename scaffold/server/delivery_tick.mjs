@@ -29,10 +29,13 @@
 // `degraded` instead of a worker that looks fine while it delivers nothing.
 import { runDeliverSweep, withJobLock, deliverTickMsFromEnv } from '../tools/scheduler.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
-import { deliveryBacklog } from '../packages/db/src/pool.mjs';
+import { deliveryBacklog, recordWorkerHeartbeat } from '../packages/db/src/pool.mjs';
 import { errorLine } from './safe_log.mjs';
 
 export const DELIVERY_LOCK_NAME = 'deliver';
+// The heartbeat row this host writes (migration 0057). The dedicated worker writes 'delivery'; either
+// one alive is enough for delivery_health(), so a one-container deployment is not reported as worker-less.
+export const IN_SERVER_WORKER_NAME = 'delivery-in-server';
 // A burst of POSTs (a batch of 30 messages) should cost one extra tick, not 30.
 const KICK_DEBOUNCE_MS = 400;
 
@@ -54,12 +57,14 @@ export function hostIntervalFromEnv(env = process.env) {
  *           metrics?: { inc: (name: string, by?: number) => void },
  *           log?: (line: string) => void,
  *           now?: () => number,
- *           sweep?: typeof runDeliverSweep }} o
+ *           sweep?: typeof runDeliverSweep,
+ *           heartbeat?: (o: { worker: string, tickMs: number, ok: boolean, consecutiveFailures: number }) => Promise<void> }} o
  */
 export function createDeliveryTick({
   pool, intervalMs = 30_000, notify = notifyDevices,
   metrics = { inc() {} }, log = (l) => console.log(l), now = () => Date.now(),
   sweep = runDeliverSweep,
+  heartbeat = (o) => recordWorkerHeartbeat(pool, o),
 }) {
   let timer = null;
   let kickTimer = null;
@@ -69,6 +74,14 @@ export function createDeliveryTick({
     enabled: intervalMs > 0, ticks: 0, failures: 0, consecutiveFailures: 0,
     lastOkAt: null, lastError: null, last: null,
   };
+
+  // Best effort: a heartbeat that cannot be written must never turn a good tick into a bad one.
+  async function beat(ok) {
+    if (intervalMs <= 0) return;
+    try {
+      await heartbeat({ worker: IN_SERVER_WORKER_NAME, tickMs: intervalMs, ok, consecutiveFailures: state.consecutiveFailures });
+    } catch { /* the readiness/health checks report a silent worker; this is not the place to be loud every tick */ }
+  }
 
   /** One full pass. Resolves to the counts, or { locked: true } if another worker holds the lock. */
   function runOnce() {
@@ -84,6 +97,7 @@ export function createDeliveryTick({
           throw Object.assign(new Error(r.errors.join('; ')), { code: 'sweep_step_failed' });
         }
         state.last = r; state.lastOkAt = now(); state.consecutiveFailures = 0; state.lastError = null;
+        await beat(true);
         if (r.delivered) metrics.inc('delivery_claimed_total', r.delivered);
         if (r.expired) metrics.inc('delivery_expired_total', r.expired);
         if (r.pushed) metrics.inc('delivery_push_sent_total', r.pushed);
@@ -101,6 +115,7 @@ export function createDeliveryTick({
         state.lastError = String(e?.code ?? e?.message ?? e).slice(0, 120);
         metrics.inc('delivery_tick_errors_total');
         log(errorLine(e, { msg: 'delivery: tick failed' }));
+        await beat(false);
         return { error: true };
       } finally {
         running = null;
