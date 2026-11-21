@@ -27,7 +27,6 @@ void main() {
 
   test('NEW PHONE: every family area, from a real folder, comes back with an identical content hash', () async {
     final RecoverySheet sheet = await RecoverySheet.make(BackupPurpose.family, random: Random(1));
-    final BackupKeyPair key = await BackupKeyPair.fromSecret(sheet.secret, BackupPurpose.family);
 
     // The old phone, with something in every area a family backup holds, including a multi-chunk one.
     final Phone oldPhone = Phone();
@@ -38,7 +37,7 @@ void main() {
     expect(before.length, areasOfBackup(BackupKind.family).length, reason: 'every area has something in it');
 
     final DirectoryBackupTarget folder = DirectoryBackupTarget(Directory('${root.path}/olive_backups'));
-    final BackupService bs = BackupService(services: old, random: Random(2));
+    final BackupService bs = BackupService(services: old);
     final BackupOutcome out = await bs.run(BackupKind.family,
         BackupDestination(id: 'folder', target: folder, spool: DirectoryBackupTarget(Directory('${root.path}/spool')), verifyEveryChunk: true),
         sheet.publicKey);
@@ -81,7 +80,7 @@ void main() {
     final MemoryBackupTarget keepT = MemoryBackupTarget(), privT = MemoryBackupTarget();
     final BackupKeyPair keepKey = await BackupKeyPair.fromSecret(secrets.keep, BackupPurpose.keep);
     final BackupKeyPair privKey = await BackupKeyPair.fromSecret(secrets.private, BackupPurpose.private);
-    final BackupService bs = BackupService(services: tab, random: Random(4), deviceLabel: 'Her tablet');
+    final BackupService bs = BackupService(services: tab, deviceLabel: 'Her tablet');
     expect((await bs.run(BackupKind.hersKeep, BackupDestination(id: 'folder', target: keepT, spool: MemoryBackupTarget()), keepKey.publicKey)).ok, isTrue);
     expect((await bs.run(BackupKind.hersPrivate, BackupDestination(id: 'folder', target: privT, spool: MemoryBackupTarget()), privKey.publicKey)).ok, isTrue);
 
@@ -128,7 +127,7 @@ void main() {
     final MemoryBackupTarget keepT = MemoryBackupTarget(), privT = MemoryBackupTarget();
     final BackupKeyPair keepKey = await BackupKeyPair.fromSecret(secrets.keep, BackupPurpose.keep);
     final BackupKeyPair privKey = await BackupKeyPair.fromSecret(secrets.private, BackupPurpose.private);
-    final BackupService bs = BackupService(services: tab, random: Random(7));
+    final BackupService bs = BackupService(services: tab);
     await bs.run(BackupKind.hersKeep, BackupDestination(id: 'folder', target: keepT, spool: MemoryBackupTarget()), keepKey.publicKey);
     await bs.run(BackupKind.hersPrivate, BackupDestination(id: 'folder', target: privT, spool: MemoryBackupTarget()), privKey.publicKey);
 
@@ -154,7 +153,7 @@ void main() {
     final LocalServices old = Phone().open();
     await populate(old, BackupKind.family, seed: 1);
     final MemoryBackupTarget t = MemoryBackupTarget();
-    await BackupService(services: old, random: Random(9))
+    await BackupService(services: old)
         .run(BackupKind.family, BackupDestination(id: 'folder', target: t, spool: MemoryBackupTarget()), sheet.publicKey);
 
     final LocalServices used = Phone().open();

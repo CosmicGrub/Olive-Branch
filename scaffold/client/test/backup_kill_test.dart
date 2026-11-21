@@ -59,7 +59,7 @@ void main() {
     key = await BackupKeyPair.fromSecret(sheet.secret, BackupPurpose.family);
   });
 
-  BackupService svc(LocalServices s, _Clock c) => BackupService(services: s, clock: c.call, random: Random(3));
+  BackupService svc(LocalServices s, _Clock c) => BackupService(services: s, clock: c.call);
   BackupDestination dest(BackupTarget t, BackupTarget spool) => BackupDestination(id: 'folder', target: t, spool: spool, verifyEveryChunk: true);
 
   group('kill during a backup', () {
@@ -80,8 +80,8 @@ void main() {
       final (Phone p, MemoryBackupTarget t, String firstId) = await withOneGoodBackup(c);
       final LocalServices s = p.open();
       await s.area('care').put('later', 'written after the first backup');
-      final Map<String, String> dataBefore = await _raw(s.store)
-        ..remove('device.backup');
+      final Map<String, String> dataBefore = await _raw(s.store);
+      dataBefore.remove('device.backup');
       final MemoryBackupTarget spool = MemoryBackupTarget();
       final KillingTarget dying = KillingTarget(t, killOnPut: 2);
       c.advance(const Duration(hours: 25));
@@ -224,7 +224,7 @@ void main() {
             expect(after[n], before[n], reason: 'step $k (${steps[k]}): $n');
           }
           expect(after.keys.where((String n) => n.startsWith('restoreundo.')), isEmpty);
-          expect(rec, steps[k] == 'undo' ? RecoverResult.cleanedUp : RecoverResult.rolledBack,
+          expect(rec, steps[k] == 'undo' ? (populated ? RecoverResult.cleanedUp : RecoverResult.nothingToDo) : RecoverResult.rolledBack,
               reason: 'before the note is written there is nothing to roll back, only leftovers to clear');
 
           // Retry: the backup was never touched, so it still restores, and proves itself.

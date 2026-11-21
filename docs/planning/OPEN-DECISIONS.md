@@ -96,3 +96,14 @@ Built in the recovery-and-player PR (MASTERFILE 7.21). Nothing below blocks the 
 | 29 | Google Play 12-tester closed test (personal accounts) | Plan the first 5 to 10 families as the testers; an organisation account avoids the rule. |
 | 30 | Kids Category on Apple | Decide later after re-reading Guideline 1.3 and 5.1.4 on Apple's own pages. |
 | 50 | Health information about a child on the device: any store or regional rule that applies to the About Mia profile | Unverified; include in the store readiness audit and the counsel review. |
+
+## Backup and recovery (see BACKUP-AND-RESTORE.md, section 9)
+
+| # | Decision | Recommendation / status |
+|---|---|---|
+| BK-1 | Her drawings and memories if her tablet is lost with no warning: a keepsake sheet (14 words on paper) is the only way back, and whoever holds it can open them. Her private areas are never on any sheet. | Offer the keepsake sheet on the tablet's "Moving to a new tablet" page, explained plainly, **off by default**; the family chooses. Built that way. |
+| BK-2 | A grown-up's private Parent Learn notes are "private to you" and a family sheet is shared, so they are in no backup. | Accept for now; a per-grown-up sheet later if wanted. Built that way. |
+| BK-3 | Her private areas if the old tablet dies before a hand-over: no one can recover them, by design. | Accept and say so; prompt for a hand-over whenever the tablet is replaced. Built that way. |
+| BK-4 | Where her tablet's backups go by default: a folder on the tablet and, with a family server, the server. | Keep; add tablet-to-phone over the same Wi-Fi later. |
+| BK-5 | Server limits for sealed backups (size per account, retention, rate). | The server lane sets them; the client keeps three sets and one automatic try per half hour. |
+

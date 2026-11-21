@@ -29,7 +29,14 @@ class GuardianEscalationScreen extends StatelessWidget {
     required this.escalatedUntil,
     required this.onExitKiosk,
     this.childName = 'your child',
+    this.onNewTablet,
+    this.onBringBack,
   });
+
+  /// Moving her to a new tablet, and bringing her back on a replacement (backup_tablet_screens.dart). Offered here, behind
+  /// the PIN and biometric, and nowhere she can reach. Null draws nothing.
+  final VoidCallback? onNewTablet;
+  final VoidCallback? onBringBack;
 
   /// From `LockState.escalatedUntil` — when this scope naturally lapses.
   /// Nullable only because the type it's threaded from is; a screen that can
@@ -70,6 +77,25 @@ class GuardianEscalationScreen extends StatelessWidget {
               ?.copyWith(color: scheme.onSurfaceVariant)),
           // What the phone allows for rings and alerts (alerts_card.dart); draws nothing where there is no phone side.
           const AlertsCard(),
+          if (onNewTablet != null || onBringBack != null) ...[
+            const SizedBox(height: 24),
+            Text('Backups and a new tablet', style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Her pictures, memories and home are backed up here by themselves, sealed. '
+              'Use these when you are moving to a new tablet.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            if (onNewTablet != null) OutlinedButton(
+              key: const Key('movingToNewTabletButton'),
+              onPressed: onNewTablet, child: const Text('Moving to a new tablet')),
+            if (onBringBack != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: const Key('bringHerBackButton'),
+                onPressed: onBringBack, child: const Text('This is the new tablet: bring her back')),
+            ],
+          ],
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),

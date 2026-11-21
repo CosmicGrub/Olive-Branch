@@ -119,18 +119,22 @@ void main() {
       expect(all, contains('journal'));
     });
 
-    test('the only device-wide areas are the role, the three device pairing records and the optional account note; coordinates are never a field (P3)', () {
+    test('the only device-wide areas are the role, the three device pairing records, the optional account note and the three backup areas; coordinates are never a field (P3)', () {
       // Owner requirement 2026-11-08: the role is kept once per device and holds one word. The pairing records
       // (2026-11-08, section 8.5.11) are the only other areas not owned by a child or a grown-up: a signing
       // key, the certificate a grown-up's device signed, and a PIN verifier. All sealed, all small, no PIN.
       // The optional family account (section 8.5.12) adds one more: how far setup got and an opaque child id.
       // Sealed, small, and never a name, PIN, invite code or sign-in key.
+      // Encrypted backup (section 7.23) adds three, all sealed: the backup settings, the earlier versions kept after a
+      // restore (the only large one, so its ceiling is named and bounded below) and, on her tablet, the two secrets that
+      // lock her own backups.
       final List<LocalDataEntry> device =
           localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
       expect(device.map((LocalDataEntry e) => e.area).toList(),
-          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account']);
+          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account', 'backup', 'backupkept', 'childkeys']);
       for (final LocalDataEntry e in device) {
-        expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
+        // backupkept holds whole earlier versions set aside by a restore and backup holds a part-way set's piece list, so those two are larger; both bounded.
+        expect(e.maxBytes, lessThanOrEqualTo(e.area == 'backupkept' ? 8 * 1024 * 1024 : (e.area == 'backup' ? 64 * 1024 : 8 * 1024)), reason: '${e.area} ceiling');
         if (e.area != 'role') expect(e.encrypted, isTrue, reason: '${e.area} is sealed');
       }
       expect(device.first.what.toLowerCase(), contains('not a name'));

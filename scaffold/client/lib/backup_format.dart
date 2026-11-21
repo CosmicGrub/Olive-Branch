@@ -436,7 +436,7 @@ Future<OpenedManifest> openManifest(Uint8List headerBytes, Uint8List sealedManif
     }
     final List<ManifestArea> areas = <ManifestArea>[];
     for (final Object? a in (j['areas'] as List)) {
-      final Map m = a as Map;
+      final Map<Object?, Object?> m = a as Map<Object?, Object?>;
       areas.add(ManifestArea(m['ns'] as String, m['area'] as String, m['schema'] as int, m['enc'] == true,
           m['keys'] as int, m['off'] as int, m['len'] as int, m['hash'] as String));
     }
@@ -485,14 +485,14 @@ Future<List<RestoredArea>> readAreas(OpenedManifest m, ChunkSource fetch) async 
   final List<RestoredArea> out = <RestoredArea>[];
   for (final ManifestArea a in m.areas) {
     if (a.offset < 0 || a.length < 0 || a.offset + a.length > all.length) {
-      throw BackupFormatException('area', 'an area runs past the end');
+      throw const BackupFormatException('area', 'an area runs past the end');
     }
     final Uint8List bytes = Uint8List.sublistView(all, a.offset, a.offset + a.length);
     final Object? json;
     try {
       json = jsonDecode(utf8.decode(bytes));
     } catch (_) {
-      throw BackupFormatException('area', 'an area is not readable');
+      throw const BackupFormatException('area', 'an area is not readable');
     }
     if (json is! Map<String, dynamic>) throw const BackupFormatException('area', 'an area has the wrong shape');
     final Map<String, Object?> data = Map<String, Object?>.from(json);

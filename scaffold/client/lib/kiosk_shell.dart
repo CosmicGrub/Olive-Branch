@@ -37,7 +37,10 @@
 // here.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'backup_places.dart';
+import 'backup_tablet_screens.dart';
 import 'guardian_escalation_screen.dart';
+import 'local_services.dart' show LocalServices;
 import 'call_presence.dart' show KioskSurfaceSignal;
 import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
@@ -206,6 +209,21 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Both open only from the grown-up's page, which is reached only after PIN and biometric; the gate has already been
+  /// passed, so these screens ask for nothing more.
+  Future<void> _openMovingToNewTablet() async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+        builder: (_) => HerKeysScreen(services: LocalServices.current)));
+  }
+
+  Future<void> _openBringHerBack() async {
+    final BackupPlaces places = await DeviceBackupPlaces.forDevice();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+        builder: (_) => ReplacementTabletScreen(services: LocalServices.current, places: places)));
+  }
+
   /// The one real action `GuardianEscalationScreen` offers: release the
   /// native lock, then reset to an unlocked state — the same shape
   /// `_engage()` already falls back to when no native handler exists.
@@ -250,6 +268,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
         escalatedUntil: _state.escalatedUntil,
         onExitKiosk: _exitKiosk,
         childName: widget.childName,
+        onNewTablet: _openMovingToNewTablet,
+        onBringBack: _openBringHerBack,
       );
     }
     // child_session is unreached from this shell (see class doc) —

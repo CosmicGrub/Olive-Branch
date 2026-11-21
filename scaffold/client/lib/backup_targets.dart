@@ -287,7 +287,7 @@ class ServerBackupTarget implements BackupTarget {
   @override
   Future<void> putChunk(BackupKind kind, String setId, String chunkId, Uint8List bytes) async {
     _checkIds(setId, chunkId);
-    await wire.call('PUT', _p(kind, setId, 'chunks/$chunkId'), body: <String, Object?>{'b64': base64Encode(bytes)});
+    await wire.call('PUT', _p(kind, setId, 'chunks/$chunkId'), body: <String, Object?>{'b64': b64(bytes)});
   }
 
   @override
@@ -296,7 +296,7 @@ class ServerBackupTarget implements BackupTarget {
     try {
       final Map<String, Object?> r = await wire.call('GET', _p(kind, setId, 'chunks/$chunkId'));
       final Object? s = r['b64'];
-      return s is String ? base64Decode(s) : null;
+      return s is String ? unb64(s) : null;
     } on BackupWireNotFound {
       return null;
     }

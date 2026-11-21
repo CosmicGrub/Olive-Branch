@@ -36,6 +36,8 @@ import 'pairing_records.dart';
 import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
 import 'api_client.dart';
+import 'backup_places.dart';
+import 'backup_screens.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
@@ -699,6 +701,24 @@ class GuardianMoreScreen extends StatelessWidget {
         content: Text('$what needs a live session — no backend in this preview build.'),
         duration: const Duration(seconds: 3)));
 
+  /// Backup and recovery. The recovery sheet is shown only after the grown-up's local PIN (when this phone has one).
+  Future<void> _openBackup(BuildContext context) async {
+    final BackupPlaces places = await DeviceBackupPlaces.forDevice();
+    if (!context.mounted) return;
+    _open(context, BackupHubScreen(
+      services: LocalServices.current,
+      places: places,
+      confirmAdult: () async {
+        final local = GuardianLocalScope.maybeOf(context);
+        if (local != null && await local.services.pin.isSet()) {
+          if (!context.mounted) return false;
+          return askLocalPin(context, local.services.pin,
+            title: 'Enter your PIN', why: 'Your recovery sheet is for grown-ups only.');
+        }
+        return true;
+      }));
+  }
+
   /// The PIN check behind "Clear data on this device". With a session it is the server's
   /// (unchanged). With NO session and a local PIN on this device (the offline family),
   /// it is the local PIN. With neither it is null, which the screen treats as fail closed.
@@ -853,6 +873,9 @@ class GuardianMoreScreen extends StatelessWidget {
           SettingsRow(id: 'screenshares', icon: Icons.mobile_screen_share_outlined, title: 'Screens shared between grown-ups',
             subtitle: 'Pictures of a screen sent from one grown-up to another. They expire, and can be taken back',
             onTap: () => _open(context, ScreenShareInboxScreen(service: local!.services.shares!))),
+        SettingsRow(id: 'backup', icon: Icons.cloud_upload_outlined, title: 'Backup and recovery',
+          subtitle: 'A sealed copy away from this phone, and how to bring it back',
+          onTap: () => _openBackup(context)),
         SettingsRow(id: 'devicedata', icon: Icons.phonelink_erase_outlined, title: 'Data on this phone',
           subtitle: 'What lives here, and clear it',
           onTap: () => _open(context, ClearLocalDataScreen(
@@ -1365,6 +1388,10 @@ class GuardianMoreScreen extends StatelessWidget {
         // SHOW the list; only the wipe needs a checkable PIN. Its own section,
         // last, so no existing tile moves.
         HubSection(title: 'This device', children: [
+          HubTile(key: const Key('moreBackup'), icon: Icons.cloud_upload_outlined,
+            title: 'Backup and recovery',
+            subtitle: 'A sealed copy away from this phone, and how to bring it back',
+            onTap: () => _openBackup(context)),
           HubTile(key: const Key('moreDeviceData'), icon: Icons.phonelink_erase_outlined,
             title: 'Data on this device',
             subtitle: 'What this phone keeps, and clear it',

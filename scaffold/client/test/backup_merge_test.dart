@@ -63,7 +63,7 @@ void main() {
     final MergeResult m = deep(
         <String, Object?>{'p': <String, Object?>{'a': 1, 'b': <String, Object?>{'x': 'phone'}}},
         <String, Object?>{'p': <String, Object?>{'c': 3, 'b': <String, Object?>{'x': 'backup', 'y': 2}}});
-    final Map p = m.merged['p'] as Map;
+    final Map<Object?, Object?> p = m.merged['p'] as Map<Object?, Object?>;
     expect(p['a'], 1);
     expect(p['c'], 3);
     expect((p['b'] as Map)['x'], 'phone');

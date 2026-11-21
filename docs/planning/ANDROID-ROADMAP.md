@@ -32,6 +32,7 @@ Releases: 0.50.0 (#149), 0.51.0 (#168, tag `v0.51.0`), small wins batch (#174). 
 | #176 | iOS inert scaffold and roadmap | iOS compile job is advisory only; on hold by owner direction. |
 | #198 | Docs: reshape the QR brainstorm and mockups for welcoming people into the village | Adds the About Mia profile and care guides sections. Docs only. |
 | this PR | Docs: spec amendments, gap register, roadmap, clinician cover letter | Docs only, marked PLANNED where not built. |
+| backup lane | Encrypted backup and restore, client half (`BACKUP-AND-RESTORE.md`, MASTERFILE 7.23) | CI-verified only; the server routes, a system file picker and tablet-to-phone transfer are not built; adding a restored phone to the family belongs to the recovery lane. Owner decisions BK-1 to BK-5 open. |
 
 Closed without merging: #181 (the `ubuntu-24.04` runner pin is already on main), #187 and #188 (CI probes).
 

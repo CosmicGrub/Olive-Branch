@@ -10,6 +10,7 @@ import 'package:olive_client/backup_classes.dart';
 import 'package:olive_client/backup_format.dart';
 import 'package:olive_client/backup_keys.dart';
 import 'package:olive_client/backup_targets.dart';
+import 'package:olive_client/device_keys.dart' show b64, unb64;
 import 'package:olive_client/local_services.dart';
 
 import 'support/backup_rig.dart';
@@ -32,7 +33,7 @@ class FakeBackupWire implements BackupWire {
       final List<CommittedSet> sets = await store.committed(kind);
       return <String, Object?>{
         'sets': <Object?>[
-          for (final CommittedSet s in sets) <String, Object?>{'header': base64Encode(s.header), 'manifest': base64Encode(s.manifest)}
+          for (final CommittedSet s in sets) <String, Object?>{'header': b64(s.header), 'manifest': b64(s.manifest)}
         ]
       };
     }
@@ -43,16 +44,16 @@ class FakeBackupWire implements BackupWire {
       return <String, Object?>{};
     }
     if (p.length == 7 && p[5] == 'chunks' && method == 'PUT') {
-      await store.putChunk(kind, set, p[6], base64Decode(body!['b64'] as String));
+      await store.putChunk(kind, set, p[6], unb64(body!['b64'] as String));
       return <String, Object?>{};
     }
     if (p.length == 7 && p[5] == 'chunks' && method == 'GET') {
       final Uint8List? b = await store.getChunk(kind, set, p[6]);
       if (b == null) throw const BackupWireNotFound();
-      return <String, Object?>{'b64': base64Encode(b)};
+      return <String, Object?>{'b64': b64(b)};
     }
     if (p.length == 6 && p[5] == 'commit' && method == 'PUT') {
-      await store.commit(kind, set, base64Decode(body!['header'] as String), base64Decode(body['manifest'] as String));
+      await store.commit(kind, set, unb64(body!['header'] as String), unb64(body['manifest'] as String));
       return <String, Object?>{};
     }
     throw StateError('unexpected $method $path');

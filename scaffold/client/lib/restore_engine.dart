@@ -125,12 +125,12 @@ enum RecoverResult { nothingToDo, rolledBack, cleanedUp }
 class RestoreEngine {
   RestoreEngine({required this.services, DateTime Function()? clock, Random? random, this.testHook})
       : _clock = clock ?? DateTime.now,
-        _random = random;
+        _random = random; // ignore: prefer_initializing_formals
   final LocalServices services;
   final DateTime Function() _clock;
   final Random? _random;
 
-  /// Test hook: called with a step name ('undo', 'noted', 'write:<n>', 'checked') so a test can stand for a kill.
+  /// Test hook: called with a step name ('undo', 'noted', 'write:N', 'checked') so a test can stand for a kill.
   final Future<void> Function(String step)? testHook;
 
   LocalStore get _store => services.store;
@@ -151,7 +151,6 @@ class RestoreEngine {
       await _backupNs.put('restore', <String, Object?>{...note, 'phase': 'rolledback', 'at': _nowMs});
       result = RecoverResult.rolledBack;
     }
-    final String? liveId = note != null && note['phase'] == 'applying' ? null : (note?['id'] as String?);
     int swept = 0;
     for (final String n in await _store.namespaces()) {
       if (n.startsWith('restoreundo.')) {
@@ -159,7 +158,7 @@ class RestoreEngine {
         swept++;
       }
     }
-    if (liveId != null && swept > 0 && result == RecoverResult.nothingToDo) result = RecoverResult.cleanedUp;
+    if (swept > 0 && result == RecoverResult.nothingToDo) result = RecoverResult.cleanedUp;
     return result;
   }
 
@@ -167,7 +166,7 @@ class RestoreEngine {
     final String id = note['id'] as String;
     final List<Object?> items = (note['items'] as List?) ?? const <Object?>[];
     for (int i = 0; i < items.length; i++) {
-      final Map m = items[i] as Map;
+      final Map<Object?, Object?> m = items[i] as Map<Object?, Object?>;
       final String ns = m['ns'] as String;
       if (m['had'] == true) {
         final Uint8List? raw = await _store.backend.read('restoreundo.$id.$i');
@@ -347,7 +346,7 @@ class RestoreEngine {
         asideNs.add(a.ref.name);
       }
     }
-    final String keptNs = NsRef(LocalScope.device, '', 'backupkept').name;
+    final String keptNs = const NsRef(LocalScope.device, '', 'backupkept').name;
     final List<String> targets = <String>[for (final AreaPlan a in writes) a.ref.name, if (allAside.isNotEmpty) keptNs];
     Map<String, Object?>? note;
     try {
@@ -366,7 +365,7 @@ class RestoreEngine {
       // 4 write: set-aside copies first, so a version is never dropped before it is kept
       int n = 0;
       if (allAside.isNotEmpty) {
-        final LocalNamespace kept = _store.open(specFor(NsRef(LocalScope.device, '', 'backupkept')));
+        final LocalNamespace kept = _store.open(specFor(const NsRef(LocalScope.device, '', 'backupkept')));
         final Map<String, Object?> now = await kept.snapshot();
         now['r-$id'] = <String, Object?>{
           'at': _nowMs,

@@ -10,7 +10,6 @@ import 'package:olive_client/backup_keys.dart';
 import 'package:olive_client/backup_service.dart';
 import 'package:olive_client/backup_targets.dart';
 import 'package:olive_client/local_services.dart';
-import 'package:olive_client/local_store.dart';
 import 'package:olive_client/restore_engine.dart';
 
 import 'support/backup_rig.dart';
@@ -31,7 +30,7 @@ void main() {
 
   Future<MemoryBackupTarget> backUp(LocalServices s, {BackupKind kind = BackupKind.family, _Clock? clock, BackupKeyPair? to, MemoryBackupTarget? into}) async {
     final MemoryBackupTarget t = into ?? MemoryBackupTarget();
-    final BackupService b = BackupService(services: s, clock: (clock ?? _Clock()).call, random: Random(2));
+    final BackupService b = BackupService(services: s, clock: (clock ?? _Clock()).call);
     final BackupOutcome o = await b.run(kind, BackupDestination(id: 'folder', target: t, spool: MemoryBackupTarget(), verifyEveryChunk: true),
         (to ?? key).publicKey);
     expect(o.ok, isTrue, reason: o.code);
@@ -108,7 +107,7 @@ void main() {
     expect(await n.area('care').get('note'), 'from the backup');
     expect(await n.area('care').get('other'), 'only here');
     final Map<String, Object?> kept = await n.area('backupkept').snapshot();
-    final Map item = ((kept.values.single as Map)['items'] as List).single as Map;
+    final Map<Object?, Object?> item = ((kept.values.single as Map<Object?, Object?>)['items']! as List<Object?>).single! as Map<Object?, Object?>;
     expect(item['key'], 'card');
     expect(item['side'], 'backup');
     expect((item['value'] as Map)['version'], 3, reason: 'the older version is still there to be read');
@@ -124,7 +123,7 @@ void main() {
     final RestoreEngine e = engine(n);
     await e.apply(await e.plan(await e.inspect(t, BackupKind.family, key)));
     expect(((await n.area('emergencycard').get('card')) as Map)['allergy'], 'new');
-    final Map item = (((await n.area('backupkept').snapshot()).values.single as Map)['items'] as List).single as Map;
+    final Map<Object?, Object?> item = (((await n.area('backupkept').snapshot()).values.single as Map<Object?, Object?>)['items']! as List<Object?>).single! as Map<Object?, Object?>;
     expect(item['side'], 'phone');
     expect((item['value'] as Map)['allergy'], 'old');
   });

@@ -244,7 +244,7 @@ final Set<String> _running = <String>{};
 class BackupService {
   BackupService({required this.services, DateTime Function()? clock, Random? random, this.deviceLabel = "A grown-up's phone"})
       : _clock = clock ?? DateTime.now,
-        _random = random;
+        _random = random; // ignore: prefer_initializing_formals
   final LocalServices services;
   final DateTime Function() _clock;
   final Random? _random;
@@ -284,7 +284,7 @@ class BackupService {
     try {
       // Resume a staged set that is whole and not stale.
       SealedHeaderInfo? staged = await _findStaged(j, kind, dest);
-      bool resumed = staged != null;
+      final bool resumed = staged != null;
       int areas = 0, bytes = 0;
       List<String> unreadable = const <String>[];
       String hash = '';
@@ -495,6 +495,13 @@ class ChildKeyKeeper {
 
   /// Takes the secrets from the old tablet so this tablet's later backups, and the old tablet's backups, share keys.
   Future<void> adopt(ChildSecrets s) => _ns.put('secrets', s.toJson());
+
+  /// Takes only the keepsake secret (the family wrote it on a sheet). Her private secret was on no sheet, so this tablet
+  /// keeps its own fresh one: her private areas start a new backup of their own.
+  Future<void> adoptKeep(Uint8List keep, {Random? random}) async {
+    final ChildSecrets? have = await read();
+    await _ns.put('secrets', ChildSecrets(keep: keep, private: have?.private ?? newBackupSecret(random)).toJson());
+  }
 }
 
 // ------------------------------------------------------------------ plain words for the status line
