@@ -147,6 +147,7 @@ cmd_acquire() {
   valid_owner "$OWNER" || die "acquire needs --owner NAME (letters, digits, . _ -; a label, not a login)"
   local want="${ARGS[0]:-any}" deadline n st
   mkdir -p "$ROOT" 2>/dev/null || die "cannot create lock root"
+  [ -n "${OLIVE_LOCK_DIR:-}" ] || echo "slot.sh: WARNING OLIVE_LOCK_DIR is not set; using $ROOT. Other worktrees will not see this lock unless they use the same root." >&2
   [ "$want" = any ] || valid_slot "$want" || die "slot must be 1..$COUNT or 'any'"
   deadline=$(( $(now_epoch) + WAIT ))
   while :; do

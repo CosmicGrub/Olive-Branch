@@ -55,7 +55,9 @@ android {
     sourceSets {
         getByName("debug") {
             val lanOverlay = file("src/debugLan/res")
-            res.setSrcDirs(listOf(if (lanOverlay.isDirectory) lanOverlay else file("src/debug/res")))
+            // A half-written overlay (the generator died after mkdir) must not replace the loopback config.
+            val lanReady = file("src/debugLan/res/xml/network_security_config.xml").isFile
+            res.setSrcDirs(listOf(if (lanOverlay.isDirectory && lanReady) lanOverlay else file("src/debug/res")))
         }
     }
 

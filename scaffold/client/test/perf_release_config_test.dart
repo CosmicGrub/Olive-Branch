@@ -103,6 +103,8 @@ void main() {
 
     test('the gitignored debug LAN overlay is wired for debug only and its template uses a documentation address', () {
       expect(read('android/app/build.gradle.kts'), contains('src/debugLan/res'));
+      // a half-written overlay (no config file) must not replace the debug loopback config
+      expect(read('android/app/build.gradle.kts'), contains('src/debugLan/res/xml/network_security_config.xml'));
       final String root = read('../../.gitignore');
       expect(root, contains('scaffold/client/android/app/src/debugLan/'));
       final String tpl = read('../tools/jitsi-selfhost/network_security_config.debug.template.xml');
