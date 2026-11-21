@@ -863,7 +863,7 @@ export type SecurityEventKind =
   | 'account_recovered'
   | 'recovery_sheet_made' | 'recovery_helper_named' | 'recovery_helper_removed'
   | 'recovery_started' | 'recovery_approved' | 'recovery_stopped'
-  | 'device_lost' | 'device_found' | 'device_lost_final';
+  | 'device_lost' | 'device_found' | 'device_lost_final' | 'device_wipe_ordered' | 'device_wiped';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -899,6 +899,8 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   device_lost: 'A phone or tablet was marked as lost and cut off from new updates',
   device_found: 'A phone or tablet marked as lost was found and is back in use',
   device_lost_final: 'A phone or tablet marked as lost was removed from the family',
+  device_wipe_ordered: 'A lost phone was told to erase the app's copy of the family's records the next time it connects',
+  device_wiped: 'A lost phone erased the app's copy of the family's records',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -5012,11 +5014,11 @@ export async function refreshPairedDeviceSession(
   opts: { pin?: string } = {},
 ): Promise<
   | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-  | { ok: false; reason: RefreshDeviceSessionError }
+  | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean }
 > {
   type First =
     | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-    | { ok: false; reason: RefreshDeviceSessionError; reproof?: { id: string; userId: string } };
+    | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean; reproof?: { id: string; userId: string } };
   const first = await withSystemSession<First>(pool, async (q) => {
     // `id::text = $1`, never casting the input to uuid: a garbage id must be a
     // clean not-found, not a Postgres cast error that surfaces as a 500.
@@ -5139,7 +5141,7 @@ export const LOST_MARK_LIMIT_PER_DAY = 3;
 
 export type LostFailure =
   | 'not_found' | 'already_revoked' | 'this_device' | 'rate_limited'
-  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only';
+  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only' | 'not_a_grown_up_phone';
 
 export type LostResult =
   | { ok: true; deviceId: string; state: DeviceStanding; incidentId: string | null;
