@@ -176,9 +176,15 @@ class MemoryStoreBackend implements StoreBackend {
 /// Files under [root]: `<name>.json`, `<name>.json.tmp` while writing, and
 /// `quarantine/<name>.<millis>.<reason>`.
 class DirectoryStoreBackend implements StoreBackend {
-  DirectoryStoreBackend(this.root, {DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  DirectoryStoreBackend(this.root, {DateTime Function()? clock, this.onStep}) : _clock = clock ?? DateTime.now;
   final Directory root;
   final DateTime Function() _clock;
+
+  /// Test seam for the data-loss harness (client/test/dataloss): called with a step name at each point of a write
+  /// where the app could be killed ('tmp_opened', 'tmp_written', 'tmp_flushed', 'renamed', 'deleted',
+  /// 'quarantine_written'). A hook that throws stands in for the process dying there; the files on disk are exactly
+  /// what a real kill would have left. Null (the app's own setting) costs nothing.
+  final void Function(String step)? onStep;
 
   File _file(String name) => File('${root.path}${Platform.pathSeparator}$name.json');
   Directory get _quarantineDir => Directory('${root.path}${Platform.pathSeparator}quarantine');
@@ -196,14 +202,18 @@ class DirectoryStoreBackend implements StoreBackend {
     final File tmp = File('${_file(name).path}.tmp');
     final RandomAccessFile h = await tmp.open(mode: FileMode.write);
     try {
+      onStep?.call('tmp_opened');
       await h.writeFrom(bytes);
+      onStep?.call('tmp_written');
       await h.flush();
+      onStep?.call('tmp_flushed');
     } finally {
       await h.close();
     }
     // Rename over the live file: the old complete document stays in place
     // until the new complete one replaces it. A leftover .tmp is never read.
     await tmp.rename(_file(name).path);
+    onStep?.call('renamed');
   }
 
   @override
@@ -212,6 +222,7 @@ class DirectoryStoreBackend implements StoreBackend {
     if (await f.exists()) await f.delete();
     final File tmp = File('${f.path}.tmp');
     if (await tmp.exists()) await tmp.delete();
+    onStep?.call('deleted');
   }
 
   @override
@@ -231,7 +242,8 @@ class DirectoryStoreBackend implements StoreBackend {
   Future<void> quarantine(String name, Uint8List bytes, String reason) async {
     await _quarantineDir.create(recursive: true);
     final int t = _clock().millisecondsSinceEpoch;
-    await File('${_quarantineDir.path}${Platform.pathSeparator}$name.$t.$reason').writeAsBytes(bytes);
+    await File('${_quarantineDir.path}${Platform.pathSeparator}$name.$t.$reason').writeAsBytes(bytes, flush: true);
+    onStep?.call('quarantine_written');
   }
 
   @override
@@ -343,6 +355,64 @@ class LocalNamespace {
   /// Every key, sorted.
   Future<List<String>> list() => _locked(() async => (await _load()).keys.toList()..sort());
 
+  /// The whole document as ONE consistent private copy, taken under the namespace lock, so a backup never sees half
+  /// of two writes (local_snapshot.dart).
+  Future<Map<String, Object?>> readAll() =>
+      _locked(() async => Map<String, Object?>.from(jsonDecode(jsonEncode(await _load())) as Map<String, dynamic>));
+
+  /// Adds every key of [incoming] this namespace does not hold, in ONE atomic write, and changes nothing else: a key
+  /// already held with the same value is left alone, and a key held with a DIFFERENT value keeps this namespace's value
+  /// (the caller is handed the other value in [MergeResult.conflicts], and [keepConflicts], when given, runs first, so
+  /// a kill between keeping and writing leaves the other value kept, never dropped). Never deletes, never overwrites.
+  /// Refused with [LocalStoreFull], leaving the stored data untouched, when the result would pass the ceiling.
+  ///
+  /// [combine], when given, is asked about a key held with a DIFFERENT value: it may return a value that contains
+  /// everything both sides hold (a list joined by id, a sealed event log joined by event), which then replaces the
+  /// held one in the same single write; null means "cannot be joined" and the key is a conflict as above. It must
+  /// only ever return a superset of the held value: a join that drops anything is a loss, and a test holds it to that.
+  Future<MergeResult> mergeMissing(
+    Map<String, Object?> incoming, {
+    Future<void> Function(Map<String, Object?> conflicts)? keepConflicts,
+    Object? Function(String key, Object? held, Object? incoming)? combine,
+  }) =>
+      _locked(() async {
+        final Map<String, Object?> data = await _load();
+        final Map<String, Object?> next = <String, Object?>{...data};
+        final Map<String, Object?> conflicts = <String, Object?>{};
+        int added = 0, same = 0, joined = 0;
+        for (final MapEntry<String, Object?> e in incoming.entries) {
+          _checkKey(e.key);
+          final Object? plain = _plainJson(e.key, e.value);
+          if (!data.containsKey(e.key)) {
+            next[e.key] = plain;
+            added++;
+          } else if (jsonEncode(_canonical(data[e.key])) == jsonEncode(_canonical(plain))) {
+            same++;
+          } else {
+            final Object? both = combine?.call(e.key, data[e.key], plain);
+            if (both == null) {
+              conflicts[e.key] = plain;
+            } else {
+              final Object? joinedValue = _plainJson(e.key, both);
+              if (jsonEncode(_canonical(joinedValue)) == jsonEncode(_canonical(data[e.key]))) {
+                same++; // the other side held nothing this one does not
+              } else {
+                next[e.key] = joinedValue;
+                joined++;
+              }
+            }
+          }
+        }
+        if (conflicts.isNotEmpty && keepConflicts != null) await keepConflicts(conflicts);
+        if (added > 0 || joined > 0) {
+          final String json = jsonEncode(next);
+          if (utf8.encode(json).length > spec.maxBytes) throw LocalStoreFull(spec.name, spec.maxBytes);
+          await _flush(next, json: json);
+          _cache = next;
+        }
+        return MergeResult(added: added, same: same, joined: joined, conflicts: conflicts);
+      });
+
   /// Removes every key (the namespace file itself is deleted).
   Future<void> clear() => _locked(() async {
         await _store.backend.delete(spec.name);
@@ -388,6 +458,30 @@ class LocalNamespace {
     }
   }
 }
+
+/// What [LocalNamespace.mergeMissing] did.
+class MergeResult {
+  const MergeResult({required this.added, required this.same, required this.conflicts, this.joined = 0});
+
+  /// Keys added, keys already held identically, and keys held differently that [combine] joined into one value.
+  final int added, same, joined;
+
+  /// Keys this namespace already held with a different value; the held value stayed, these are the other side's.
+  final Map<String, Object?> conflicts;
+}
+
+/// [v] with every map's keys in sorted order, so two equal documents compare equal whatever order they were built in.
+Object? _canonical(Object? v) {
+  if (v is Map) {
+    final List<String> keys = v.keys.map((Object? k) => k as String).toList()..sort();
+    return <String, Object?>{for (final String k in keys) k: _canonical(v[k])};
+  }
+  if (v is List) return <Object?>[for (final Object? e in v) _canonical(e)];
+  return v;
+}
+
+/// The canonical JSON text of [v] (sorted keys at every depth): the form restore-equivalence hashes.
+String canonicalJson(Object? v) => jsonEncode(_canonical(v));
 
 class _Loaded {
   const _Loaded(this.data, this.recovery, {this.rewrite = false});
