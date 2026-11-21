@@ -325,8 +325,9 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
   ];
 
   Widget _buildStandalone(BuildContext context) => Scaffold(
-    body: SafeArea(child: Padding(
-      padding: const EdgeInsets.all(24),
+    // Scrollable: with the scanner's caption the content is taller than a small screen, and the "Type the code instead"
+    // button must never be pushed out of reach (it overflowed by 28 pixels in a 600 high window).
+    body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SizedBox(height: 24),
         Icon(Icons.link_rounded, size: 40,
