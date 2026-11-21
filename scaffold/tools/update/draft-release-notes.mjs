@@ -18,7 +18,7 @@ export const notesPathFor = (version, root = REPO) => join(root, 'docs', 'releas
 
 /** The title after the date in "## [x.y.z] - date - title", or null. */
 export function changelogTitle(text, version) {
-  const head = `## [${version}] `;
+  const head = `## [${version}]`;
   const line = String(text).replace(/\r\n/g, '\n').split('\n').find((l) => l.startsWith(head));
   if (!line) return null;
   const parts = line.slice(head.length).split(' — ');

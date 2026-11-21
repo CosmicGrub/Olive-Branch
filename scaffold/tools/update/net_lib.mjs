@@ -54,16 +54,20 @@ export async function download(url, { maxBytes, to = 'memory', path = null, allo
     if (declared !== null && declared > maxBytes) { res.destroy(); throw new Refusal('tooMuchData', `declares ${declared} bytes, more than the ${maxBytes} allowed`); }
     const chunks = [];
     const sink = to === 'file' ? createWriteStream(path) : null;
+    if (sink) sink.on('error', () => {});
     let length = 0;
+    let stopped = false;
     try {
       await new Promise((resolve, reject) => {
         res.on('data', (b) => {
+          if (stopped) return;
           length += b.length;
-          if (length > maxBytes) { res.destroy(); reject(new Refusal('tooMuchData', `more than ${maxBytes} bytes arrived`)); return; }
-          if (sink) sink.write(b); else chunks.push(b);
+          if (length > maxBytes) { stopped = true; reject(new Refusal('tooMuchData', `more than ${maxBytes} bytes arrived`)); res.destroy(); return; }
+          if (!sink) chunks.push(b);
+          else if (!sink.write(b)) { res.pause(); sink.once('drain', () => res.resume()); }
         });
         res.on('end', () => (res.complete ? resolve() : reject(new Refusal('truncated', 'the connection ended early'))));
-        res.on('aborted', () => reject(new Refusal('truncated', 'the connection was cut')));
+        res.on('aborted', () => { stopped = true; reject(new Refusal('truncated', 'the connection was cut')); });
         res.on('error', (e) => reject(e instanceof Refusal ? e : new Refusal('truncated', e.code || e.message)));
         res.on('close', () => { if (!res.complete) reject(new Refusal('truncated', 'the connection closed early')); });
       });

@@ -78,7 +78,7 @@ export function loadUpdateKey(path, passphrase) {
   const pem = readFileSync(path, 'utf8');
   let privateKey;
   try { privateKey = createPrivateKey({ key: pem, format: 'pem', ...(passphrase ? { passphrase } : {}) }); } catch (e) {
-    throw new Error(/passphrase|bad decrypt|PEM_do_header|unsupported/i.test(String(e.message)) ? 'the key file is encrypted and the passphrase is missing or wrong' : 'the file is not a readable private key');
+    throw new Error(/ENCRYPTED/.test(pem) ? 'the key file is encrypted and the passphrase is missing or wrong' : 'the file is not a readable private key');
   }
   if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('the key is not an Ed25519 key');
   const publicRaw = rawPublicKey(createPublicKey(privateKey));
