@@ -52,7 +52,6 @@
 // function's own doc comment, and `_OnboardingBootApp`'s, for the full
 // account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'font_licences.dart';

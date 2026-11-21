@@ -149,6 +149,16 @@ void main() {
         expect(v.join('\n'), contains('interpolates'));
       });
 
+      test('a status code inside a thrown exception message is a log line, not a violation', () {
+        expect(
+            scanChildSurface(
+                world("void f(R r) { if (r.statusCode != 200) { throw HttpException('answered \${r.statusCode}'); } }\n"),
+                <String>['child_home.dart']),
+            isEmpty);
+        expect(scanChildSurface(world("void f(R r) { final s = 'code \${r.statusCode}'; show(s); }\n"),
+            <String>['child_home.dart']).join(), contains('status code'));
+      });
+
       test('a clean file passes, and a violation in an unreachable file is not counted', () {
         expect(scanChildSurface(world("class Ok { Widget b() => Text('Hello'); }\n"), <String>['child_home.dart']),
             isEmpty);

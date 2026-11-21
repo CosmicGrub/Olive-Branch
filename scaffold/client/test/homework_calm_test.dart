@@ -18,7 +18,6 @@ import 'package:olive_client/family_structure_store.dart';
 import 'package:olive_client/homework_screen.dart';
 import 'package:olive_client/local_services.dart';
 
-const FamilyPrincipal _guardian = FamilyPrincipal(roleName: 'guardian', userId: 'g1');
 const FamilyPrincipal _childP = FamilyPrincipal(roleName: 'child', childId: 'c1');
 
 Future<FamilyChildSnapshot> _snap(int years) {
