@@ -100,6 +100,38 @@ void main() {
       expect(nextToSend(back)!.id, 'a');
     });
 
+    test('lastFailedAt round-trips, and rows stored before it existed still load (additive)', () async {
+      final LocalServices s = LocalServices.memory(childId: 'ivy');
+      final OutboxRepository r = OutboxRepository(_ns('outbox', s));
+      final DateTime failed = DateTime.utc(2026, 11, 21, 9, 30);
+      await r.save(<OutboxItem>[
+        OutboxItem(id: 'new', kind: OutboxKind.message, createdAt: DateTime.utc(2026, 11, 21), payload: <String, Object?>{'k': 1},
+            attempts: 2, lastError: 'network', lastFailedAt: failed),
+        OutboxItem(id: 'plain', kind: OutboxKind.message, createdAt: DateTime.utc(2026, 11, 21), payload: <String, Object?>{'k': 2}),
+      ]);
+      final List<OutboxItem> back = await r.load();
+      expect(back[0].lastFailedAt, failed);
+      expect(back[1].lastFailedAt, isNull);
+
+      // A row exactly as the previous build wrote it: no lastFailedAt key at all.
+      final LocalNamespace ns = _ns('outbox', s);
+      await ns.put('items', <Object?>[
+        <String, Object?>{
+          'id': 'legacy', 'kind': 'receipt', 'createdAt': '2026-11-01T10:00:00.000Z',
+          'payload': <String, Object?>{'messageId': 'm1'}, 'attempts': 4, 'lastError': 'network',
+        },
+        <String, Object?>{
+          'id': 'garbled', 'kind': 'receipt', 'createdAt': '2026-11-01T10:00:00.000Z',
+          'payload': <String, Object?>{'messageId': 'm2'}, 'attempts': 1, 'lastFailedAt': 12345,
+        },
+      ]);
+      final List<OutboxItem> old = await OutboxRepository(ns).load();
+      expect(old.map((OutboxItem i) => i.id), <String>['legacy', 'garbled']);
+      expect(old[0].attempts, 4);
+      expect(old[0].lastFailedAt, isNull);
+      expect(old[1].lastFailedAt, isNull, reason: 'a value that is not a time is no time, not a crash');
+    });
+
     test('an item with a non-JSON payload (raw bytes) cannot be written down, and says so', () async {
       final OutboxRepository r = OutboxRepository(_ns('outbox'));
       final int skipped = await r.save(<OutboxItem>[

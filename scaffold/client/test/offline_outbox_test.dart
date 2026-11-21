@@ -52,6 +52,34 @@ void main() {
     });
   });
 
+  group('lastFailedAt and insideBackoff', () {
+    test('recordFailure stamps the time only when given one, and keeps the last one otherwise', () {
+      final DateTime t = DateTime.utc(2026, 11, 21, 9);
+      final List<OutboxItem> a = recordFailure(<OutboxItem>[_item('a')], 'a', 'network', at: t);
+      expect(a.single.lastFailedAt, t);
+      expect(a.single.attempts, 1);
+      final List<OutboxItem> b = recordFailure(a, 'a', 'network');
+      expect(b.single.lastFailedAt, t);
+      expect(b.single.attempts, 2);
+    });
+
+    test('inside the window until backoffMs(attempts) has passed; never inside one with no failure time', () {
+      final DateTime t = DateTime.utc(2026, 11, 21, 9);
+      final OutboxItem failed = recordFailure(<OutboxItem>[_item('a')], 'a', 'network', at: t).single;
+      expect(insideBackoff(failed, t.add(const Duration(seconds: 119))), isTrue);
+      expect(insideBackoff(failed, t.add(const Duration(seconds: 120))), isFalse);
+      expect(insideBackoff(_item('b', attempts: 5), t), isFalse);
+    });
+
+    test('withPayload keeps everything but the payload', () {
+      final DateTime t = DateTime.utc(2026, 11, 21, 9);
+      final OutboxItem i = recordFailure(<OutboxItem>[_item('a')], 'a', 'network', at: t).single.withPayload('x');
+      expect(i.payload, 'x');
+      expect(i.attempts, 1);
+      expect(i.lastFailedAt, t);
+    });
+  });
+
   group('nextToSend — oldest first, never an item at maxAttempts', () {
     test('picks the oldest eligible item', () {
       final outbox = <OutboxItem>[

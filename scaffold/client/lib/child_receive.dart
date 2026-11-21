@@ -142,22 +142,55 @@ List<InboxMessage> parseInbox(Object? body) {
 
 /// True when the server heard the receipt and will never accept it, so keeping it cannot help: not found, not yet
 /// delivered or expired (404, 410), not her session (403), a malformed request (400, 422), a state conflict (409).
-bool _isFinalAnswer(ApiException e) => const <int>{400, 403, 404, 409, 410, 422}.contains(e.statusCode);
+bool _isFinalAnswer(ApiException e) => isFinalServerAnswer(e);
+
+/// The same rule for anything she sends or tells the server: a 4xx that says "no, and no again" is an answer, not a
+/// connectivity gap (413 is a recording the server will never take). Every other status keeps the item for a retry.
+bool isFinalServerAnswer(ApiException e) =>
+    const <int>{400, 403, 404, 409, 410, 413, 422}.contains(e.statusCode);
 
 /// Sends one "she opened this" receipt. Throws on failure.
 typedef OpenedSender = Future<void> Function(String messageId);
 
+/// One lock per child's on-device outbox. The receipts and the recordings she sends back live in the same stored
+/// list (area 'outbox'), and each of them reads the list, changes its own rows and writes it all back: two locks
+/// would let one overwrite the other's rows, so they share this one.
+class OutboxLock {
+  Future<void> _tail = Future<void>.value();
+
+  static final Expando<Map<String, OutboxLock>> _byServices = Expando<Map<String, OutboxLock>>('outboxLocks');
+
+  /// The lock for [childId]'s outbox on this device.
+  static OutboxLock forChild(String childId) {
+    final Map<String, OutboxLock> cache = _byServices[LocalServices.current] ??= <String, OutboxLock>{};
+    return cache[childId] ??= OutboxLock();
+  }
+
+  Future<T> run<T>(Future<T> Function() body) {
+    final Completer<T> done = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        done.complete(await body());
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
+  }
+}
+
 /// The receipts she has made that the server has not yet heard, kept in the offline outbox (area 'outbox').
 class ReceiptQueue {
-  ReceiptQueue._(this._load, this._save, this._now);
+  ReceiptQueue._(this._load, this._save, this._now, [OutboxLock? lock]) : _lock = lock ?? OutboxLock();
 
   /// A queue over explicit load/save functions (tests).
   factory ReceiptQueue.over({
     required Future<List<OutboxItem>> Function() load,
     required Future<void> Function(List<OutboxItem>) save,
     DateTime Function()? now,
+    OutboxLock? lock,
   }) =>
-      ReceiptQueue._(load, save, now ?? DateTime.now);
+      ReceiptQueue._(load, save, now ?? DateTime.now, lock);
 
   static final Expando<Map<String, ReceiptQueue>> _byServices = Expando<Map<String, ReceiptQueue>>('receiptQueues');
 
@@ -172,7 +205,7 @@ class ReceiptQueue {
         final OutboxRepository repo = OutboxRepository(services.area('outbox', ownerId: childId));
         return ReceiptQueue._(repo.load, (List<OutboxItem> items) async {
           await repo.save(items);
-        }, DateTime.now);
+        }, DateTime.now, OutboxLock.forChild(childId));
       } catch (e) {
         debugPrint('[olive.receipts] on-device outbox unavailable, queueing in memory: $e');
         List<OutboxItem> held = <OutboxItem>[];
@@ -186,24 +219,12 @@ class ReceiptQueue {
   final Future<List<OutboxItem>> Function() _load;
   final Future<void> Function(List<OutboxItem>) _save;
   final DateTime Function() _now;
-  Future<void> _tail = Future<void>.value();
-  // When each waiting receipt last failed, this run. Not persisted: a fresh start is a real reason to try again.
-  final Map<String, DateTime> _lastFailedAt = <String, DateTime>{};
+  final OutboxLock _lock;
 
   /// A receipt older than this, or tried this many times, is let go: it is a courtesy to the sender, not a record.
   static const Duration maxAge = Duration(days: 30);
 
-  Future<T> _locked<T>(Future<T> Function() body) {
-    final Completer<T> done = Completer<T>();
-    _tail = _tail.then((_) async {
-      try {
-        done.complete(await body());
-      } catch (e, st) {
-        done.completeError(e, st);
-      }
-    });
-    return done.future;
-  }
+  Future<T> _locked<T>(Future<T> Function() body) => _lock.run(body);
 
   static String _itemId(String messageId) => 'receipt:$messageId';
   static bool _isReceipt(OutboxItem i) => i.kind == OutboxKind.receipt;
@@ -264,8 +285,8 @@ class ReceiptQueue {
             createdAt: _now().toUtc(),
             payload: <String, Object?>{'messageId': messageId},
             attempts: 1,
-            lastError: why));
-    _lastFailedAt[_itemId(messageId)] = _now();
+            lastError: why,
+            lastFailedAt: _now().toUtc()));
     await _save(r.outbox);
   }
 
@@ -288,9 +309,9 @@ class ReceiptQueue {
           ..sort((OutboxItem a, OutboxItem b) => a.createdAt.compareTo(b.createdAt));
         for (final OutboxItem item in due) {
           // The 8 tries are meant to span hours, not the minutes of a 60 s poll: a receipt that failed less than its
-          // backoff ago is not tried (and so not counted) yet.
-          final DateTime? failedAt = _lastFailedAt[item.id];
-          if (failedAt != null && now.difference(failedAt).inMilliseconds < backoffMs(item.attempts)) continue;
+          // backoff ago is not tried (and so not counted) yet. The failure time is stored with the receipt, so a cold
+          // start inside the window waits too instead of spending an attempt.
+          if (insideBackoff(item, now)) continue;
           final String id = _messageIdOf(item)!;
           try {
             await send(id);
@@ -302,12 +323,10 @@ class ReceiptQueue {
               items = sent(items, item.id);
               continue;
             }
-            items = recordFailure(items, item.id, 'server');
-            _lastFailedAt[item.id] = now;
+            items = recordFailure(items, item.id, 'server', at: now.toUtc());
             break;
           } catch (_) {
-            items = recordFailure(items, item.id, 'network');
-            _lastFailedAt[item.id] = now;
+            items = recordFailure(items, item.id, 'network', at: now.toUtc());
             changed = true;
             break;
           }

@@ -44,6 +44,7 @@ import 'form_factors.dart' as ff;
 import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject, neutralGrownUp;
 import 'message_player.dart';
 import 'receipt_screen.dart';
+import 'send_back_outbox.dart' show SendBackQueue, SendBackTransport;
 import 'server_transport_policy.dart' show OliveTransport;
 
 class InboxMessage {
@@ -190,6 +191,13 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
         baseUrl: widget.baseUrl!, sessionToken: widget.sessionToken!, httpClient: widget.httpClient,
         body: (OliveApi api) async {
           await _queue.drain((String id) => api.markInboxOpened(widget.childId!, id));
+          // Recordings she sent back that are still waiting go the same way: each time this screen asks again.
+          await SendBackQueue.forChild(widget.childId!).drain(SendBackTransport(
+            upload: (List<int> bytes) => api.uploadMedia(widget.childId!, bytes),
+            send: (String key, int ms) async {
+              await api.sendMessage(widget.childId!, storageKey: key, durationMs: ms);
+            },
+          ));
           final List<InboxMessage> fetched = parseInbox(await api.fetchInbox(widget.childId!));
           // A receipt still waiting to go is already opened as far as she is concerned.
           final Set<String> waiting = await _queue.pendingIds();

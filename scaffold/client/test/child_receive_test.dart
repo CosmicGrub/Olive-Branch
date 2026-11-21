@@ -322,6 +322,51 @@ void main() {
       expect(mem.items, isEmpty);
     });
 
+    test('a queue rebuilt over the same store (a cold start) sends nothing inside the backoff window and spends no attempt',
+        () async {
+      final _Mem mem = _Mem();
+      await mem.queue.record('m1', (String id) async => throw http.ClientException('no signal'));
+      expect(mem.items.single.attempts, 1);
+      expect(mem.items.single.lastFailedAt, mem.now.toUtc());
+
+      // The app is killed and started again 30 seconds later: a new queue over the very same stored rows.
+      final DateTime restartedAt = mem.now.add(const Duration(seconds: 30));
+      final ReceiptQueue cold = ReceiptQueue.over(
+        load: () async => List<OutboxItem>.of(mem.items),
+        save: (List<OutboxItem> l) async => mem.items = List<OutboxItem>.of(l),
+        now: () => restartedAt,
+      );
+      int asked = 0;
+      await cold.drain((String id) async {
+        asked++;
+        throw http.ClientException('no signal');
+      });
+      expect(asked, 0, reason: 'inside the 2 minute backoff: no request at all');
+      expect(mem.items.single.attempts, 1, reason: 'and no attempt spent');
+
+      // Past the window the same cold queue does ask, once.
+      final ReceiptQueue later = ReceiptQueue.over(
+        load: () async => List<OutboxItem>.of(mem.items),
+        save: (List<OutboxItem> l) async => mem.items = List<OutboxItem>.of(l),
+        now: () => mem.now.add(const Duration(minutes: 3)),
+      );
+      await later.drain((String id) async {
+        asked++;
+        throw http.ClientException('no signal');
+      });
+      expect(asked, 1);
+      expect(mem.items.single.attempts, 2);
+    });
+
+    test('a stored receipt from before lastFailedAt existed is simply due (a fresh start is a reason to try)',
+        () async {
+      final _Mem mem = _Mem()..items = <OutboxItem>[_receipt('old', attempts: 3)];
+      expect(mem.items.single.lastFailedAt, isNull);
+      final List<String> sentIds = <String>[];
+      await mem.queue.drain((String id) async => sentIds.add(id));
+      expect(sentIds, <String>['old']);
+    });
+
     test('drain drops a final answer and carries on with the rest', () async {
       final _Mem mem = _Mem()
         ..items = <OutboxItem>[

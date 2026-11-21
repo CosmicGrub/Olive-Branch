@@ -83,6 +83,7 @@ import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
 import 'child_receive.dart' show drainOpenedReceipts;
+import 'send_back_outbox.dart' show drainSendBacks;
 import 'child_home_bands_ui.dart' show LocalMidnightWatch;
 import 'child_home_growth.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal;
@@ -178,7 +179,7 @@ class LiveChildHomeScreen extends StatefulWidget {
   State<LiveChildHomeScreen> createState() => _LiveChildHomeScreenState();
 }
 
-class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
+class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> with WidgetsBindingObserver {
   _LoadState _state = _LoadState.loading;
   // What this device remembers of her, for the no-signal home (see _load()).
   ProfileCache? _cache;
@@ -279,11 +280,29 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     // Registered before `_load()` resolves on purpose -- see file header.
     _wearSync.listenForCallDad(_handleWatchCallDad);
     _attachCalls();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  /// Coming back to the app is a reason to send what she made while there was no signal: the recordings she sent
+  /// back and the receipts waiting to go. Silent, and never more than the outbox's own backoff allows.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final String? token = _sessionToken;
+    if (state != AppLifecycleState.resumed || widget.localOnly || token == null) return;
+    unawaited(_drainOutbox(token));
+  }
+
+  Future<void> _drainOutbox(String sessionToken) async {
+    await drainOpenedReceipts(
+        baseUrl: widget.baseUrl, childId: widget.childId, sessionToken: sessionToken, httpClient: widget.httpClient);
+    await drainSendBacks(
+        baseUrl: widget.baseUrl, childId: widget.childId, sessionToken: sessionToken, httpClient: widget.httpClient);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pushChannel?.dispose();
     _pushService?.dispose();
     _calls?.dispose();
@@ -420,9 +439,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
           yearsOld: (me['yearsOld'] as num?)?.toInt(),
           overrides: overridesJson));
       // Receipts she made while the server could not be reached go now, silently (the offline outbox).
-      unawaited(drainOpenedReceipts(
-          baseUrl: widget.baseUrl, childId: widget.childId, sessionToken: api.sessionToken,
-          httpClient: widget.httpClient));
+      unawaited(_drainOutbox(api.sessionToken));
       await _syncWear();
       await _initPush(api.sessionToken);
     } catch (e) {

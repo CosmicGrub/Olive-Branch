@@ -55,6 +55,7 @@ class OutboxItem {
     required this.payload,
     this.attempts = 0,
     this.lastError,
+    this.lastFailedAt,
   });
 
   final String id;
@@ -64,9 +65,18 @@ class OutboxItem {
   final int attempts;
   final String? lastError;
 
-  OutboxItem _withFailure(String error) => OutboxItem(
+  /// When the last real attempt failed, kept with the item so a cold start inside the backoff window sends nothing
+  /// and spends no attempt. Additive: an item stored before this field existed has none and is simply due.
+  final DateTime? lastFailedAt;
+
+  /// The same item with a different payload, everything else kept (attempts, error, last failure time).
+  OutboxItem withPayload(Object? next) => OutboxItem(
+      id: id, kind: kind, createdAt: createdAt, payload: next,
+      attempts: attempts, lastError: lastError, lastFailedAt: lastFailedAt);
+
+  OutboxItem _withFailure(String error, DateTime? at) => OutboxItem(
       id: id, kind: kind, createdAt: createdAt, payload: payload,
-      attempts: attempts + 1, lastError: error);
+      attempts: attempts + 1, lastError: error, lastFailedAt: at ?? lastFailedAt);
 }
 
 /// Some things are meaningless late and must NOT be queued.
@@ -96,9 +106,17 @@ OutboxItem? nextToSend(List<OutboxItem> outbox) {
   return eligible.isEmpty ? null : eligible.first;
 }
 
-List<OutboxItem> recordFailure(List<OutboxItem> outbox, String id, String error) => <OutboxItem>[
-      for (final OutboxItem i in outbox) i.id == id ? i._withFailure(error) : i,
+List<OutboxItem> recordFailure(List<OutboxItem> outbox, String id, String error, {DateTime? at}) => <OutboxItem>[
+      for (final OutboxItem i in outbox) i.id == id ? i._withFailure(error, at) : i,
     ];
+
+/// True when [item] last failed less than its backoff ago, so trying it now would burn an attempt for nothing. An item
+/// that never recorded a failure time (never failed, or stored before the field existed) is never inside a window.
+bool insideBackoff(OutboxItem item, DateTime now, {int Function(int attempts)? backoff}) {
+  final DateTime? failedAt = item.lastFailedAt;
+  if (failedAt == null) return false;
+  return now.difference(failedAt).inMilliseconds < (backoff ?? backoffMs)(item.attempts);
+}
 
 /// Milliseconds, 1:1 with offline.ts's own backoffMs — doubling per attempt,
 /// capped at six hours. Returned as a plain int (not a Duration) to keep this
