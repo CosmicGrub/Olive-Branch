@@ -224,6 +224,7 @@ void main() {
   });
 
   group('the dose rule (ISS-093): no amount, no per-weight amount, no dosing interval', () {
+    CareGuidePolicy release() => const CareGuidePolicy(releaseMode: true);
     CareGuide withText(String t) => CareGuide.fromJson(fixtureGuide(extraText: ' $t'));
 
     // Everything here must be REFUSED: a dose, in any of the shapes a dose takes.

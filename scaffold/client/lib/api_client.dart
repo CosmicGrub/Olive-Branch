@@ -1091,7 +1091,7 @@ class OliveApi {
   /// Checks [pin] against every LIVE guardian of [childId] -- POST
   /// kioskPinVerify, server/routes.mjs's real handler. This is the check
   /// kiosk_shell.dart's PIN gate calls after a kiosk defeat, replacing
-  /// main_live.dart's former hardcoded '1273' demo stub.
+  /// main_live.dart's former hardcoded demo stub.
   ///
   /// FAILS CLOSED, DELIBERATELY: a network error, a timeout, a malformed
   /// response body, or any non-2xx status all return `false` here, never

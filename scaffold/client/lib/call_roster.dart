@@ -1,4 +1,4 @@
-// OLIVE BRANCH - who is on the call, in the open (MASTERFILE section 5.15, 8.14; ISS-099, ISS-100).
+// OLIVE BRANCH - who is on the call, in the open (MASTERFILE section 5.15, 8.14; ISS-099, ISS-100). UNVERIFIED on a real device until the hardware pass.
 //
 // A call used to remember ONE name ("the other person"): a second person joining overwrote the first, a third was
 // never shown, and nobody was told when anyone arrived or left. That is the wrong shape for a family call and an unsafe

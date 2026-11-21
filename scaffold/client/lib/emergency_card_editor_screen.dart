@@ -64,7 +64,20 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
   @override
   void initState() {
     super.initState();
+    // The "no known allergies" box follows what is typed: with an entry the box is off (it cannot sit beside one).
+    _allergies.addListener(_allergiesChanged);
     unawaited(_load());
+  }
+
+  void _allergiesChanged() {
+    if (!mounted) return;
+    setState(() {
+      // Typing an entry withdraws the "none" confirmation; erasing it again must not bring it back, the guardian ticks it afresh.
+      if (_lines(_allergies).isNotEmpty) {
+        _confirmNone = false;
+        _existingNone = null;
+      }
+    });
   }
 
   @override

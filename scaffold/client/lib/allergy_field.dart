@@ -1,4 +1,4 @@
-// OLIVE BRANCH - the allergy field has THREE states, and an empty list is not "none".
+// OLIVE BRANCH - the allergy field has THREE states, and an empty list is not "none". UNVERIFIED on a real device until the hardware pass.
 //
 // An allergy list that is empty can mean two very different things: nobody ever asked, or somebody asked and
 // the answer was no. Reading the first as the second ("None on file", "No allergies written down") tells a

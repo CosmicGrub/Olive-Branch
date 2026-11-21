@@ -137,7 +137,7 @@ for (const { name, text } of oliveStrings) {
 }
 
 // the builder takes its words only from string resources: no quoted literal or concatenation in a title/text/name/description call
-const textCalls = [...kt.matchAll(/\.(setContentTitle|setContentText|setSubText|setTicker)\(([^)]*\))?/g)];
+const textCalls = [...kt.matchAll(/\.(setContentTitle|setContentText|setSubText|setTicker)\((?:[^()]|\([^()]*\))*\)/g)];
 check('C the ring sets a title and a text', textCalls.length >= 2, String(textCalls.length));
 for (const m of textCalls) {
   check(`C ${m[1]} comes from a string resource only`, /^\.\w+\(context\.getString\(R\.string\.olive_[a-z_]+\)\)$/.test(m[0]), m[0]);

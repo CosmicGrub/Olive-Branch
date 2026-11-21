@@ -77,7 +77,7 @@ void main() {
 
   testWidgets('GuardianHome Emergency card tile reaches the real screen',
       (WidgetTester tester) =>
-        expectGuardianTileReaches(tester, 'Emergency card', 'ALLERGIES'));
+        expectGuardianTileReaches(tester, 'Emergency card', 'No emergency card has been written yet.'));
 
   testWidgets('GuardianHome Handover notes tile reaches the real screen',
       (WidgetTester tester) => expectGuardianTileReaches(

@@ -1,4 +1,4 @@
-// OLIVE BRANCH - the invented demo content, in ONE file, behind ONE guard.
+// OLIVE BRANCH - the invented demo content, in ONE file, behind ONE guard. UNVERIFIED on a real device until the hardware pass.
 //
 // Medicines, an emergency card with phone numbers and an insurance member id, and a fixed grown-up PIN are
 // all made up for the offline preview (lib/main.dart) and for tests. A real family must never meet any of

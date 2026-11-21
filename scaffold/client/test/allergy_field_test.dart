@@ -121,7 +121,7 @@ void main() {
 
     test('entries are spoken as written', () {
       const LocalEmergencyCard c = LocalEmergencyCard(allergies: <String>['Penicillin (rash)']);
-      expect(c.spokenText(), startsWith('Allergies: Penicillin (rash). '));
+      expect(c.spokenText(), startsWith('Allergies: Penicillin (rash).'));
     });
 
     test('a card holding only a confirmation is not "empty" (it says something)', () {
@@ -343,6 +343,23 @@ void main() {
       await t.pumpAndSettle();
       final LocalEmergencyCard c = (await s.read(gA)).card!;
       expect(c.allergies, <String>['Egg']);
+      expect(c.allergyNone, isNull);
+    });
+
+    testWidgets('typing an allergy and erasing it again leaves the box unticked and the card saved without a confirmation', (t) async {
+      final EmergencyCardService s = await serviceWith(const LocalEmergencyCard(allergyNone: none, conditions: <String>['Asthma']));
+      await pump(t, EmergencyCardEditorScreen(service: s, principal: gA));
+      await t.enterText(find.byKey(const Key('cardAllergies')), 'Penicillin');
+      await t.pump();
+      await t.enterText(find.byKey(const Key('cardAllergies')), '');
+      await t.pump();
+      final CheckboxListTile box = t.widget<CheckboxListTile>(find.byKey(const Key('cardAllergyNone')));
+      expect(box.value, isFalse, reason: 'an unreviewed empty list must not turn back into "confirmed none"');
+      expect(box.onChanged, isNotNull);
+      await t.tap(find.byKey(const Key('saveCard')));
+      await t.pumpAndSettle();
+      final LocalEmergencyCard c = (await s.read(gA)).card!;
+      expect(c.allergies, isEmpty);
       expect(c.allergyNone, isNull);
     });
 
