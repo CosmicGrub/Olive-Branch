@@ -333,6 +333,13 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
           '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
           'needed to use Olive on this phone, and a device wipe removes it.'),
+  LocalDataEntry(
+      area: 'guidedtour', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
+      what: 'Where the guided first run has got to on this device: the version of the welcome tour it last '
+          'showed, which step the grown-up is on, the parts they chose to do later (names of parts only), and '
+          'whether her tablet welcome is waiting, started or finished. Never a name, an age, a PIN or any '
+          'answer, and nothing in it is shown to her. Sealed on the device; nothing is uploaded; a device wipe '
+          'removes it.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a

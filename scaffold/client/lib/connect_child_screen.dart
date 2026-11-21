@@ -61,6 +61,12 @@ Future<WindowHost> startLanWindowHost(AdultWindow w) async {
 
 enum _Stage { intro, waiting, scanning, approve, sending, done }
 
+/// Where the connect screen is, for the guided first run's helper strip (guided_adult.dart). Same names as the screen's own
+/// stages; a read-only view, nothing here decides anything.
+enum ConnectGuideStage { intro, waiting, scanning, approve, sending, done }
+
+typedef ConnectGuideBanner = Widget Function(BuildContext context, ConnectGuideStage stage, bool hasMessage);
+
 class ConnectChildScreen extends StatefulWidget {
   const ConnectChildScreen({
     super.key,
@@ -81,7 +87,15 @@ class ConnectChildScreen extends StatefulWidget {
     this.cooldown,
     this.trust,
     this.lock,
+    this.guideBanner,
+    this.onConnected,
   });
+
+  /// The guided first run's helper strip, drawn above the screen's own content. Presentation only; null = nothing.
+  final ConnectGuideBanner? guideBanner;
+
+  /// Called once when the tablet really is connected (the done stage). Presentation only; it changes no decision.
+  final VoidCallback? onConnected;
 
   /// Who was added, when, New for how long, and the plain-language history. Null = not recorded (older callers).
   final TrustBook? trust;
@@ -284,7 +298,12 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
           _stage = _Stage.intro;
         case WindowState.closed:
           // A window closes right after it hands the credential over: only THEN is it connected.
-          _stage = (_stage == _Stage.sending) ? _Stage.done : _Stage.intro;
+          if (_stage == _Stage.sending) {
+            _stage = _Stage.done;
+            WidgetsBinding.instance.addPostFrameCallback((_) => widget.onConnected?.call());
+          } else {
+            _stage = _Stage.intro;
+          }
         case WindowState.open:
           _stage = _Stage.waiting;
       }
@@ -299,14 +318,20 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: switch (_stage) {
-              _Stage.intro => _intro(),
-              _Stage.waiting => _waiting(),
-              _Stage.scanning => _scanning(),
-              _Stage.approve => _approve(),
-              _Stage.sending => Center(child: Text("Sending to ${widget.childName}'s device...", key: const Key('connectSending'))),
-              _Stage.done => _done(),
-            },
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+              if (widget.guideBanner != null)
+                widget.guideBanner!(context, ConnectGuideStage.values.byName(_stage.name), _message != null),
+              Expanded(
+                child: switch (_stage) {
+                  _Stage.intro => _intro(),
+                  _Stage.waiting => _waiting(),
+                  _Stage.scanning => _scanning(),
+                  _Stage.approve => _approve(),
+                  _Stage.sending => Center(child: Text("Sending to ${widget.childName}'s device...", key: const Key('connectSending'))),
+                  _Stage.done => _done(),
+                },
+              ),
+            ]),
           ),
         ),
       );

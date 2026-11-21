@@ -58,6 +58,7 @@ import 'meds_care.dart';
 import 'message_banking.dart';
 import 'morning_briefing.dart';
 import 'screen_share_ui.dart' show ShareRedact;
+import 'guided_widgets.dart' show CoachAnchor;
 import 'send_time_guard.dart';
 import 'tiered_tile.dart';
 
@@ -206,11 +207,11 @@ class GuardianHome extends StatelessWidget {
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             const SizedBox(height: 12),
-            SizedBox(width: double.infinity, height: 48,
+            CoachAnchor(id: 'home.call', child: SizedBox(width: double.infinity, height: 48,
               child: FilledButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => const CallScreen(who: 'dad', displayName: 'Dad'))),
-                child: ShareRedact(child: Text('Call $childName')))),
+                child: ShareRedact(child: Text('Call $childName'))))),
           ])),
         ShareRedact(child: _Ribbon(label: "$childName's day", bands: childBands, height: 20)),
         const SizedBox(height: 8),
@@ -307,10 +308,10 @@ class GuardianHome extends StatelessWidget {
               // now. See guardian_home_test.dart's own 344px-width coverage
               // for proof this clears the Fold5 cover-screen floor even at
               // the longest Hero label ("Message banking").
-              TieredTile(readAloud: false, key: const Key('guardianHomeHero'),
+              CoachAnchor(id: 'home.messageBanking', child: TieredTile(readAloud: false, key: const Key('guardianHomeHero'),
                 icon: heroTile.icon, label: heroTile.label,
                 featured: true, hero: true,
-                height: mainAxisExtent + 20, onTap: heroTile.onTap),
+                height: mainAxisExtent + 20, onTap: heroTile.onTap)),
               const SizedBox(height: 10),
 
               // ================================================== Featured
@@ -326,7 +327,7 @@ class GuardianHome extends StatelessWidget {
                   crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
                   mainAxisExtent: mainAxisExtent),
                 children: [for (final t in featuredTiles)
-                  TieredTile(readAloud: false, icon: t.icon, label: t.label, featured: true, onTap: t.onTap)]),
+                  _anchored(t, TieredTile(readAloud: false, icon: t.icon, label: t.label, featured: true, onTap: t.onTap))]),
               const SizedBox(height: 10),
 
               // ================================================== Standard
@@ -338,7 +339,7 @@ class GuardianHome extends StatelessWidget {
                   crossAxisCount: crossAxisCount, mainAxisSpacing: 10, crossAxisSpacing: 10,
                   mainAxisExtent: mainAxisExtent),
                 children: [for (final t in standardTiles)
-                  TieredTile(readAloud: false, icon: t.icon, label: t.label, onTap: t.onTap)]),
+                  _anchored(t, TieredTile(readAloud: false, icon: t.icon, label: t.label, onTap: t.onTap))]),
             ]);
           })),
         const SizedBox(height: 16),
@@ -361,19 +362,19 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(children: [
-            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: CoachAnchor(id: 'home.messageBanking', child: TieredTile(readAloud: false, 
               key: const Key('guardianHomeHero'),
               icon: Icons.schedule_send, label: 'Message banking',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const MessageBankingScreen())))),
+                builder: (_) => const MessageBankingScreen()))))),
             const SizedBox(height: 10),
-            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
+            ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: CoachAnchor(id: 'home.more', child: TieredTile(readAloud: false, 
               icon: Icons.more_horiz, label: 'More',
               onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => Scaffold(
                   appBar: AppBar(title: const Text('More')),
                   body: SafeArea(child: full),
-                ))))),
+                )))))),
           ])),
         const SizedBox(height: 16),
       ]));
@@ -391,13 +392,19 @@ class GuardianHome extends StatelessWidget {
 /// computed from usage (P2 is not triggered by construction).
 enum _Tier { hero, featured, standard }
 
+/// Wraps a tile in its tour anchor when it has one.
+Widget _anchored(_TileSpec t, Widget tile) => t.anchor == null ? tile : CoachAnchor(id: t.anchor!, child: tile);
+
 /// One row of the declarative tile list below: icon, label, destination,
 /// and its designed tier. Kept separate from TieredTile itself — TieredTile
 /// renders one tile; a _TileSpec describes one, everything build() needs to
 /// place it in the right band/grid with the right fill.
 class _TileSpec {
   const _TileSpec(
-      {required this.icon, required this.label, required this.tier, required this.onTap});
+      {required this.icon, required this.label, required this.tier, required this.onTap, this.anchor});
+
+  /// The guided tour's coach-mark anchor for this tile (guided_widgets.dart), or null.
+  final String? anchor;
   final IconData icon;
   final String label;
   final _Tier tier;
@@ -435,23 +442,23 @@ List<_TileSpec> _kGuardianTiles({
   _TileSpec(icon: Icons.schedule_send, label: 'Message banking', tier: _Tier.hero,
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => const MessageBankingScreen()))),
-  _TileSpec(icon: Icons.event_available, label: 'Availability', tier: _Tier.featured,
+  _TileSpec(icon: Icons.event_available, label: 'Availability', tier: _Tier.featured, anchor: 'home.availability',
     onTap: (context) => _openAvailability(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       httpClient: availabilityHttpClient)),
-  _TileSpec(icon: Icons.schedule, label: 'Send-time guard', tier: _Tier.featured,
+  _TileSpec(icon: Icons.schedule, label: 'Send-time guard', tier: _Tier.featured, anchor: 'home.sendTimeGuard',
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => SendTimeGuardScreen(childName: childName,
         childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
         dayPart: dayPart, reachable: reachable)))),
-  _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
+  _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured, anchor: 'home.medsCare',
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       builder: () => localCareScreen(context, CareDestination.meds, live: baseUrl != null,
         childName: childName, childId: childId, guardianId: guardianId) ?? MedsCareScreen(childName: childName,
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
         httpClient: availabilityHttpClient))),
-  _TileSpec(icon: Icons.medical_information, label: 'Emergency card', tier: _Tier.featured,
+  _TileSpec(icon: Icons.medical_information, label: 'Emergency card', tier: _Tier.featured, anchor: 'home.emergencyCard',
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       builder: () => EmergencyCardScreen(childName: childName,
@@ -487,7 +494,7 @@ List<_TileSpec> _kGuardianTiles({
       builder: (_) => CareNoteScreen(childName: childName,
         baseUrl: baseUrl, guardianId: guardianId, childId: childId,
         httpClient: availabilityHttpClient)))),
-  _TileSpec(icon: Icons.more_horiz, label: 'More', tier: _Tier.standard,
+  _TileSpec(icon: Icons.more_horiz, label: 'More', tier: _Tier.standard, anchor: 'home.more',
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => GuardianMoreScreen(childName: childName,
         // The age the local family locked (guardian_local_scope.dart); 9 is the hub's own

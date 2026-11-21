@@ -66,6 +66,8 @@ import 'first_run_flow.dart';
 import 'grownup_roster.dart';
 import 'guardian_boot.dart';
 import 'guardian_local_scope.dart';
+import 'guided_child.dart';
+import 'guided_progress.dart';
 import 'kiosk_shell.dart';
 import 'live_boot_plan.dart';
 import 'live_common.dart';
@@ -463,6 +465,13 @@ Future<void> _completeLocalPair(ChildPairing p) async {
   } catch (e) {
     debugPrint('[olive.pairing] could not keep the pairing on this device: $e');
   }
+  // A grown-up has just paired this tablet: her welcome may be offered (a grown-up starts it, at the tablet).
+  try {
+    final LocalGuidedProgressStore g = LocalGuidedProgressStore(LocalServices.current.area('guidedtour'));
+    await g.save((await g.load()).copyWith(child: ChildWelcomeState.offered));
+  } catch (_) {
+    // Nothing is lost if this cannot be kept: the welcome is simply not offered.
+  }
   await _bootLocalPaired(p);
 }
 
@@ -821,16 +830,22 @@ class _OliveLiveState extends State<OliveLive> {
           child: ChildScreenShield(child: KidLabelsHost(childId: widget.childId, child: withAccess(child!))),
         ),
         home: KioskShell(
+          childName: (widget.localName ?? '').trim().isEmpty ? 'your child' : widget.localName!.trim(),
           phoneUnlock: widget.phoneUnlock,
           verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,
-          child: LiveChildHomeScreen(
-            baseUrl: _dartDefineBaseUrl,
-            childId: widget.childId,
-            navigatorKey: _navigatorKey,
-            localOnly: widget.localHome,
-            localName: widget.localName,
-            localAge: widget.localAge,
+          // Her welcome (guided_child.dart): offered only on a tablet a grown-up just paired, started only by a grown-up.
+          child: ChildWelcomeHost(
+            enabled: widget.localHome,
+            name: widget.localName,
+            child: LiveChildHomeScreen(
+              baseUrl: _dartDefineBaseUrl,
+              childId: widget.childId,
+              navigatorKey: _navigatorKey,
+              localOnly: widget.localHome,
+              localName: widget.localName,
+              localAge: widget.localAge,
+            ),
           ),
         ),
       );

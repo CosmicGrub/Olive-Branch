@@ -66,6 +66,7 @@ import 'game_navigation.dart';
 import 'game_picker.dart';
 import 'games_hub.dart';
 import 'guardian_local_scope.dart';
+import 'guided_adult.dart' show GuidedReplay;
 import 'guardian_setup.dart';
 import 'guardian_settings_hub.dart';
 import 'her_colour_guardian.dart';
@@ -869,6 +870,15 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _open(context, LearnSettingsScreen(
             principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
+      ]),
+      SettingsGroup('Help', [
+        // The guided first run, again, on this phone (guided_adult.dart). It asks for nothing and changes nothing.
+        SettingsRow(id: 'tour', icon: Icons.replay, title: 'Show me around again',
+          subtitle: 'The welcome and the tour of your home, from the start. Nothing changes',
+          onTap: () {
+            Navigator.of(context).popUntil((route) => route.isFirst);
+            GuidedReplay.ask();
+          }),
       ]),
       SettingsGroup('Account', [
         // Optional, like everything online: shown only where the build can reach a server (a connected shell, or a

@@ -46,6 +46,7 @@ import 'screen_share_ui.dart';
 import 'guardian_local_scope.dart';
 import 'play_notice.dart' show PlayAudience, PlayAudienceScope;
 import 'guardian_onboarding.dart';
+import 'guided_adult.dart';
 import 'guardian_setup.dart';
 import 'live_boot_plan.dart';
 import 'live_common.dart';
@@ -299,6 +300,9 @@ class _GuardianOnboardingApp extends StatelessWidget {
       role: role,
       services: services,
       serverAvailable: true,
+      // The guided first run (docs/planning/ONBOARDING-SCRIPT.md): warm words, a progress strip, then the connect step and the
+      // tour on her home. A device that already finished first run never comes through here.
+      guided: true,
       baseUrl: kLiveBaseUrl,
       onRedeemed: (Map<String, dynamic> r) => unawaited(completeGuardianRedeem(r)),
       onFinished: (LocalFamily _) => unawaited(bootGuardianFlow(role, reuseStorage: true)),
@@ -450,12 +454,16 @@ class _OliveLocalGuardianState extends State<OliveLocalGuardian> {
         theme: _themeController,
         title: 'Olive (guardian)',
         local: widget.controller,
-        home: ListenableBuilder(
-          listenable: widget.controller,
-          builder: (BuildContext context, Widget? _) {
-            final LocalFamily? f = widget.controller.family;
-            return f == null ? const Scaffold(body: Center(child: CircularProgressIndicator())) : LocalGuardianHome(family: f);
-          },
+        // The guided first run's tour, "What's new" and "Show me around again" draw over the home and nothing else
+        // (guided_adult.dart); with nothing to show it adds no widget to the screen.
+        home: GuidedAdultHost(
+          child: ListenableBuilder(
+            listenable: widget.controller,
+            builder: (BuildContext context, Widget? _) {
+              final LocalFamily? f = widget.controller.family;
+              return f == null ? const Scaffold(body: Center(child: CircularProgressIndicator())) : LocalGuardianHome(family: f);
+            },
+          ),
         ),
       );
 }

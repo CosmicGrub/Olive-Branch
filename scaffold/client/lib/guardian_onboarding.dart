@@ -26,17 +26,33 @@
 // This does not create a server account, send anything, or grant any authority: it is a
 // local record (local_family.dart). Connecting does not upload it either: no server route
 // takes it.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'contact_labels.dart';
 import 'device_role.dart';
 import 'guardian_local_scope.dart';
+import 'guided_engine.dart';
+import 'guided_progress.dart';
+import 'guided_registry.dart';
+import 'guided_script.dart';
+import 'guided_widgets.dart';
 import 'local_family.dart';
+import 'local_pin.dart' show LocalPinService;
 import 'local_pin_screens.dart';
+import 'local_services.dart';
 import 'pairing_redeem_screen.dart';
 
-enum GuardianOnboardingStage { you, her, zone, pin, connect }
+enum GuardianOnboardingStage { welcome, you, her, zone, pin, connect }
+
+/// Her age's home, in words, for the guided first run (the four homes in child_home_bands.dart).
+String guidedBandWords(int age) => age <= 4 ? 'ages 3 to 4' : age <= 7 ? 'ages 5 to 7' : age <= 12 ? 'ages 8 to 12' : 'ages 13 to 17';
+
+/// The PIN step as a slot: another lane may supply a keypad screen here (called with the service and a callback for when the
+/// PIN really is stored). Null uses the existing local PIN form.
+typedef GuidedPinStepBuilder = Widget Function(BuildContext context, LocalPinService service, Future<void> Function() onSaved);
 
 class GuardianOnboardingFlow extends StatefulWidget {
   const GuardianOnboardingFlow({
@@ -48,7 +64,21 @@ class GuardianOnboardingFlow extends StatefulWidget {
     this.baseUrl = '',
     this.onRedeemed,
     this.httpClient,
+    this.guided = false,
+    this.guideStore,
+    this.pinStepBuilder,
   });
+
+  /// The guided first run (guided_script.dart): a welcome first, a progress strip, warm words, the five controls on every step,
+  /// and, after the PIN, the hand-held connect step and the tour on her home (guided_adult.dart). Off keeps the plain
+  /// five-step first run exactly as it was.
+  final bool guided;
+
+  /// Where the guided run keeps its place. Null = the device's own area.
+  final GuidedProgressStore? guideStore;
+
+  /// The PIN step slot, for a normal keypad. Null = the existing form.
+  final GuidedPinStepBuilder? pinStepBuilder;
 
   final DeviceRole role;
   final GuardianLocalServices services;
@@ -72,6 +102,7 @@ class GuardianOnboardingFlow extends StatefulWidget {
 
 class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
   GuardianOnboardingStage _stage = GuardianOnboardingStage.you;
+  GuidedController? _g;
   late final TextEditingController _name = TextEditingController();
   late final TextEditingController _label = TextEditingController(text: widget.role.defaultLabel);
   final TextEditingController _child = TextEditingController();
@@ -81,7 +112,55 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
   LocalFamily? _saved;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.guided) unawaited(_setupGuide());
+  }
+
+  Future<void> _setupGuide() async {
+    final GuidedProgressStore store = widget.guideStore ?? LocalGuidedProgressStore(LocalServices.current.area('guidedtour'));
+    final List<GuidedEntry> steps = resolveGuidedEntries(half: GuidedHalf.adult);
+    GuidedProgress p;
+    try {
+      p = await store.load();
+    } catch (_) {
+      p = const GuidedProgress();
+    }
+    // Nothing personal is kept before the PIN, so a relaunch before it starts again at "About you" (the welcome was seen).
+    final int you = steps.indexWhere((GuidedEntry e) => e.id == 'a.you');
+    final int saved = GuidedController.resumeIndex(steps, p.adultStep);
+    final int start = (p.adultStep != null && saved > 0) ? you : 0;
+    final GuidedController c = GuidedController(half: GuidedHalf.adult, steps: steps, store: store, progress: p, startIndex: start);
+    c.addListener(() {
+      if (mounted) setState(() => _error = null);
+    });
+    if (!mounted) return;
+    setState(() => _g = c);
+    await c.start();
+  }
+
+  /// Forward by one step: the guided controller when there is one, else straight to [s].
+  void _forward(GuardianOnboardingStage s) {
+    final GuidedController? g = _g;
+    if (g != null) {
+      unawaited(g.next());
+    } else {
+      _go(s);
+    }
+  }
+
+  GuardianOnboardingStage _guidedStage(GuidedController g) => switch (g.current.id) {
+        'a.welcome' => GuardianOnboardingStage.welcome,
+        'a.you' => GuardianOnboardingStage.you,
+        'a.her' => GuardianOnboardingStage.her,
+        'a.zone' => GuardianOnboardingStage.zone,
+        'a.pin' => GuardianOnboardingStage.pin,
+        _ => GuardianOnboardingStage.connect,
+      };
+
+  @override
   void dispose() {
+    _g?.dispose();
     _name.dispose();
     _label.dispose();
     _child.dispose();
@@ -99,14 +178,14 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     if (_name.text.trim().length > kMaxNameLength || _label.text.trim().length > kMaxNicknameLength) {
       return setState(() => _error = 'That is a little too long.');
     }
-    _go(GuardianOnboardingStage.her);
+    _forward(GuardianOnboardingStage.her);
   }
 
   void _fromHer() {
     if (_child.text.trim().isEmpty) return setState(() => _error = 'Please add her first name.');
     if (_child.text.trim().length > kMaxNameLength) return setState(() => _error = 'That is a little too long.');
     if (_age == null) return setState(() => _error = 'Please choose her age.');
-    _go(GuardianOnboardingStage.zone);
+    _forward(GuardianOnboardingStage.zone);
   }
 
   /// Called after the PIN really is stored: now the family record. Both must exist before
@@ -131,6 +210,13 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     }
     if (!mounted) return;
     _saved = family;
+    if (_g != null) {
+      // The family and the PIN are saved. The next saved step is the connect step; her home (with the tour) takes it from here.
+      await _g!.next();
+      if (!mounted) return;
+      widget.onFinished(family);
+      return;
+    }
     if (widget.serverAvailable && widget.onRedeemed != null) {
       _go(GuardianOnboardingStage.connect);
     } else {
@@ -140,7 +226,12 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
 
   @override
   Widget build(BuildContext context) {
-    switch (_stage) {
+    final GuidedController? g = _g;
+    if (widget.guided && g == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (g != null && g.paused) return GuidedPauseCard(controller: g);
+    switch (g != null ? _guidedStage(g) : _stage) {
+      case GuardianOnboardingStage.welcome:
+        return _page(title: 'Welcome', intro: '', onNext: () => _forward(GuardianOnboardingStage.you), children: const <Widget>[]);
       case GuardianOnboardingStage.you:
         return _page(
           title: 'About you',
@@ -204,6 +295,11 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
                   onSelected: (_) => setState(() => _age = a),
                 ),
             ]),
+            if (_g != null && _age != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text('Her home will be the one for ${guidedBandWords(_age!)}.', key: const Key('goBand')),
+              ),
           ],
         );
       case GuardianOnboardingStage.zone:
@@ -211,7 +307,7 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
           title: 'Where does she live?',
           intro: 'Her time zone. "Same as this phone" is right for most families.',
           nextKey: const Key('goZoneNext'),
-          onNext: () => _go(GuardianOnboardingStage.pin),
+          onNext: () => _forward(GuardianOnboardingStage.pin),
           children: <Widget>[
             RadioGroup<String>(
               groupValue: _zone,
@@ -234,12 +330,13 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
               'connection. It is not your account PIN.',
           showNext: false,
           children: <Widget>[
-            LocalPinSetupForm(
-              key: const Key('goPinForm'),
-              service: widget.services.pin,
-              onSaved: _pinSaved,
-              saveLabel: 'Save PIN and continue',
-            ),
+            widget.pinStepBuilder?.call(context, widget.services.pin, _pinSaved) ??
+                LocalPinSetupForm(
+                  key: const Key('goPinForm'),
+                  service: widget.services.pin,
+                  onSaved: _pinSaved,
+                  saveLabel: 'Save PIN and continue',
+                ),
           ],
         );
       case GuardianOnboardingStage.connect:
@@ -263,6 +360,24 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     bool showNext = true,
   }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final GuidedController? g = _g;
+    if (g != null) {
+      return GuidedStepCard(
+        controller: g,
+        entry: g.current,
+        name: _child.text.trim().isEmpty ? null : _child.text.trim(),
+        showNext: showNext,
+        onNext: onNext,
+        body: <Widget>[
+          ...children,
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(_error!, key: const Key('goError'), style: TextStyle(color: scheme.error)),
+            ),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: SafeArea(

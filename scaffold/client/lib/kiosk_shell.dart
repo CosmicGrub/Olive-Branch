@@ -44,6 +44,7 @@ import 'kiosk_lock_colors.dart';
 import 'kiosk_channel.dart';
 import 'lock_controller.dart' as lock;
 import 'adult_gate.dart';
+import 'guided_child.dart' show ChildWelcomeReplay;
 import 'daily_time_gate.dart' show GrownUpProofScope;
 import 'local_pin.dart' show kLocalPinMaxDigits;
 import 'unlock_challenge.dart' show kPhoneProof;
@@ -250,6 +251,9 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
         escalatedUntil: _state.escalatedUntil,
         onExitKiosk: _exitKiosk,
         childName: widget.childName,
+        // The grown-up is at her tablet and has proved it: they can run her welcome again (guided_child.dart).
+        onShowWelcome: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => ChildWelcomeReplay(name: widget.childName == 'your child' ? null : widget.childName))),
       );
     }
     // child_session is unreached from this shell (see class doc) —

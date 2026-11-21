@@ -29,7 +29,11 @@ class GuardianEscalationScreen extends StatelessWidget {
     required this.escalatedUntil,
     required this.onExitKiosk,
     this.childName = 'your child',
+    this.onShowWelcome,
   });
+
+  /// "Show her the welcome again" (guided_child.dart). Null hides the button.
+  final VoidCallback? onShowWelcome;
 
   /// From `LockState.escalatedUntil` — when this scope naturally lapses.
   /// Nullable only because the type it's threaded from is; a screen that can
@@ -70,6 +74,14 @@ class GuardianEscalationScreen extends StatelessWidget {
               ?.copyWith(color: scheme.onSurfaceVariant)),
           // What the phone allows for rings and alerts (alerts_card.dart); draws nothing where there is no phone side.
           const AlertsCard(),
+          if (onShowWelcome != null) ...[
+            const SizedBox(height: 16),
+            SizedBox(height: 52, child: OutlinedButton.icon(
+              key: const Key('showWelcomeAgain'),
+              onPressed: onShowWelcome,
+              icon: const Icon(Icons.replay),
+              label: const Text('Show her the welcome again'))),
+          ],
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),
