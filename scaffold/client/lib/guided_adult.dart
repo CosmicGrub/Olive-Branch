@@ -55,6 +55,7 @@ class GuidedAdultHost extends StatefulWidget {
     this.store,
     this.features = kGuidedFeaturesOn,
     this.registered = kRegisteredGuidedEntries,
+    this.scriptVersion = kGuidedScriptVersion,
     this.simulate = kSimOnboarding,
     this.childName,
     this.connectBuilder,
@@ -64,6 +65,7 @@ class GuidedAdultHost extends StatefulWidget {
   final GuidedProgressStore? store;
   final Set<String> features;
   final List<GuidedEntry> registered;
+  final int scriptVersion;
 
   /// The developer seam: start the tour on an install that already finished first run.
   final bool simulate;
@@ -100,7 +102,7 @@ class _GuidedAdultHostState extends State<GuidedAdultHost> {
   }
 
   List<GuidedEntry> _resolve({int? seen}) =>
-      resolveGuidedEntries(half: GuidedHalf.adult, seenVersion: seen, features: widget.features, registered: widget.registered);
+      resolveGuidedEntries(half: GuidedHalf.adult, seenVersion: seen, features: widget.features, registered: widget.registered, scriptVersion: widget.scriptVersion);
 
   bool _isSetup(GuidedEntry e) => e.slot == 'adult.setup' || e.id == 'a.welcome';
 
@@ -144,6 +146,7 @@ class _GuidedAdultHostState extends State<GuidedAdultHost> {
       progress: mode == _Mode.replay ? p.copyWith(adultDone: false, deferred: const <String>[]) : p,
       startIndex: startIndex,
       mini: mode == _Mode.mini,
+      scriptVersion: widget.scriptVersion,
     );
     c.addListener(() {
       if (mounted) setState(() {});
@@ -165,7 +168,9 @@ class _GuidedAdultHostState extends State<GuidedAdultHost> {
   }
 
   ({int step, int of}) _strip(GuidedController c) {
-    if (_mode == _Mode.mini || _mode == _Mode.replay) return guidedStrip(c.steps, c.index);
+    // A mini-tour counts its own stops one by one; a replay counts the parts it has (the setup is not asked again).
+    if (_mode == _Mode.mini) return (step: c.index + 1, of: c.steps.length);
+    if (_mode == _Mode.replay) return guidedStrip(c.steps, c.index);
     final int i = _full.indexWhere((GuidedEntry e) => e.id == c.current.id);
     return i < 0 ? guidedStrip(c.steps, c.index) : guidedStrip(_full, i);
   }
@@ -222,7 +227,7 @@ class _GuidedAdultHostState extends State<GuidedAdultHost> {
       Expanded(
         child: GuidedStepCard(
           controller: c, entry: e, name: _name, stripOverride: strip, eyebrow: eyebrow, footer: footer,
-          onNext: tablet ? () => unawaited(_openConnect(context)) : null,
+          onNext: tablet ? () => unawaited(_openConnect(context)) : () => unawaited(c.next()),
           onSkip: mini ? () => unawaited(c.finish()) : null,
           onLater: mini ? () => setState(() => _dismissed = true) : null,
         ),

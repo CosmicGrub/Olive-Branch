@@ -229,7 +229,12 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     final GuidedController? g = _g;
     if (widget.guided && g == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (g != null && g.paused) return GuidedPauseCard(controller: g);
-    switch (g != null ? _guidedStage(g) : _stage) {
+    final GuardianOnboardingStage shown = g != null ? _guidedStage(g) : _stage;
+    // Past the PIN the guided run belongs to her home (guided_adult.dart): this flow has already handed over.
+    if (g != null && shown == GuardianOnboardingStage.connect) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    switch (shown) {
       case GuardianOnboardingStage.welcome:
         return _page(title: 'Welcome', intro: '', onNext: () => _forward(GuardianOnboardingStage.you), children: const <Widget>[]);
       case GuardianOnboardingStage.you:

@@ -36,6 +36,7 @@ class ChildWelcomeHost extends StatefulWidget {
     this.store,
     this.features = kGuidedFeaturesOn,
     this.registered = kRegisteredGuidedEntries,
+    this.scriptVersion = kGuidedScriptVersion,
     this.simulate = kSimOnboarding,
     this.prove,
   });
@@ -48,6 +49,7 @@ class ChildWelcomeHost extends StatefulWidget {
   final GuidedProgressStore? store;
   final Set<String> features;
   final List<GuidedEntry> registered;
+  final int scriptVersion;
   final bool simulate;
 
   /// How a grown-up proves they are one. Null reads the kiosk shell's [GrownUpProofScope].
@@ -79,7 +81,7 @@ class _ChildWelcomeHostState extends State<ChildWelcomeHost> {
   }
 
   List<GuidedEntry> _resolve({int? seen}) =>
-      resolveGuidedEntries(half: GuidedHalf.child, seenVersion: seen, features: widget.features, registered: widget.registered);
+      resolveGuidedEntries(half: GuidedHalf.child, seenVersion: seen, features: widget.features, registered: widget.registered, scriptVersion: widget.scriptVersion);
 
   Future<void> _decide() async {
     GuidedProgress p;
@@ -110,7 +112,7 @@ class _ChildWelcomeHostState extends State<ChildWelcomeHost> {
   }
 
   Future<void> _homeNow() async {
-    _p = _p.copyWith(child: ChildWelcomeState.done, seenVersion: kGuidedScriptVersion);
+    _p = _p.copyWith(child: ChildWelcomeState.done, seenVersion: widget.scriptVersion);
     await _store.save(_p);
     if (mounted) setState(() => _stage = _Stage.off);
   }
@@ -133,6 +135,7 @@ class _ChildWelcomeHostState extends State<ChildWelcomeHost> {
       store: _store,
       progress: _p,
       startIndex: GuidedController.resumeIndex(_cards, from),
+      scriptVersion: widget.scriptVersion,
     );
     c.addListener(() {
       if (!mounted) return;

@@ -23,6 +23,7 @@ class GuidedController extends ChangeNotifier {
     GuidedProgress? progress,
     int startIndex = 0,
     this.mini = false,
+    this.scriptVersion = kGuidedScriptVersion,
   })  : assert(steps.isNotEmpty),
         _progress = progress ?? const GuidedProgress(),
         _index = startIndex.clamp(0, steps.length - 1);
@@ -33,6 +34,9 @@ class GuidedController extends ChangeNotifier {
 
   /// A "What's new" mini-tour: it never changes the first-run progress, only the version last seen.
   final bool mini;
+
+  /// The script version recorded as seen when a run finishes.
+  final int scriptVersion;
   GuidedProgress _progress;
   int _index;
   bool _paused = false;
@@ -129,7 +133,7 @@ class GuidedController extends ChangeNotifier {
     } else {
       _progress = _progress.copyWith(child: ChildWelcomeState.done, childStep: current.id);
     }
-    _progress = _progress.copyWith(seenVersion: kGuidedScriptVersion);
+    _progress = _progress.copyWith(seenVersion: scriptVersion);
     await store.save(_progress);
     notifyListeners();
   }

@@ -52,15 +52,15 @@ List<GuidedEntry> resolveGuidedEntries({
   final List<GuidedEntry> steps = <GuidedEntry>[];
   for (final GuidedEntry e in live) {
     if (e.kind == GuidedKind.childLabel) continue;
-    if (seenVersion != null && !(e.since > seenVersion && e.whatsNew)) continue;
+    // The "And there is more" card is the container for the labels above: it shows exactly when there are any (in a
+    // mini-tour, only the new ones), whatever its own version.
     if (e.id == 'c.extra') {
-      if (extra.isEmpty) continue;
-      steps.add(e.withLabels(extra));
+      if (extra.isNotEmpty) steps.add(e.withLabels(extra));
       continue;
     }
+    if (seenVersion != null && !(e.since > seenVersion && e.whatsNew)) continue;
     steps.add(e);
   }
-  // In a first run the "And there is more" card only needs labels; in the mini-tour it is just the delta.
   return steps;
 }
 

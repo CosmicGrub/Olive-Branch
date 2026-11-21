@@ -197,14 +197,14 @@ class GuidedControls extends StatelessWidget {
           style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
           child: const Text('Back'),
         ),
-        if (controller.canSkip)
+        if (controller.canSkip || onSkip != null)
           TextButton(
             key: const Key('guidedSkip'),
             onPressed: onSkip ?? () => controller.skip(),
             style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
             child: const Text('Skip this part'),
           ),
-        if (controller.canLater)
+        if (controller.canLater || onLater != null)
           TextButton(
             key: const Key('guidedLater'),
             onPressed: onLater ?? () => controller.later(),
@@ -417,8 +417,11 @@ class _CoachOverlayState extends State<CoachOverlay> with WidgetsBindingObserver
   }
 
   @override
-  Widget build(BuildContext context) {
-    final Size screen = MediaQuery.sizeOf(context);
+  Widget build(BuildContext context) =>
+      // The room the overlay really has (its own box), not the window's: the same on a phone, a folded cover and a tablet.
+      LayoutBuilder(builder: (BuildContext context, BoxConstraints box) => _build(context, box.biggest));
+
+  Widget _build(BuildContext context, Size screen) {
     final EdgeInsets pad = MediaQuery.paddingOf(context);
     final Rect? rect = _rect?.inflate(6);
     final GuidedEntry e = widget.entry;
