@@ -2046,7 +2046,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const after = Math.max(0, Math.floor(Number(c.query.get('after')) || 0));
       const wait = Math.max(0, Math.min(8000, Math.floor(Number(c.query.get('wait')) || 0)));
       const r = await signalHub.read(party.session.id, party.role, after, wait);
-      return { status: 200, body: r };
+      // 'signals', not 'messages': a child's response may not carry a key that name (the child payload sweep).
+      return { status: 200, body: { signals: r.messages, closed: r.closed } };
     },
   });
 

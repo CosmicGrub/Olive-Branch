@@ -161,13 +161,15 @@ const join = (childId, sessionId, tok) => api.handle(
 }
 
 // ===========================================================================
-// B · a child principal cannot start a call
+// B · a child principal can call an APPROVED grown-up of hers, and nobody else (2026-11-21)
 // ===========================================================================
 {
   const res = await post(CHILD, childTok);
-  check('B child', 'a child session is refused', res.status, 403);
-  check('B child', 'the reason names exactly what was refused',
-    res.body.error, 'child_cannot_start_call');
+  check('B child', 'a child with an approved grown-up starts a call', res.status, 201);
+  check('B child', 'she is told nothing about rings or reasons', JSON.stringify(['rang','ringState'].filter((k) => k in res.body)), '[]');
+  const strayTok = issueSession(SECRET, { userId: null, roleName: 'child', childId: CHILD_B, escalated: false }, NOW);
+  const none = await post(CHILD_B, strayTok);
+  check('B child', 'a child with no approved grown-up is refused', `${none.status} ${none.body.error}`, '403 no_approved_grownup');
 }
 
 // ===========================================================================

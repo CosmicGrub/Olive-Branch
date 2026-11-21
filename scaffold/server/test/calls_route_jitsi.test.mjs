@@ -117,7 +117,7 @@ let started, startedRoom;
 // B-D · authorization unchanged
 for (const [label, api, env] of [['jitsi', jitsi, 'jitsi'], ['livekit', livekit, 'livekit']]) {
   const g = `B auth (${env})`;
-  check(g, 'a child principal cannot start a call', `${(await post(api, CHILD, childTok)).status} ${(await post(api, CHILD, childTok)).body.error}`, '403 child_cannot_start_call');
+  check(g, 'a child principal may call her approved grown-up', (await post(api, CHILD, childTok)).status, 201);
   const noEdge = await post(api, CHILD_B, dadTok);
   check(g, 'a guardian with no edge is refused with the real can() reason', `${noEdge.status} ${noEdge.body.error}`, '403 no_edge');
   check(g, 'an unauthenticated request is refused', (await post(api, CHILD, null)).status, 401);
