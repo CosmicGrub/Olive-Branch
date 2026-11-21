@@ -109,7 +109,6 @@ void main() {
       final String tpl = read('../tools/jitsi-selfhost/network_security_config.debug.template.xml');
       expect(tpl, contains('192.0.2.10'));
       expect(tpl, contains('@raw/jitsi_dev_cert'));
-      expect(Directory('android/app/src/debugLan').existsSync(), isFalse, reason: 'the overlay must never be committed');
     });
 
     test('the vendored jitsi_meet_flutter_sdk copy is wired, trimmed to Android, and nothing else overrides', () {

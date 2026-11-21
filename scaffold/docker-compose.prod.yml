@@ -50,7 +50,7 @@
 #     `LIVEKIT_API_SECRET` are each `${...:?...}` here (MASTERFILE §16.2 #6
 #     REVERSED AGAIN — a real LiveKit Cloud project, not the old
 #     `JITSI_SERVER_URL`'s self-hosted LAN address), not docker-dev's
-#     hardcoded `192.168.1.175` (a specific dev machine's LAN IP,
+#     hardcoded `192.0.2.175` (a specific dev machine's LAN IP,
 #     meaningless anywhere else, and meaningless for a managed cloud
 #     service regardless).
 #
