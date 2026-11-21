@@ -51,6 +51,13 @@ Future<void> _act(WidgetTester t, Future<void> Function() gesture) async {
 
 
 
+/// A paired-tablet list that cannot be written (as when the stored list is unreadable).
+class _UnwritableKids extends MemoryPairedKidsRepository {
+  @override
+  Future<void> add(PairedKid kid) async => throw const PairedKidsUnreadable();
+}
+
+
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 40; i++) {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
@@ -122,6 +129,42 @@ void main() {
     expect(r.ok, isTrue);
     expect(find.byKey(const Key('connectDone')), findsOneWidget);
     expect((await kids.load()).single.deviceName, 'Tablet');
+  });
+
+  testWidgets('a tablet paired while the phone cannot add it to its list: the done screen says so', (t) async {
+    final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1);
+    await t.runAsync(() => pin.setPin('4829'));
+    AdultWindow? opened;
+    await t.pumpWidget(MaterialApp(
+        home: ConnectChildScreen(
+      pin: pin,
+      deviceKeys: MemoryDeviceKeyRepository(),
+      kids: _UnwritableKids(),
+      adultName: 'Mom',
+      childName: 'Ivy',
+      makeUnlockVerifier: _cheap,
+      localAddress: () async => '192.0.2.5',
+      startHost: (AdultWindow w) async {
+        opened = w;
+        return _FakeHost();
+      },
+    )));
+    await t.enterText(find.byKey(const Key('connectPinField')), '4829');
+    await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
+    final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
+    final Future<PairingResult> childRun = ChildPairingClient(
+            childKey: ck, transport: LoopbackPairingTransport(opened!), deviceName: 'Tablet', pollEvery: const Duration(milliseconds: 20))
+        .pair(sid: opened!.sid, password: '4829');
+    await _settle(t);
+    await t.tap(find.byKey(Key('connectMatch_${opened!.matchChoices!.correct}')));
+    await t.pump();
+    await _act(t, () => t.tap(find.byKey(const Key('connectApprove'))));
+    await _settle(t);
+    await childRun;
+    await _settle(t);
+    expect(find.byKey(const Key('connectDone')), findsOneWidget);
+    expect(find.byKey(const Key('connectMessage')), findsOneWidget, reason: 'the grown-up is told, on the done screen');
+    expect(find.text(kKidsNotSavedMessage), findsOneWidget);
   });
 
   testWidgets('child screen: only a card until the grown-up taps; no keypad, digits or error words', (t) async {

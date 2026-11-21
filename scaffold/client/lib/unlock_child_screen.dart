@@ -58,7 +58,7 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
       } else if (v.verdict == UnlockVerdict.paused) {
         // The watch rule: a tablet that proves a different key than the one connected is never unlocked from here.
         _message = "This tablet looks different from the one you connected as ${v.pausedName}. It is paused. "
-            'Forget it in "Connected child devices" and connect it again if it is yours.';
+            'Forget it under "Her tablet" in More and pair it again if it is yours.';
       } else {
         _view = v;
         _message = null;
@@ -100,7 +100,7 @@ class _UnlockChildScreenState extends State<UnlockChildScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text("Unlock ${widget.childName}'s device")),
+        appBar: AppBar(title: Text("Unlock ${widget.childName}'s tablet")),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
