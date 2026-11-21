@@ -1,0 +1,564 @@
+{
+  "description": "Shared test vectors for the Olive Branch signed update manifest (docs/UPDATE-MANIFEST.md). Regenerate only with tools/update/gen-update-vectors.mjs; the keys behind it were discarded.",
+  "signDomain": "olive-update-manifest-v1\n",
+  "now": "2026-12-01T00:00:00Z",
+  "trust": "b1e4c216050d6e49:ThtUQNWk_wnVQkFvMkWONLaUpgfFu1B8w2xI745x8G0",
+  "strangerTrust": "170d78e730badd49:cs3BBuwnPFuqwzRYnbBIFn390-sCa3FkyWL8MeCrlto",
+  "canonical": [
+    {
+      "name": "sorted keys, no whitespace",
+      "json": "{\"b\":1,\"a\":[true,false,null,-7],\"c\":{\"z\":\"x\",\"y\":\"\"}}",
+      "canonical": "{\"a\":[true,false,null,-7],\"b\":1,\"c\":{\"y\":\"\",\"z\":\"x\"}}",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a7b2261223a5b747275652c66616c73652c6e756c6c2c2d375d2c2262223a312c2263223a7b2279223a22222c227a223a2278227d7d"
+    },
+    {
+      "name": "keys sort by UTF-16 code unit, not by code point",
+      "json": "{\"～\":1,\"😀\":2,\"z\":3,\"é\":4}",
+      "canonical": "{\"z\":3,\"é\":4,\"😀\":2,\"～\":1}",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a7b227a223a332c22c3a9223a342c22f09f9880223a322c22efbd9e223a317d"
+    },
+    {
+      "name": "control characters are \\u00xx, lower-case, never \\n",
+      "json": "\"a\\u0000\\t\\n\\r\\u001fb\"",
+      "canonical": "\"a\\u0000\\u0009\\u000a\\u000d\\u001fb\"",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a22615c75303030305c75303030395c75303030615c75303030645c75303031666222"
+    },
+    {
+      "name": "quote and backslash are escaped, slash and DEL are not",
+      "json": "\"q\\\"b\\\\s/\"",
+      "canonical": "\"q\\\"b\\\\s/\"",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a22715c22625c5c732f7f22"
+    },
+    {
+      "name": "non-ASCII is written as itself",
+      "json": "\"é😀 \"",
+      "canonical": "\"é😀 \"",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a22c3a9f09f9880e280a822"
+    },
+    {
+      "name": "integers at the edge",
+      "json": "[0,-1,9007199254740991,-9007199254740991]",
+      "canonical": "[0,-1,9007199254740991,-9007199254740991]",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a5b302c2d312c393030373139393235343734303939312c2d393030373139393235343734303939315d"
+    },
+    {
+      "name": "nested",
+      "json": "{\"x\":[{\"b\":[],\"a\":{}},[[]]]}",
+      "canonical": "{\"x\":[{\"a\":{},\"b\":[]},[[]]]}",
+      "signingBytesHex": "6f6c6976652d7570646174652d6d616e69666573742d76310a7b2278223a5b7b2261223a7b7d2c2262223a5b5d7d2c5b5b5d5d5d7d"
+    }
+  ],
+  "documents": [
+    {
+      "name": "valid: a newer version",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": true,
+        "status": "update"
+      }
+    },
+    {
+      "name": "valid: the same version is up to date",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5200,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": true,
+        "status": "up-to-date"
+      }
+    },
+    {
+      "name": "valid: below the minimum supported version",
+      "note": "a valid update; adults would also see \"Please update\"",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5000,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": true,
+        "status": "update",
+        "belowMinimum": true
+      }
+    },
+    {
+      "name": "valid: a mirror-less single address is still a valid manifest",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"IEx5wWEouaqtcqNNYBPUaRPMeRCwiMkwsh07Ijontxz_ey-2T2yl_scB57LcObem-6PWUzKXKdg3evuk8TU0Dg\"\n  }\n}\n",
+      "expect": {
+        "ok": true,
+        "status": "update"
+      }
+    },
+    {
+      "name": "valid: an empty headline is allowed",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"7VFXq6nKuJHD1Mk2bK5cr9g9eQL5HlaTq3_VGtakcLEQUmOgeTM4ia7KbLqbCkViyPFMvAUV8PxvFpO7XFNjAQ\"\n  }\n}\n",
+      "expect": {
+        "ok": true,
+        "status": "update"
+      }
+    },
+    {
+      "name": "tampered: versionCode changed after signing",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5300,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "tampered: an address changed after signing",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://evil.example.org/olive.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "tampered: the file hash changed after signing",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "tampered: the release notes changed after signing",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"Please send your PIN to the address below.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "tampered: one character of the signature changed",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Aw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "wrong key: signed by a key the app does not hold",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"170d78e730badd49\",\n    \"sig\": \"YVen1rkGK1yfqo9lUqRM87zovGyk16GU5gTHNFcOFlvcqfsZpfVG2xMRI2z29mmVgPXs4ql8UD3ymb3rduvMCQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "unknownKey"
+      }
+    },
+    {
+      "name": "wrong key: signed by another key but naming the trusted key id",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"YVen1rkGK1yfqo9lUqRM87zovGyk16GU5gTHNFcOFlvcqfsZpfVG2xMRI2z29mmVgPXs4ql8UD3ymb3rduvMCQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "wrong algorithm: alg is not ed25519",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"none\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badSignature"
+      }
+    },
+    {
+      "name": "rollback: a signed manifest older than the installed version",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.50.0\",\n    \"versionCode\": 5000,\n    \"minSupportedVersionCode\": 5000,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"XybAOwgQ5BCOqi4NhDN3q8LNn-ct8N6-V5rqd9n66yZ1vneggU_NolmXHnyJcATVcF4RlXHw5W3monAmxI9vCQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "rollback"
+      }
+    },
+    {
+      "name": "replay: an older sequence than one already accepted",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": 1795255201,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "replayed"
+      }
+    },
+    {
+      "name": "wrong channel: signed for beta, the app follows stable",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"beta\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"eJCAiHlbdnasobaeLIr8HK5p5lIOksfAY3hlRpH4_84xgCz3yFjh0nNP6uqPENH5doehmya_MIsukhJlmIpVBw\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "wrongChannel"
+      }
+    },
+    {
+      "name": "wrong app: signed for another application id",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.example.other\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"jnjfMd_Ihak0IVRuCfDFbibtzMn5r14Y_kfdId9K0rptdAIOgmUcOyMoO5Feu9UYi7exT0Q-CFfaKS5gIzZGBg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "wrongApp"
+      }
+    },
+    {
+      "name": "expired: past expiresAt",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2027-05-21T10:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "expired"
+      }
+    },
+    {
+      "name": "not yet valid: issued in the future",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-12-04T00:00:00Z\",\n    \"expiresAt\": \"2027-03-11T00:00:00Z\",\n    \"publishedAt\": \"2026-12-04T00:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"YG74PPdjb2zP1E2woJjosfgSd3gECddmhewPWCp-CGNcmxcC_eCZqrL4-sSNJRg_TTRlsp-jgqbEPdcYgliSAg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "notYetValid"
+      }
+    },
+    {
+      "name": "missing field: versionCode removed (and re-signed)",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"w3KOf9355YmOd3QgtCNkLIEQkGcr4PbUJmc01pzC0JVt2UnId7gEB68mRHJaRUdtr4-Ez0m6Mu6AYXdR6dbTAQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "missing field: apks removed (and re-signed)",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"m7PwMGuFMjnegiEWHizU9vlAjaOcwNsLWZIKXr21jUulrDx9DLFMw0soJgH5aeEhz8lXvsas9PR3rLkLv7O_Bw\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "missing field: the signed object is not an object",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\"manifest\":\"x\",\"signature\":{\"alg\":\"ed25519\",\"kid\":\"b1e4c216050d6e49\",\"sig\":\"Sw6qwpp327Z1WHTrPkyeL_s1bsPHXHuyQwxoIbKkE216nUTySPRboU1OihI4XGBerx-VUgoUuhHyR7yhj-ndBQ\"}}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: minSupportedVersionCode above versionCode",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 9999,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"zY0Be5E_ZUXg-Gh5c6xK2uLayUQ0aHr-Fb1_O5e79QZXEqzbA7XMlBcLeibf893bx-6tOivbWqCOS-O43Hv9Ag\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: the chunk list does not match the size",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"3H_A1YFEqs0JDnRtgkmjNw8Jj2MJjxQk0C5qhh46YsxvTKAI-79hQzJv_5hrN4BOk9B3bXPyhN8oNAFPP-dMAg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: a chunk hash is not 64 hex digits",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"zz\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"UgocNQrBVsrdd14-szVGm6xzdj1haRuk_67wXA-u54JqTTfrFhNXX1bq1Mr3KSIHkJaGJ7fistXAZONwZvWUDw\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: two files for one abi",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      },\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"FWlHeg46LByRm5HsOoDXZUKm6-I7tcy4vPjAGnLepZ1k1IKvf8kDC5xMCJBG2rwMXSxbzoZydOG5pN6p8gTaAQ\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: an unknown abi",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"mips\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"hTJHlrPd-WxXqPBuZFN2yikSFPIuCMxS2HFepDVJZM-tFJO6iRrldtuEvHFppbqam5F-mAZ76Z9_1Rkb0FGOBg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: expiry before issue",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2026-11-21T09:59:59Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"ThTNaSWQErp2U5MYr8Mau8yYs-BN9vzlmThgc1NhngUdPrcJuKEhAh_qgeciS0leCF_Z5M5Dp4D7T9i8JrkKDg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "shape: validity longer than 400 days",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-12-27T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"IfNmLf6hPCokMDhfLcirbu45Ew7jHTrvX8moLUMjCVe6_n58106Zw3w-pkZIiv9_IFFfTLiLHrqua5atgIElAw\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "huge: a declared size far beyond the cap",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 629145600,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 8388608,\n        \"chunks\": [\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\n          \"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"Hzcs9VxnUcAsDJFa4557l8nwui2k1iVE6tcoXEj03Gl7ZzKjFI_DnIrXzUzUwVzdw67R5N5MOqhDa9rr7qsQBg\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "sizeTooLarge"
+      }
+    },
+    {
+      "name": "huge: more than four addresses",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"The first screen now explains who it is for.\",\n      \"Fewer taps to reach a saved message.\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://m0.example.org/olive/a.apk\",\n          \"https://m1.example.org/olive/a.apk\",\n          \"https://m2.example.org/olive/a.apk\",\n          \"https://m3.example.org/olive/a.apk\",\n          \"https://m4.example.org/olive/a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"uNQKpEJs5kCfKsCSwei1BnsGmcGJBlMyxgX-aZs8kh8wnYaVMHI0kRm07tj9N87Soo1rA36WeBNB0JVHGs6LAA\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "huge: more than twelve notes",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "{\n  \"manifest\": {\n    \"schema\": 1,\n    \"app\": \"com.olivebranch.olive_client\",\n    \"channel\": \"stable\",\n    \"versionName\": \"0.52.0\",\n    \"versionCode\": 5200,\n    \"minSupportedVersionCode\": 5100,\n    \"sequence\": 1795255200,\n    \"issuedAt\": \"2026-11-21T10:00:00Z\",\n    \"expiresAt\": \"2027-05-20T10:00:00Z\",\n    \"publishedAt\": \"2026-11-21T10:00:00Z\",\n    \"headline\": \"A calmer first run\",\n    \"notes\": [\n      \"Note 0\",\n      \"Note 1\",\n      \"Note 2\",\n      \"Note 3\",\n      \"Note 4\",\n      \"Note 5\",\n      \"Note 6\",\n      \"Note 7\",\n      \"Note 8\",\n      \"Note 9\",\n      \"Note 10\",\n      \"Note 11\",\n      \"Note 12\"\n    ],\n    \"apks\": [\n      {\n        \"abi\": \"arm64-v8a\",\n        \"size\": 3145745,\n        \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n        \"signerSha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\n        \"chunkSize\": 1048576,\n        \"chunks\": [\n          \"1111111111111111111111111111111111111111111111111111111111111111\",\n          \"2222222222222222222222222222222222222222222222222222222222222222\",\n          \"3333333333333333333333333333333333333333333333333333333333333333\",\n          \"4444444444444444444444444444444444444444444444444444444444444444\"\n        ],\n        \"urls\": [\n          \"https://downloads.example.org/olive/olive-0.52.0-direct-arm64-v8a.apk\",\n          \"https://mirror.example.net/olive/olive-0.52.0-direct-arm64-v8a.apk\"\n        ]\n      }\n    ]\n  },\n  \"signature\": {\n    \"alg\": \"ed25519\",\n    \"kid\": \"b1e4c216050d6e49\",\n    \"sig\": \"lMs6EM2zbx-IZaZK_yvAdZIkJUjCQB4NBpvcE1V9a7g5dcSQ1-DtdsJabgEGgAWf-alFu-jhqBKRB3FT3Uy9Ag\"\n  }\n}\n",
+      "expect": {
+        "ok": false,
+        "code": "badShape"
+      }
+    },
+    {
+      "name": "not json",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "this is not json",
+      "expect": {
+        "ok": false,
+        "code": "notJson"
+      }
+    },
+    {
+      "name": "not json: an array",
+      "note": "",
+      "ctx": {
+        "channel": "stable",
+        "installedVersionCode": 5100,
+        "highestSeenSequence": null,
+        "nowIso": "2026-12-01T00:00:00Z"
+      },
+      "text": "[]",
+      "expect": {
+        "ok": false,
+        "code": "notJson"
+      }
+    }
+  ]
+}
