@@ -241,14 +241,16 @@ void main() {
       expect(has(s, dad), isFalse);
     });
 
-    test('a notice written on the very first entry with a time just after it cannot skip the wait', () async {
+    test('a notice written against an old head with a time just after it cannot skip the wait', () async {
       final Fam f = await two();
-      final LedgerEntry genesis = f.entries.first;
+      final LedgerState before = await f.state();
+      final List<List<int>> oldHead = before.heads;
+      final int oldAt = f.entries.map((LedgerEntry e) => e.issuedAtMs).reduce((int a, int b) => a > b ? a : b) + 1000;
       f.clock += 20 * day;
       // Dad has been active since, so the ledger holds a recent entry of his that the old notice does not build on.
       final LedgerEntry active = await f.add(dad, EntryType.accessEnd, <String, Object?>{'gid': mom.gid, 'reason': 'notice'});
       final LedgerEntry backdated = await f.add(mom, EntryType.accessEnd, <String, Object?>{'gid': dad.gid, 'reason': 'notice'},
-          prev: <List<int>>[genesis.hash], at: genesis.issuedAtMs + 1000);
+          prev: oldHead, at: oldAt);
       final LedgerState s = await f.state(active.issuedAtMs + day);
       expect(s.rejected.containsKey(backdated.hashHex), isFalse, reason: 'it is well formed; it just does not count');
       expect(has(s, dad), isTrue, reason: 'a backdated notice must not remove a parent with no wait');

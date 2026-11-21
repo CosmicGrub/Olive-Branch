@@ -16,12 +16,10 @@ import 'package:olive_client/guardian_local_scope.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/adults_helpers_screen.dart';
 import 'package:olive_client/local_family.dart';
-import 'package:olive_client/pairing_protocol.dart' show PairingTransport;
 import 'package:olive_client/village_lan.dart' show NearbyVillage;
 import 'package:olive_client/village_link.dart';
 import 'package:olive_client/village_meet.dart';
 import 'package:olive_client/village_welcome_flow.dart';
-import 'package:olive_client/village_welcome_host.dart';
 import 'package:olive_client/welcome_logic.dart';
 
 import 'family_test_support.dart';
