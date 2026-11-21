@@ -60,10 +60,10 @@ ALTER TABLE paired_device
   ADD COLUMN wipe_ordered_by     uuid REFERENCES app_user(id) ON DELETE SET NULL,
   ADD COLUMN wiped_at            timestamptz;
 
+-- An erase can only be ordered for a grown-up's phone, and it can only be reported done if it was ordered.
 ALTER TABLE paired_device ADD CONSTRAINT paired_device_wipe_shape CHECK (
-  (wipe_ordered_at IS NULL AND wiped_at IS NULL)
-  OR (wipe_ordered_at IS NOT NULL AND role = 'guardian')
-  OR (wipe_ordered_at IS NULL AND wiped_at IS NOT NULL AND role = 'guardian')
+  (wipe_ordered_at IS NULL OR role = 'guardian')
+  AND (wiped_at IS NULL OR wipe_ordered_at IS NOT NULL)
 );
 
 -- A pause is either fully described or absent; a revoked device is never also

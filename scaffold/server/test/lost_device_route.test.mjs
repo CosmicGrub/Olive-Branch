@@ -25,7 +25,7 @@ import fs from 'node:fs/promises';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Api } from '../../packages/api/src/api.mjs';
 import { createPool, dbPort, withSession, issueSignupAllowance, setSignupPolicy,
-  markDeviceLost, foundDevice, confirmDeviceLost, pairedDeviceStanding,
+  markDeviceLost, foundDevice, confirmDeviceLost, pairedDeviceStanding, orderDeviceWipe, acknowledgeDeviceWiped,
   LOST_NOTICE_MS, LOST_MARK_LIMIT_PER_DAY } from '../../packages/db/src/pool.mjs';
 import { registerRoutes } from '../routes.mjs';
 import { FilesystemStorage } from '../../packages/storage/src/storage.mjs';
@@ -410,6 +410,140 @@ let inc2;
     return `${v.state} ${v.incidentId === m.body.incidentId} ${v.canFound} ${v.canConfirmLost} ${v.markedByName === `Dad-${RUN}`}`;
   })();
   check('E list', 'a phone dad marked reads, for mom: paused, its incident, she may say "I have it" or "It is lost"', pausedView, 'paused true true true true');
+}
+
+// ===========================================================================
+// G · ERASE ON NEXT CONTACT (a lost grown-up phone's own copy; the family keeps every record)
+// ===========================================================================
+{
+  const orderW = (by, deviceId, pin = '4821') => call('POST', `/v1/me/devices/${deviceId}/order-wipe`, by.tok, { pin });
+  const cancelW = (by, deviceId, pin = '4821') => call('POST', `/v1/me/devices/${deviceId}/cancel-wipe`, by.tok, { pin });
+  const ackW = (deviceId, cred) => call('POST', '/v1/auth/device/wiped', null, { deviceId, deviceCredential: cred });
+  const listed = async (by, id) => (await call('GET', '/v1/me/devices', by.tok)).body.devices.find((d) => d.id === id);
+  const before = await counts();
+
+  const a = await pairPhone(M2);
+  check('G wipe', 'a working phone cannot be ordered erased -> 409 not_paused',
+    `${(await orderW(M2, a.deviceId)).status} ${(await orderW(M2, a.deviceId)).body?.error}`, '409 not_paused');
+  check('G wipe', '...and the list does not offer it', (await listed(M2, a.deviceId)).canOrderWipe, false);
+  const m = await mark(M2, a.deviceId);
+  check('G wipe', 'marked as lost first -> paused; now the list offers "erase it"', `${m.status} ${(await listed(M2, a.deviceId)).canOrderWipe}`, '201 true');
+  check('G wipe', 'the other grown-up is not offered it', (await listed(D1, a.deviceId)).canOrderWipe, false);
+  const dadTry = await orderW(D1, a.deviceId, '2468');
+  check('G wipe', 'dad cannot order mom\'s phone erased -> 403 owner_only', `${dadTry.status} ${dadTry.body?.error}`, '403 owner_only');
+  const strTry = await orderW(stranger, a.deviceId, '7315');
+  check('G wipe', 'a stranger family gets not_found, learns nothing -> 404', `${strTry.status} ${strTry.body?.error}`, '404 not_found');
+  check('G wipe', 'a child\'s tablet session cannot order anything -> 403', (await orderW(T1, a.deviceId)).status, 403);
+  const badPin = await orderW(M2, a.deviceId, '9999');
+  check('G wipe', 'a wrong PIN orders nothing', `${badPin.status >= 400} ${(await row(a.deviceId)).wipe_ordered_at}`, 'true null');
+  await unlockPin(mom.userId);
+  check('G wipe', 'the phone itself cannot be told to wipe from itself (no session, a paused phone)', (await orderW(a, a.deviceId)).status, 401);
+  const noSignal = await refresh(a);
+  check('G wipe', 'before any order the refusal carries no erase instruction', `${noSignal.body?.error} ${noSignal.body?.wipe}`, 'device_paused undefined');
+
+  const o = await orderW(M2, a.deviceId);
+  check('G wipe', 'mom orders it erased with her own PIN -> 201', `${o.status} ${o.body?.already}`, '201 false');
+  const o2 = await orderW(M2, a.deviceId);
+  check('G wipe', 'ordering again is idempotent -> 200 already, one history line', `${o2.status} ${o2.body?.already} ${(await events(a.deviceId)).join()}`, '200 true marked,wipe_ordered');
+  check('G wipe', 'the family is told, in fixed words', (await feed(D1, CHILD_A)).includes('device_wipe_ordered'), 'true');
+  const l1 = await listed(M2, a.deviceId);
+  check('G wipe', 'the list shows it as ordered and offers only "cancel"', `${l1.wipe} ${l1.canOrderWipe} ${l1.canCancelWipe}`, 'ordered false true');
+  check('G wipe', 'nothing was deleted anywhere (the server keeps every record)', JSON.stringify(await counts()), JSON.stringify({ ...before, devices: before.devices + 1 }));
+
+  const wrongCred = await call('POST', '/v1/auth/session/refresh', null, { deviceId: a.deviceId, deviceCredential: 'x'.repeat(43) });
+  check('G wipe', 'a caller without the phone\'s credential is never told to erase', `${wrongCred.body?.error} ${wrongCred.body?.wipe}`, 'invalid_device_credential undefined');
+  const told = await refresh(a);
+  check('G wipe', 'the phone itself, proving its credential, is told: device_paused + wipe', `${told.status} ${told.body?.error} ${told.body?.wipe}`, '401 device_paused true');
+  check('G wipe', '...it gets no session', told.body?.sessionToken, undefined);
+  check('G wipe', 'asking again repeats the instruction until it is done', (await refresh(a)).body?.wipe, true);
+
+  const bad1 = await ackW(a.deviceId, 'y'.repeat(43));
+  check('G wipe', 'saying "erased" with a wrong credential -> 401', `${bad1.status} ${bad1.body?.error}`, '401 invalid_device_credential');
+  const bad2 = await ackW(a.deviceId, M2.cred);
+  check('G wipe', 'saying "erased" with ANOTHER phone\'s credential -> 401', `${bad2.status}`, '401');
+  check('G wipe', '...so it is not marked done', (await row(a.deviceId)).wiped_at, null);
+  check('G wipe', 'a malformed acknowledgement -> 400', (await call('POST', '/v1/auth/device/wiped', null, { deviceId: a.deviceId })).status, 400);
+  const okAck = await ackW(a.deviceId, a.cred);
+  check('G wipe', 'the lost phone says it erased itself -> 200', `${okAck.status} ${okAck.body?.already}`, '200 false');
+  check('G wipe', '...saying it twice is harmless -> already', `${(await ackW(a.deviceId, a.cred)).body?.already} ${(await events(a.deviceId)).join()}`, 'true marked,wipe_ordered,wiped');
+  const done = await refresh(a);
+  check('G wipe', 'after that the instruction stops', `${done.body?.error} ${done.body?.wipe}`, 'device_paused undefined');
+  check('G wipe', 'the family is told it was erased', (await feed(D1, CHILD_A)).includes('device_wiped'), 'true');
+  const l2 = await listed(M2, a.deviceId);
+  check('G wipe', 'the list shows it as done and offers nothing more', `${l2.wipe} ${l2.canOrderWipe} ${l2.canCancelWipe}`, 'done false false');
+  const foundW = await found(M2, a.deviceId, m.body.incidentId);
+  check('G wipe', 'a phone that already erased itself cannot be "found" back: add it again as new -> 409 already_wiped', `${foundW.status} ${foundW.body?.error}`, '409 already_wiped');
+  const cancelDone = await cancelW(M2, a.deviceId);
+  check('G wipe', 'an erase already carried out cannot be cancelled -> 409', `${cancelDone.status} ${cancelDone.body?.error}`, '409 already_wiped');
+  check('G wipe', 'no credential, hash or token appears in the list for it', !/credential|hash|token/i.test(JSON.stringify(l2)), 'true');
+
+  // a child's tablet is never erased by a grown-up: her private areas are hers
+  const tab = await pairTablet(M2, CHILD_A);
+  const mt = await mark(M2, tab.deviceId);
+  const ot = await orderW(M2, tab.deviceId);
+  check('G tablet', 'ordering a child\'s tablet erased is refused -> 403 not_a_grown_up_phone', `${ot.status} ${ot.body?.error}`, '403 not_a_grown_up_phone');
+  check('G tablet', '...the list never offers it', (await listed(M2, tab.deviceId)).canOrderWipe, false);
+  check('G tablet', '...the row cannot carry an order (the table says no too)',
+    await admin.query(`UPDATE paired_device SET wipe_ordered_at = now() WHERE id = $1`, [tab.deviceId]).then(() => 'accepted', () => 'refused'), 'refused');
+  check('G tablet', '...and the refusal on the tablet carries no instruction', `${(await refresh(tab)).body?.error} ${(await refresh(tab)).body?.wipe}`, 'device_paused undefined');
+  await found(M2, tab.deviceId, mt.body.incidentId);
+
+  // changing one's mind: cancel, and found, both withdraw an order that was not carried out
+  const b = await pairPhone(M2);
+  const mb = await mark(M2, b.deviceId);
+  await orderW(M2, b.deviceId);
+  check('G cancel', 'dad cannot cancel mom\'s order -> 403', (await cancelW(D1, b.deviceId, '2468')).status, 403);
+  const c1 = await cancelW(M2, b.deviceId);
+  check('G cancel', 'mom cancels it -> 200', c1.status, 200);
+  check('G cancel', '...the phone is no longer told to erase', `${(await refresh(b)).body?.error} ${(await refresh(b)).body?.wipe}`, 'device_paused undefined');
+  check('G cancel', '...cancelling again -> 409 no_wipe_ordered', `${(await cancelW(M2, b.deviceId)).status} ${(await cancelW(M2, b.deviceId)).body?.error}`, '409 no_wipe_ordered');
+  check('G cancel', '...an "erased" report with no order is refused -> 409', `${(await ackW(b.deviceId, b.cred)).status} ${(await ackW(b.deviceId, b.cred)).body?.error}`, '409 no_wipe_ordered');
+  await orderW(M2, b.deviceId);
+  const fb = await found(M2, b.deviceId, mb.body.incidentId);
+  check('G cancel', 'order again, then "I have it": the order is withdrawn with it', `${fb.status} ${(await row(b.deviceId)).wipe_ordered_at} ${(await row(b.deviceId)).wiped_at}`, '200 null null');
+  check('G cancel', '...history records the withdrawal', (await events(b.deviceId)).join(), 'marked,wipe_ordered,wipe_cancelled,wipe_ordered,found,wipe_cancelled');
+  const back = await refresh(b, '4821');
+  check('G cancel', '...the phone comes back normally (own PIN once) and was never told to erase', `${back.status} ${back.body?.wipe}`, '200 undefined');
+  check('G cancel', '...an "erased" report from a working phone is refused -> 409', (await ackW(b.deviceId, b.cred)).status, 409);
+
+  // after "It is lost" (cut off for good) the order still goes out, with the permanent word
+  const c = await pairPhone(M2);
+  const mc = await mark(M2, c.deviceId);
+  await confirm(M2, c.deviceId, mc.body.incidentId);
+  const oc = await orderW(M2, c.deviceId);
+  check('G revoked', 'a phone cut off for good can still be ordered erased -> 201', `${oc.status} ${oc.body?.state}`, '201 revoked');
+  const tc = await refresh(c);
+  check('G revoked', '...it is told, with the permanent word', `${tc.body?.error} ${tc.body?.wipe}`, 'device_revoked true');
+  // a phone that merely signed itself out was never reported lost: no erase order
+  const d2 = await pairPhone(M2);
+  await call('POST', '/v1/auth/session/sign-out', d2.tok, {});
+  check('G revoked', 'a phone that only signed itself out cannot be ordered erased -> 409 not_paused', (await orderW(M2, d2.deviceId)).body?.error, 'not_paused');
+
+  // the notice running out by itself does not stop an order from being placed or delivered
+  const t0 = new Date(Date.now() + 30 * 86400000);
+  const e = await pairPhone(M2);
+  const me = await markDeviceLost(pool, { deviceId: e.deviceId, userId: mom.userId, fromDeviceId: M2.deviceId, now: t0 });
+  const oe = await orderDeviceWipe(pool, { deviceId: e.deviceId, userId: mom.userId, fromDeviceId: M2.deviceId, now: new Date(t0.getTime() + LOST_NOTICE_MS + 1000) });
+  check('G notice', 'ordered after the 72 hours ran out: still accepted, state revoked', `${me.ok} ${oe.ok} ${oe.state}`, 'true true revoked');
+  const oe2 = await orderDeviceWipe(pool, { deviceId: e.deviceId, userId: dad.userId, fromDeviceId: D1.deviceId, now: new Date(t0.getTime() + LOST_NOTICE_MS + 2000) });
+  check('G notice', '...and dad still may not, pool level too', `${oe2.ok} ${oe2.reason}`, 'false owner_only');
+  const refused = await acknowledgeDeviceWiped(pool, e.deviceId, 'z'.repeat(43), new Date());
+  check('G notice', 'the acknowledgement function itself refuses a wrong credential', `${refused.ok} ${refused.reason}`, 'false invalid_device_credential');
+
+  // a race: "I have it" and "erase it" at the same instant leave one whole state
+  const f = await pairPhone(M2);
+  const mf = await mark(M2, f.deviceId);
+  const [rf, ro] = await Promise.all([
+    call('POST', `/v1/me/devices/${f.deviceId}/found`, M2.tok, { pin: '4821', incidentId: mf.body.incidentId }),
+    orderW(M2, f.deviceId),
+  ]);
+  const frow = await row(f.deviceId);
+  const consistent = (rf.status === 200 && frow.paused_at === null && frow.wipe_ordered_at === null) ||
+    (rf.status !== 200 && frow.paused_at !== null);
+  check('G race', '"I have it" racing "erase it": never found AND ordered erased', `${consistent} ${!(frow.paused_at === null && frow.wipe_ordered_at !== null)}`, 'true true');
+
+  check('G wipe', 'through all of this: no grown-up, child or edge was removed, only the phones added',
+    `${(await counts()).edges} ${(await counts()).kids}`, `${before.edges} ${before.kids}`);
 }
 
 // ===========================================================================

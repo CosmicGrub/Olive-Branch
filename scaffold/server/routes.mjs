@@ -49,6 +49,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          pairedDevicesForChild, revokePairedDevice,
          refreshPairedDeviceSession, revokeOwnPairedDevice,
          markDeviceLost, foundDevice, confirmDeviceLost, familyDevicesFor,
+         orderDeviceWipe, cancelDeviceWipe, acknowledgeDeviceWiped,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
@@ -1495,7 +1496,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         const status = result.reason === 'account_deactivated' ? 403
           : (result.reason === 'pin_required' || result.reason === 'pin_incorrect' || result.reason === 'pin_locked') ? 403
           : 401;
-        return { status, body: { error: result.reason } };
+        // `wipe: true` rides on the refusal of a lost phone whose owner ordered it erased (it proved its own
+        // credential to get this far): the app erases its copy on that phone and then says so.
+        return { status, body: result.wipe ? { error: result.reason, wipe: true } : { error: result.reason } };
       }
       const sessionToken = api.issueSessionToken({
         userId: result.role === 'guardian' ? result.targetId : null,
@@ -1597,7 +1600,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   const lostFailure = (r) => ({
     status: r.reason === 'not_found' ? 404
       : r.reason === 'rate_limited' ? 429
-      : r.reason === 'owner_only' ? 403
+      : (r.reason === 'owner_only' || r.reason === 'not_a_grown_up_phone') ? 403
       : 409,
     body: { error: r.reason },
   });
@@ -1657,6 +1660,52 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
       if (!r.ok) return lostFailure(r);
       return { status: 200, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/order-wipe  {pin}  -- "Erase it when it next connects". The phone's OWNER only,
+  // after it was marked as lost; a grown-up's phone only (never a child's tablet).
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/order-wipe', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await orderDeviceWipe(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: r.already ? 200 : 201, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/cancel-wipe  {pin}  -- withdraw an order the phone has not carried out yet.
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/cancel-wipe', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await cancelDeviceWipe(pool, { deviceId: c.params.deviceId, userId: c.principal.userId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/auth/device/wiped  {deviceId, deviceCredential}  -- the lost phone says it erased its copy. No session
+  // (it was cut off): its own credential is the proof, so nobody can mark another phone as erased.
+  api.register({
+    method: 'POST', path: '/v1/auth/device/wiped', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const deviceId = c.body?.deviceId;
+      const deviceCredential = c.body?.deviceCredential;
+      if (typeof deviceId !== 'string' || !deviceId || typeof deviceCredential !== 'string' || !deviceCredential) {
+        return { status: 400, body: { error: 'device_credential_required' } };
+      }
+      const r = await acknowledgeDeviceWiped(pool, deviceId, deviceCredential, new Date());
+      if (!r.ok) return { status: r.reason === 'invalid_device_credential' ? 401 : 409, body: { error: r.reason } };
+      return { status: 200, body: { ok: true, already: r.already } };
     },
   });
 
