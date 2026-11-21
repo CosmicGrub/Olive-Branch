@@ -236,6 +236,27 @@ void main() {
     expect((await dadNoWifi.hub.syncNow()).noWifi, isTrue);
   });
 
+  test('a window closed with nobody added takes the road down with it; a paired phone keeps its road', () async {
+    final Phone mom = await mk(1);
+    final w = await mom.hub.openJoinWindow(myName: 'Mom');
+    expect(w, isNotNull);
+    expect(mom.hub.roadUp, isTrue);
+    expect(mom.disc.adverts.last.join, isTrue);
+    w!.close('timeout');
+    // The listener's follow-up is asynchronous: give it a few turns.
+    for (int i = 0; i < 50 && mom.hub.roadUp; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(mom.hub.roadUp, isFalse, reason: 'alone, with no open window: nothing is listening');
+    expect(mom.hub.joinWindow, isNull);
+    // A family of two keeps its road after the window that made it is gone.
+    final Phone a = await mk(2), d = await mk(4);
+    await pairUp(a, d);
+    await a.hub.startRoad();
+    expect(a.hub.roadUp, isTrue);
+    expect(a.disc.adverts.last.join, isFalse);
+  });
+
   test('a damaged family record is never replaced: nothing opens and the record is untouched', () async {
     final MemoryFamilyRepository bad = MemoryFamilyRepository();
     final Phone mom = await mk(1);

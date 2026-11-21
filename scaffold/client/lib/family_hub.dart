@@ -568,7 +568,9 @@ class FamilyHub extends ChangeNotifier {
   Future<void> _afterJoinWindowEnds() async {
     reload();
     try {
-      await _advertise();
+      // Re-decides whether the road has a reason to stay up (a closed window with nobody else in the family brings it
+      // down) and otherwise stops saying "window open" in the advertisement.
+      await startRoad();
     } catch (_) {}
   }
 
