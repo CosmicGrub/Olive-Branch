@@ -5,11 +5,13 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/device_keys.dart';
+import 'package:olive_client/her_tablet.dart';
 import 'package:olive_client/lan_pairing_transport.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/pairing_protocol.dart';
 import 'package:olive_client/pairing_records.dart';
 import 'package:olive_client/pairing_trust.dart';
+import 'package:olive_client/unlock_challenge.dart';
 
 Future<LocalPinRecord> _cheap(String pin) async => LocalPinRecord(iterations: 1, salt: Uint8List(16), hash: Uint8List(32));
 
@@ -327,6 +329,146 @@ void main() {
       expect(r.ok, isFalse);
       expect(w.matchRefused, isTrue);
       expect(phone.delivered, isEmpty);
+    });
+  });
+
+  group('DISCONNECTING from both sides, then connecting again, over the real LAN transport', () {
+    /// The tablet side of a connected pair: its own record and a host that acts on the phone's signed answers.
+    Future<({ChildPairing pairing, ChildUnlockHost host, List<String> events})> connected(_Phone phone, DeviceKey tablet, {bool viaCode = false}) async {
+      final AdultWindow w = await phone.open(awaitCode: viaCode, pin: viaCode ? null : '4829', unlockPin: '4829');
+      final LanPairingHost h = LanPairingHost(w, allowLoopback: true);
+      await h.start(advertise: false);
+      final ChildPairingClient c = ChildPairingClient(
+          childKey: tablet, transport: LanPairingTransport('127.0.0.1', h.port!), pollEvery: const Duration(milliseconds: 5),
+          delay: (Duration d) => Future<void>.delayed(const Duration(milliseconds: 5)));
+      final Future<PairingResult> f = c.pair(handle: w.discoveryHandle, password: viaCode ? '135790' : '4829', waitForCode: viaCode);
+      if (viaCode) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        w.provideCode('135790');
+      }
+      final PairingResult r = await f;
+      expect(r.ok, isTrue, reason: '${r.failure}');
+      await h.stop();
+      final List<String> events = <String>[];
+      final ChildUnlockHost host = ChildUnlockHost(
+        childKey: tablet,
+        adultKey: r.pairing!.adultKey,
+        cert: r.pairing!.cert,
+        onForget: () async => events.add('forget'),
+        onRevoked: () async => events.add('revoked'),
+        onPhoneOnly: () async => events.add('phoneOnly'),
+      );
+      return (pairing: r.pairing!, host: host, events: events);
+    }
+
+    UnlockResponder responderFor(_Phone phone) => UnlockResponder(
+          adultKey: phone.key,
+          kids: phone.kids.load,
+          trust: phone.trust,
+          familyId: 'fam',
+          onDisconnected: (PairedKid k) async {
+            await phone.trust.forget(k.childDeviceKey, who: k.deviceName);
+            await phone.kids.forget(k.certId);
+          },
+        );
+
+    test('FROM THE TABLET: "Disconnect this tablet" shows a picture; the phone scanning it ends the phone\'s side AND the tablet\'s', () async {
+      final _Phone phone = _Phone(ak);
+      final t = await connected(phone, ck);
+      expect((await phone.kids.load()).length, 1);
+      final UnlockResponder resp = responderFor(phone);
+      final UnlockChallenge c = (await (() async {
+        t.host.issue(UnlockPurpose.forget);
+        return t.host.proveOutstanding();
+      })())!;
+      final ChallengeView v = (await resp.inspect(c.toQr()))!;
+      expect(v.verdict, UnlockVerdict.ok);
+      final String answer = await resp.grant(v);
+      expect(await t.host.accept(answer), isTrue);
+      expect(t.events.last, 'forget', reason: 'the tablet clears its own connection');
+      expect(await phone.kids.load(), isEmpty, reason: 'and the phone no longer lists it: no ghost tablet');
+      expect(await phone.trust.isRevoked(ck.publicKey), isTrue);
+      expect((await readHerTablet(kids: phone.kids, trust: phone.trust)).status, HerTabletStatus.notConnected);
+    });
+
+    test('FROM THE PHONE: it ends its side at once; the tablet is told the next time it shows this phone its picture', () async {
+      final _Phone phone = _Phone(ak);
+      final t = await connected(phone, ck);
+      // "Disconnect her tablet" on the phone (after the PIN): the phone forgets it now.
+      final PairedKid k = (await phone.kids.load()).single;
+      await phone.trust.forget(k.childDeviceKey, who: k.deviceName);
+      await phone.kids.forget(k.certId);
+      expect(await phone.kids.load(), isEmpty);
+      // The tablet does not know yet. When it meets the phone (it shows its unlock picture), the phone hands it the signed notice.
+      final UnlockResponder resp = responderFor(phone);
+      t.host.issue(UnlockPurpose.unlock);
+      final UnlockChallenge c = (await t.host.proveOutstanding())!;
+      final ChallengeView v = (await resp.inspect(c.toQr()))!;
+      expect(v.verdict, UnlockVerdict.revoked);
+      final String notice = await resp.grant(v);
+      expect(await t.host.accept(notice), isFalse, reason: 'a notice is never an unlock');
+      expect(t.events, <String>['revoked'], reason: 'the tablet stops honouring its connection');
+    });
+
+    test('FROM THE PHONE while the tablet is not reachable: the phone\'s side ends anyway and nothing is stuck', () async {
+      final _Phone phone = _Phone(ak);
+      await connected(phone, ck);
+      final PairedKid k = (await phone.kids.load()).single;
+      // No tablet is anywhere near: nothing to tell. The phone still ends its side, and it says the tablet has not been told.
+      await phone.trust.forget(k.childDeviceKey, who: k.deviceName);
+      await phone.kids.forget(k.certId);
+      expect(await phone.kids.load(), isEmpty);
+      expect((await phone.trust.revokedKeyList()).length, 1, reason: 'remembered, so the tablet is told whenever it does turn up');
+    });
+
+    test('RECONNECTING after each kind of disconnect works cleanly: one record, not revoked, the old entry superseded', () async {
+      for (final bool fromTablet in <bool>[true, false]) {
+        final DeviceKey tablet = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
+        final _Phone phone = _Phone(ak);
+        final t = await connected(phone, tablet, viaCode: true);
+        final UnlockResponder resp = responderFor(phone);
+        if (fromTablet) {
+          t.host.issue(UnlockPurpose.forget);
+          final UnlockChallenge c = (await t.host.proveOutstanding())!;
+          expect(await t.host.accept(await resp.grant((await resp.inspect(c.toQr()))!)), isTrue);
+        } else {
+          final PairedKid k = (await phone.kids.load()).single;
+          await phone.trust.forget(k.childDeviceKey);
+          await phone.kids.forget(k.certId);
+        }
+        expect(await phone.kids.load(), isEmpty);
+        // The tablet comes back through the code way.
+        final t2 = await connected(phone, tablet, viaCode: true);
+        expect((await phone.kids.load()).length, 1, reason: 'fromTablet=$fromTablet');
+        expect(await phone.trust.isRevoked(tablet.publicKey), isFalse, reason: 'fromTablet=$fromTablet');
+        expect((await phone.trust.devices()).length, 1, reason: 'fromTablet=$fromTablet: the old record is superseded');
+        // And it works as a connection: the phone can unlock it.
+        t2.host.issue(UnlockPurpose.unlock);
+        final UnlockChallenge c2 = (await t2.host.proveOutstanding())!;
+        final ChallengeView v = (await resp.inspect(c2.toQr()))!;
+        expect(v.verdict, UnlockVerdict.ok, reason: 'fromTablet=$fromTablet');
+        expect(await t2.host.accept(await resp.grant(v)), isTrue);
+      }
+    });
+
+    test('a hostile answer cannot disconnect a tablet: a forged, replayed or another tablet\'s notice does nothing', () async {
+      final _Phone phone = _Phone(ak);
+      final t = await connected(phone, ck);
+      final DeviceKey stranger = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
+      final UnlockResponder fake = UnlockResponder(adultKey: stranger, kids: () async => <PairedKid>[(await phone.kids.load()).single]);
+      t.host.issue(UnlockPurpose.forget);
+      final UnlockChallenge c = (await t.host.proveOutstanding())!;
+      final String forged = await fake.grant((await fake.inspect(c.toQr()))!);
+      expect(await t.host.accept(forged), isFalse, reason: 'signed by someone who is not this tablet\'s grown-up');
+      expect(t.events, isEmpty);
+      // A real answer, used twice: the second use is refused (a one-time challenge).
+      final UnlockResponder real = responderFor(phone);
+      t.host.issue(UnlockPurpose.forget);
+      final UnlockChallenge c2 = (await t.host.proveOutstanding())!;
+      final String answer = await real.grant((await real.inspect(c2.toQr()))!);
+      expect(await t.host.accept(answer), isTrue);
+      expect(await t.host.accept(answer), isFalse);
+      expect(t.events.where((String e) => e == 'forget').length, 1, reason: 'it disconnected once, not twice');
     });
   });
 }
