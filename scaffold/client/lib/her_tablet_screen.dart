@@ -142,55 +142,71 @@ Route<void> connectHerTabletRoute(
 /// for a PIN the local PIN service accepted (lockout and constant-time compare included). A different keypad replaces this
 /// function and nothing else.
 Future<bool> askPhonePin(BuildContext context, LocalPinService pin, {required String title, required String body, required String action}) async {
-  final TextEditingController c = TextEditingController();
-  String? err;
-  bool busy = false;
   final bool? ok = await showDialog<bool>(
     context: context,
-    builder: (BuildContext ctx) => StatefulBuilder(
-      builder: (BuildContext ctx, StateSetter set) => AlertDialog(
-        title: Text(title),
+    builder: (BuildContext ctx) => _PhonePinDialog(pin: pin, title: title, body: body, action: action),
+  );
+  return ok == true;
+}
+
+class _PhonePinDialog extends StatefulWidget {
+  const _PhonePinDialog({required this.pin, required this.title, required this.body, required this.action});
+  final LocalPinService pin;
+  final String title, body, action;
+
+  @override
+  State<_PhonePinDialog> createState() => _PhonePinDialogState();
+}
+
+class _PhonePinDialogState extends State<_PhonePinDialog> {
+  final TextEditingController _c = TextEditingController();
+  String? _err;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    setState(() => _busy = true);
+    final PinCheck r = await widget.pin.verify(_c.text);
+    if (!mounted) return;
+    if (r.ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      _c.clear();
+      setState(() {
+        _busy = false;
+        _err = r.outcome == PinOutcome.locked ? kLocalPinLockedMessage : 'That is not your PIN.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Text(body),
+          Text(widget.body),
           const SizedBox(height: 12),
           TextField(
             key: const Key('herTabletPinField'),
-            controller: c,
+            controller: _c,
             obscureText: true,
             autofocus: true,
             keyboardType: TextInputType.number,
             inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
             maxLength: kLocalPinMaxDigits,
-            decoration: InputDecoration(labelText: 'Your PIN', counterText: '', errorText: err, border: const OutlineInputBorder()),
+            decoration: InputDecoration(labelText: 'Your PIN', counterText: '', errorText: _err, border: const OutlineInputBorder()),
+            onSubmitted: (_) => _busy ? null : _check(),
           ),
         ]),
         actions: <Widget>[
-          TextButton(key: const Key('herTabletPinCancel'), onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(
-            key: const Key('herTabletPinOk'),
-            onPressed: busy
-                ? null
-                : () async {
-                    set(() => busy = true);
-                    final PinCheck r = await pin.verify(c.text);
-                    if (r.ok) {
-                      if (ctx.mounted) Navigator.of(ctx).pop(true);
-                    } else {
-                      c.clear();
-                      set(() {
-                        busy = false;
-                        err = r.outcome == PinOutcome.locked ? kLocalPinLockedMessage : 'That is not your PIN.';
-                      });
-                    }
-                  },
-            child: Text(action),
-          ),
+          TextButton(key: const Key('herTabletPinCancel'), onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          FilledButton(key: const Key('herTabletPinOk'), onPressed: _busy ? null : _check, child: Text(widget.action)),
         ],
-      ),
-    ),
-  );
-  c.dispose();
-  return ok == true;
+      );
 }
 
 /// A big, plain button: always at least 56 high, full width, one verb.
@@ -294,7 +310,7 @@ class _HerTabletScreenState extends State<HerTabletScreen> {
       await _s.disconnect(k);
       if (mounted) setState(() => _note = "Done. ${widget.childName}'s tablet is disconnected from this phone.");
     } catch (_) {
-      if (mounted) setState(() => _note = 'That could not be saved, so nothing changed. Try again.');
+      if (mounted) setState(() => _note = 'That could not be saved just now. Tap Disconnect again to finish.');
     }
     if (mounted) setState(() => _busy = false);
     await _read();
