@@ -54,6 +54,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'font_licences.dart';
+import 'keypad_prefs.dart';
 import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -499,10 +500,12 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
       unawaited(_startKidFirstRun());
     },
   );
+  final KeypadPrefs keypadPrefs = await KeypadPrefs.load(LocalStoreKeypadPrefsRepository.over(LocalServices.current));
   runApp(OliveLive(
     initialTheme: defaultAppTheme,
     childId: p.cert.childId,
     session: null,
+    keypadPrefs: keypadPrefs,
     verifyPin: (String pin) async => lapsed() ? false : unlock.verifyBool(pin),
     phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly, phoneOnlyWhen: lapsed),
     // No server account, no session: her home is drawn from what the pairing delivered, never from a server.
@@ -722,7 +725,11 @@ class _OnboardingBootApp extends StatelessWidget {
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
     required this.childId, required this.session, this.verifyPin, this.phoneUnlock,
-    this.localHome = false, this.localName, this.localAge});
+    this.localHome = false, this.localName, this.localAge, this.keypadPrefs});
+
+  /// The grown-up's "Scramble the keypad" choice, kept on this tablet (keypad_prefs.dart). Null on a connected
+  /// device that has nowhere to keep one: the plain keypad and no switch.
+  final KeypadPrefs? keypadPrefs;
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -824,6 +831,9 @@ class _OliveLiveState extends State<OliveLive> {
           phoneUnlock: widget.phoneUnlock,
           verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,
+          // The stand-in answers yes without checking anything, so Guardian mode must not say a biometric was used.
+          biometricIsReal: false,
+          keypadPrefs: widget.keypadPrefs,
           child: LiveChildHomeScreen(
             baseUrl: _dartDefineBaseUrl,
             childId: widget.childId,

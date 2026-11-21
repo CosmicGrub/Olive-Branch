@@ -13,15 +13,20 @@
 //      locked age that gives Mommy/Daddy at 5 to 15, and changing it later needs the PIN
 //      below. The kid picker she will see stays 5 to 15; a grown-up may set 3 to 17.
 //   3. Her time zone: "same as this phone" or one of a short list.
-//   4. A PIN for this device (local_pin.dart). Not skippable: it is what lets this device
-//      open offline. It is not the account PIN.
+//   4. "Choose your PIN" (local_pin.dart), on the ordinary keypad (pin_keypad.dart): 4 to 8 digits, typed twice, with a
+//      gentle warning for a birthday-like or patterned one (never for a legitimate choice beyond the obviously trivial,
+//      which is refused). Not skippable: it is what lets this device open offline and what guards the app lock,
+//      Settings and the adult gate. It is not the account PIN. The PIN never leaves this phone: only a salted slow
+//      hash is kept.
 //   5. Connect this device (pairing_redeem_screen.dart, `localFirst`): LAST, and only
 //      when a server exists ([serverAvailable]). "Not now" is a real way on: the family
 //      keeps working offline and connecting stays in Settings > Account.
 //
-// The family and the PIN are saved when step 4 ends, BEFORE step 5, so a restart (or "Not
-// now") never repeats steps 1 to 4. A store that cannot be written is said plainly and
-// holds the grown-up on step 4 to try again; nothing is reported saved that is not.
+// The family is saved when step 3 ends and the PIN when step 4 ends, BEFORE step 5, so a restart (or "Not
+// now") never repeats steps 1 to 4. A phone killed in the middle of step 4 comes back to step 4 with the family kept
+// (guardian_boot.dart passes [resumeFamily]); a family with no PIN never opens the home, so locked features can never
+// exist without a PIN to open them. A store that cannot be written is said plainly and holds the grown-up where they
+// are to try again; nothing is reported saved that is not.
 //
 // This does not create a server account, send anything, or grant any authority: it is a
 // local record (local_family.dart). Connecting does not upload it either: no server route
@@ -48,7 +53,12 @@ class GuardianOnboardingFlow extends StatefulWidget {
     this.baseUrl = '',
     this.onRedeemed,
     this.httpClient,
+    this.resumeFamily,
   });
+
+  /// A family saved by an earlier run that was stopped before the PIN was chosen: the flow reopens on "Choose your
+  /// PIN" instead of asking the questions again.
+  final LocalFamily? resumeFamily;
 
   final DeviceRole role;
   final GuardianLocalServices services;
@@ -81,6 +91,16 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
   LocalFamily? _saved;
 
   @override
+  void initState() {
+    super.initState();
+    final LocalFamily? r = widget.resumeFamily;
+    if (r != null) {
+      _saved = r;
+      _stage = GuardianOnboardingStage.pin;
+    }
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _label.dispose();
@@ -109,9 +129,10 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     _go(GuardianOnboardingStage.zone);
   }
 
-  /// Called after the PIN really is stored: now the family record. Both must exist before
-  /// the connect step, so a restart does not repeat the questions.
-  Future<void> _pinSaved() async {
+  /// The questions are done: keep the family on this device NOW, then ask for the PIN. A phone stopped before the PIN
+  /// is chosen reopens on the PIN step with nothing asked twice. A PIN already on this device (an older run that chose
+  /// it first) is kept: the step is skipped.
+  Future<void> _fromZone() async {
     final String label = _label.text.trim();
     final LocalFamily family;
     try {
@@ -131,6 +152,23 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     }
     if (!mounted) return;
     _saved = family;
+    bool pinAlready = false;
+    try {
+      pinAlready = await widget.services.pin.isSet();
+    } catch (_) {
+      pinAlready = false;
+    }
+    if (!mounted) return;
+    if (pinAlready) {
+      _afterPin();
+    } else {
+      _go(GuardianOnboardingStage.pin);
+    }
+  }
+
+  /// Called once the PIN really is stored (and the family with it): on to connecting, or the offline home.
+  void _afterPin() {
+    final LocalFamily family = _saved!;
     if (widget.serverAvailable && widget.onRedeemed != null) {
       _go(GuardianOnboardingStage.connect);
     } else {
@@ -211,7 +249,7 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
           title: 'Where does she live?',
           intro: 'Her time zone. "Same as this phone" is right for most families.',
           nextKey: const Key('goZoneNext'),
-          onNext: () => _go(GuardianOnboardingStage.pin),
+          onNext: _fromZone,
           children: <Widget>[
             RadioGroup<String>(
               groupValue: _zone,
@@ -229,15 +267,17 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
         );
       case GuardianOnboardingStage.pin:
         return _page(
-          title: 'A PIN for this device',
-          intro: 'It guards your settings, her locked age and clearing data, and works with no '
-              'connection. It is not your account PIN.',
+          title: 'Choose your PIN',
+          intro: 'This PIN opens Olive on this phone, your settings and the grown-up screen on her tablet. It works '
+              'with no connection and never leaves this phone. If you forget it, a linked grown-up\'s phone can reset '
+              'it (Settings, Safety); with none linked, the only way back is clearing the app, which erases what is '
+              'kept here.',
           showNext: false,
           children: <Widget>[
             LocalPinSetupForm(
               key: const Key('goPinForm'),
               service: widget.services.pin,
-              onSaved: _pinSaved,
+              onSaved: _afterPin,
               saveLabel: 'Save PIN and continue',
             ),
           ],
