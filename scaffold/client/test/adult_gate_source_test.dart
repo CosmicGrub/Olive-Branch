@@ -51,7 +51,7 @@ void main() {
     final List<String> offenders = <String>[
       for (final File f in files)
         if (!name(f).startsWith('guardian_') &&
-            !<String>{'age_lock_screens.dart', 'local_pin_screens.dart'}.contains(name(f)) &&
+            !<String>{'age_lock_screens.dart', 'local_pin_screens.dart', 'village_welcome_host.dart'}.contains(name(f)) && // the grown-ups' village host: only guardian_more opens it
             RegExp(r"local_pin_screens\.dart").hasMatch(f.readAsStringSync()))
           name(f)
     ];
