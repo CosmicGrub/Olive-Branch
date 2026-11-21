@@ -72,6 +72,17 @@ Source: the owner's "go with all recommendations" and "go with your recommendati
 - Migrations run as the unprivileged `app_owner`; no function-level `SET` of custom parameters.
 - Expense rules: a single-guardian family may self-accept (audited); disputed to accepted is allowed; reimbursing an unaccepted expense is refused; a broken-chain certified export does not use the free yearly export.
 
+## App updates (owner, 2026-11-21)
+
+- The goal is an update pipeline that exists inside the running app and can find and facilitate the download and install of detected updates, working at minimum in every setup: weak Wi-Fi, roaming, offline-first, a tablet that is not online. The release side is shipped (`docs/UPDATE-MANIFEST.md`, `docs/RELEASING.md`); the app side is a separate lane.
+- A **signed manifest** (channel, versionName, versionCode, minSupportedVersionCode, sequence, expiry, plain-words notes, per-ABI size, SHA-256, chunk hashes, signing-certificate hash, https addresses with a mirror) signed with an **offline Ed25519 key**. The public key is built into the app. The private key never enters a repository, a workflow, a CI secret or a server; signing is a local script.
+- Two flavors: **direct** (sideload, GitHub, self-hosted; the app downloads, verifies and installs through Android's PackageInstaller with the system confirmation; `REQUEST_INSTALL_PACKAGES` only here) and **play** (Google Play In-App Updates only; no self-install; no install permission). Never a silent install.
+- The update source is opt-in and a build-time define (plus settable by a parent); with none configured the feature is absent. Cleartext http follows the transport policy (release builds refuse it).
+- The check is polite (at most daily, honouring data-saver and Wi-Fi-only); a download is resumable and chunk-verified; a failed or interrupted download never leaves an installable partial file.
+- The UI is **adult-only behind the adult gate**; the child device never shows an update screen, error, count or prompt. A kiosk tablet is updated by an adult, from the grown-up phone over the family mesh if it is not online; the install on the tablet still needs an adult and must not break the kiosk.
+- A manifest's minimum supported version shows adults "Please update" and **never** locks the child out of her offline activities or loses data.
+- The versionCode is derived from the version (`major*10000 + minor*100 + patch`) and strictly increasing; a bad release is fixed forward, never rolled back.
+
 ## Process
 
 - Merge PRs once CI is green. Root-cause every failure; never retry blind.
