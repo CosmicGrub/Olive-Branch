@@ -152,6 +152,41 @@ export class MissBudget {
   hit() { this._roll(); this.misses += 1; }
 }
 
+/**
+ * A MissBudget kept per source (the pseudonymous key from netid.anonKey), with one much larger ceiling across all
+ * sources. One noisy caller spends only their own budget, so a real person's waiting phone keeps working; the
+ * ceiling still stops a flood from many sources from searching the code space. `check(key)` / `hit(key)`; a call
+ * with no key lands in one shared 'unknown' bucket (the old single-counter behaviour).
+ */
+export class KeyedMissBudget {
+  constructor({ limit, globalLimit = limit * 20, windowMs = 60_000, now = () => Date.now(), maxKeys = 5000 }) {
+    this.limit = limit; this.windowMs = windowMs; this.now = now; this.maxKeys = maxKeys;
+    this.global = new MissBudget({ limit: globalLimit, windowMs, now });
+    this.keys = new Map();
+  }
+  _for(key) {
+    const k = typeof key === 'string' && key ? key : 'unknown';
+    let b = this.keys.get(k);
+    if (!b) {
+      if (this.keys.size >= this.maxKeys) this._sweep();
+      b = new MissBudget({ limit: this.limit, windowMs: this.windowMs, now: this.now });
+      this.keys.set(k, b);
+    }
+    return b;
+  }
+  _sweep() {
+    const t = this.now();
+    for (const [k, b] of this.keys) if (t - b.windowStart >= this.windowMs) this.keys.delete(k);
+    if (this.keys.size >= this.maxKeys) this.keys.clear();
+  }
+  check(key) {
+    const own = this._for(key).check();
+    if (own.blocked) return own;
+    return this.global.check();
+  }
+  hit(key) { this._for(key).hit(); this.global.hit(); }
+}
+
 /** MissBudget for device-pairing redeem. Env: PAIRING_MISS_BUDGET_PER_MIN. */
 export function createPairingMissBudget({ env = process.env, now } = {}) {
   return new MissBudget({ limit: posNum(env.PAIRING_MISS_BUDGET_PER_MIN, 20), now });
@@ -159,17 +194,17 @@ export function createPairingMissBudget({ env = process.env, now } = {}) {
 
 /** MissBudget for POST /v1/auth/recover (codes that match no live row). Env: RECOVERY_MISS_BUDGET_PER_MIN. */
 export function createRecoveryMissBudget({ env = process.env, now } = {}) {
-  return new MissBudget({ limit: posNum(env.RECOVERY_MISS_BUDGET_PER_MIN, 10), now });
+  return new KeyedMissBudget({ limit: posNum(env.RECOVERY_MISS_BUDGET_PER_MIN, 10), globalLimit: posNum(env.RECOVERY_MISS_GLOBAL_PER_MIN, 300), now });
 }
 
 /** MissBudget for the printed recovery sheet (a key that matches no live sheet). Env: RECOVERY_SHEET_MISS_BUDGET_PER_MIN. */
 export function createRecoverySheetMissBudget({ env = process.env, now } = {}) {
-  return new MissBudget({ limit: posNum(env.RECOVERY_SHEET_MISS_BUDGET_PER_MIN, 10), now });
+  return new KeyedMissBudget({ limit: posNum(env.RECOVERY_SHEET_MISS_BUDGET_PER_MIN, 10), globalLimit: posNum(env.RECOVERY_MISS_GLOBAL_PER_MIN, 300), now });
 }
 
 /** MissBudget for the trusted helper's routes (an invite or helper key that matches nothing). Env: RECOVERY_HELPER_MISS_BUDGET_PER_MIN. */
 export function createRecoveryHelperMissBudget({ env = process.env, now } = {}) {
-  return new MissBudget({ limit: posNum(env.RECOVERY_HELPER_MISS_BUDGET_PER_MIN, 10), now });
+  return new KeyedMissBudget({ limit: posNum(env.RECOVERY_HELPER_MISS_BUDGET_PER_MIN, 10), globalLimit: posNum(env.RECOVERY_MISS_GLOBAL_PER_MIN, 300), now });
 }
 
 /**

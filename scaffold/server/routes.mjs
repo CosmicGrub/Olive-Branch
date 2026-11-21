@@ -878,14 +878,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: 400, body: { error: 'pin_required' } };
       }
       const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim().slice(0, 60) : '';
-      const budget = recoveryMissBudget.check();
+      const budget = recoveryMissBudget.check(c?.headers?.['x-olive-source']);
       if (budget.blocked) {
         return { status: 429, body: { error: 'recovery_rate_limited', retryAfterSec: budget.retryAfterSec } };
       }
       const r = await recoverAccount(pool, { token, pin: b.pin, deviceLabel, now: new Date() });
       if (!r.ok) {
         // Only a guess that matched no live code spends the global budget; a wrong PIN has its own counters.
-        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit();
+        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit(c?.headers?.['x-olive-source']);
         const status = r.reason === 'recovery_locked' ? 423 : 403;
         return { status, body: { error: r.reason } };
       }
@@ -910,8 +910,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   const recoverySheetMissBudget = opts.recoverySheetMissBudget ?? createRecoverySheetMissBudget();
   const recoveryHelperMissBudget = opts.recoveryHelperMissBudget ?? createRecoveryHelperMissBudget();
   const isAdultSession = (c) => c.principal.roleName !== 'child' && !!c.principal.userId;
-  const missBlocked = (budget) => {
-    const b = budget.check();
+  // The source key is stamped by the server entry point from the caller's pseudonymous network key; a client-sent
+  // value never reaches it. Without one (tests) every caller shares one bucket.
+  const sourceOf = (c) => { const v = c?.headers?.['x-olive-source']; return typeof v === 'string' ? v : 'unknown'; };
+  const missBlocked = (budget, c) => {
+    const b = budget.check(sourceOf(c));
     return b.blocked ? { status: 429, body: { error: 'recovery_rate_limited', retryAfterSec: b.retryAfterSec } } : null;
   };
   const START_STATUS = { not_family: 403, invalid_sheet: 403, ask_other_grownup: 403,
@@ -1031,16 +1034,17 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (typeof b.sheetKey !== 'string' || b.sheetKey.length < 16 || b.sheetKey.length > 64) {
         return { status: 400, body: { error: 'recovery_key_required' } };
       }
-      const blocked = missBlocked(recoverySheetMissBudget);
+      const blocked = missBlocked(recoverySheetMissBudget, c);
       if (blocked) return blocked;
       const r = await startRecoveryWithSheet(pool, {
         key: b.sheetKey, deviceLabel: typeof b.deviceLabel === 'string' ? b.deviceLabel : '', now: new Date() });
       if (!r.ok) {
-        if (r.reason === 'invalid_sheet') recoverySheetMissBudget.hit();
+        if (r.reason === 'invalid_sheet') recoverySheetMissBudget.hit(sourceOf(c));
         return { status: START_STATUS[r.reason] ?? 403, body: { error: r.reason } };
       }
       return { status: 201, body: { code: r.code, readyAt: r.readyAt, expiresAt: r.expiresAt,
-        helperRequired: r.helperRequired, accountName: r.accountName } };
+        helperRequired: r.helperRequired, accountName: r.accountName,
+        otherGrownupsNotified: r.otherGrownupsNotified === true } };
     },
   });
 
@@ -1050,10 +1054,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'recovery_code_required' } };
-      const blocked = missBlocked(recoveryMissBudget);
+      const blocked = missBlocked(recoveryMissBudget, c);
       if (blocked) return blocked;
       const r = await recoveryStatusByCode(pool, { code: c.body.code, now: new Date() });
-      if (!r.ok) { recoveryMissBudget.hit(); return { status: 404, body: { error: r.reason } }; }
+      if (!r.ok) { recoveryMissBudget.hit(sourceOf(c)); return { status: 404, body: { error: r.reason } }; }
       return { status: 200, body: r.status };
     },
   });
@@ -1064,10 +1068,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'recovery_code_required' } };
-      const blocked = missBlocked(recoveryMissBudget);
+      const blocked = missBlocked(recoveryMissBudget, c);
       if (blocked) return blocked;
       const ok = await cancelRecoveryByCode(pool, { code: c.body.code, now: new Date() });
-      if (!ok) { recoveryMissBudget.hit(); return { status: 404, body: { error: 'invalid_recovery' } }; }
+      if (!ok) { recoveryMissBudget.hit(sourceOf(c)); return { status: 404, body: { error: 'invalid_recovery' } }; }
       return { status: 200, body: { ok: true } };
     },
   });
@@ -1085,7 +1089,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       if (b.newPin != null && (typeof b.newPin !== 'string' || !/^[0-9]{4,8}$/.test(b.newPin))) {
         return { status: 400, body: { error: 'invalid_pin_format' } };
       }
-      const blocked = missBlocked(recoveryMissBudget);
+      const blocked = missBlocked(recoveryMissBudget, c);
       if (blocked) return blocked;
       const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim().slice(0, 60) : '';
       const now = new Date();
@@ -1099,7 +1103,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         code: b.code, pin: b.pin ?? null, sheetKey: typeof b.sheetKey === 'string' ? b.sheetKey : null,
         newPinHash, deviceLabel, now });
       if (!r.ok) {
-        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit();
+        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit(sourceOf(c));
         const status = r.reason === 'too_many_wrong' ? 423
           : (r.reason === 'too_early' || r.reason === 'waiting_for_helper') ? 409
           : r.reason === 'proof_required' ? 400 : 403;
@@ -1122,10 +1126,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'invite_code_required' } };
-      const blocked = missBlocked(recoveryHelperMissBudget);
+      const blocked = missBlocked(recoveryHelperMissBudget, c);
       if (blocked) return blocked;
       const r = await acceptRecoveryHelperInvite(pool, { code: c.body.code, now: new Date() });
-      if (!r.ok) { recoveryHelperMissBudget.hit(); return { status: 403, body: { error: r.reason } }; }
+      if (!r.ok) { recoveryHelperMissBudget.hit(sourceOf(c)); return { status: 403, body: { error: r.reason } }; }
       return { status: 201, body: { helperKey: r.helperKey, accountName: r.accountName, label: r.label } };
     },
   });
@@ -1136,10 +1140,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     skipOuterSession: true, noSessionRequired: true,
     handler: async (c) => {
       if (typeof c.body?.helperKey !== 'string') return { status: 400, body: { error: 'helper_key_required' } };
-      const blocked = missBlocked(recoveryHelperMissBudget);
+      const blocked = missBlocked(recoveryHelperMissBudget, c);
       if (blocked) return blocked;
       const list = await helperOpenRequests(pool, { helperKey: c.body.helperKey, now: new Date() });
-      if (!list) { recoveryHelperMissBudget.hit(); return { status: 403, body: { error: 'invalid_helper' } }; }
+      if (!list) { recoveryHelperMissBudget.hit(sourceOf(c)); return { status: 403, body: { error: 'invalid_helper' } }; }
       return { status: 200, body: { requests: list } };
     },
   });
@@ -1153,11 +1157,11 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const b = c.body ?? {};
       if (typeof b.helperKey !== 'string') return { status: 400, body: { error: 'helper_key_required' } };
       if (b.answer !== 'yes' && b.answer !== 'no') return { status: 400, body: { error: 'answer_required' } };
-      const blocked = missBlocked(recoveryHelperMissBudget);
+      const blocked = missBlocked(recoveryHelperMissBudget, c);
       if (blocked) return blocked;
       const r = await helperAnswer(pool, { helperKey: b.helperKey, requestId: b.requestId, answer: b.answer, now: new Date() });
       if (!r.ok) {
-        recoveryHelperMissBudget.hit();
+        recoveryHelperMissBudget.hit(sourceOf(c));
         return { status: r.reason === 'invalid_helper' ? 403 : 404, body: { error: r.reason } };
       }
       return { status: 200, body: { ok: true, result: r.result } };

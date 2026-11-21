@@ -521,6 +521,10 @@ const server = createServer(async (req, res) => {
       if (req.url === '/v1/auth/webauthn/login/challenge') return send(await webauthnLoginChallenge(raw));
       if (req.url === '/v1/auth/webauthn/login/verify') return send(await webauthnLoginVerify(raw));
     }
+    // The caller's pseudonymous network key, for per-source limits inside routes. Set here, after any client-sent
+    // value is dropped, so it can only ever be the server's own.
+    delete req.headers['x-olive-source'];
+    req.headers['x-olive-source'] = netId.anonKey(req);
     send(await api.handle(method, url, req.headers, raw));
   } catch (e) {
     console.error(errorLine(e, { msg: 'request failed' }));

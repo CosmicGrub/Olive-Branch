@@ -5317,6 +5317,15 @@ export async function confirmDeviceLost(
     if (st !== 'paused') return { ok: false, reason: 'not_paused' };
     if (fresh.lost_incident !== p.incidentId) return { ok: false, reason: 'stale_incident' };
     if (fresh.role === 'guardian' && !rel.owner) return { ok: false, reason: 'owner_only' };
+    if (fresh.role === 'child') {
+      // A child's tablet is cut off early by one grown-up only when they are its only grown-up. With two or more,
+      // the pause stands (reversible by either) and the 72 hours run, so no parent removes the other's reach alone.
+      const others = await q(
+        `SELECT 1 FROM effective_guardianship g
+          WHERE g.child_id = $1 AND g.role = 'guardian' AND g.restricted = false AND g.user_id <> $2 LIMIT 1`,
+        [fresh.target_id, p.userId]);
+      if (others.length) return { ok: false, reason: 'owner_only' };
+    }
     const u = await q(
       `UPDATE paired_device SET revoked_at = $2
         WHERE id = $1 AND revoked_at IS NULL AND paused_at IS NOT NULL AND lost_incident = $3 RETURNING id`,
@@ -6499,6 +6508,13 @@ export function dbPort(pool: pg.Pool): DbPort {
 export const RECOVERY_WAIT_SECOND_PARENT_MS = 48 * 3_600_000;
 /** The waiting period with no other grown-up (SD-2). */
 export const RECOVERY_WAIT_SOLE_PARENT_MS = 72 * 3_600_000;
+/** The printed sheet used while another grown-up still has a working phone: they get a notice and a longer window to
+ *  stop it, so a parent whose co-parent cannot or will not help still has a way back, and a stranger with the sheet
+ *  still cannot get past them quietly. */
+export const RECOVERY_WAIT_SHEET_WITH_PARENT_MS = 7 * 24 * 3_600_000;
+/** Wrong owner-PIN proofs, across ALL requests of one account in a day, before a helping parent's finish is refused
+ *  until the day has passed (the account's own sheet still works). */
+export const RECOVERY_PROOF_MAX_WRONG_PER_DAY = 10;
 /** The floor the table also enforces: never below 24 hours, whatever else changes. */
 export const RECOVERY_WAIT_FLOOR_MS = 24 * 3_600_000;
 /** A request that nobody finishes ends by itself after this long. */
@@ -6571,21 +6587,27 @@ async function areParentsOf(q: Query, a: string, b: string): Promise<boolean> {
   return (await q(PARENT_PAIR_SQL, [a, b])).length > 0;
 }
 
+/** A grown-up's phone counts as working only if it is not paused, not cut off, and was seen in this long. A phone in
+ *  a drawer (or of someone who can no longer help) must not hold the account's owner out. */
+export const LIVE_PHONE_SEEN_WITHIN_MS = 30 * 24 * 3_600_000;
+
 /** The other grown-ups of this account (same rule as [PARENT_PAIR_SQL]), with whether each has a phone that still works. */
 async function otherParentsOf(
-  q: Query, userId: string,
+  q: Query, userId: string, now: Date = new Date(),
 ): Promise<Array<{ userId: string; name: string; hasLivePhone: boolean }>> {
   const rows = await q(
     `SELECT DISTINCT u.id, u.display_name,
             EXISTS (SELECT 1 FROM paired_device d
-                     WHERE d.role = 'guardian' AND d.target_id = u.id AND d.revoked_at IS NULL) AS live
+                     WHERE d.role = 'guardian' AND d.target_id = u.id AND d.revoked_at IS NULL
+                       AND d.paused_at IS NULL
+                       AND COALESCE(d.last_seen_at, d.paired_at) > $2::timestamptz - make_interval(secs => $3)) AS live
        FROM effective_guardianship a
        JOIN effective_guardianship b ON b.child_id = a.child_id AND b.user_id <> a.user_id
        JOIN app_user u ON u.id = b.user_id AND u.deactivated_at IS NULL
       WHERE a.user_id = $1 AND a.role = 'guardian' AND b.role = 'guardian'
         AND a.restricted = false AND b.restricted = false
         AND a.observer_only = false AND b.observer_only = false
-      ORDER BY u.display_name, u.id`, [userId]);
+      ORDER BY u.display_name, u.id`, [userId, now.toISOString(), LIVE_PHONE_SEEN_WITHIN_MS / 1000]);
   return rows.map((r: any) => ({ userId: r.id, name: r.display_name, hasLivePhone: r.live === true }));
 }
 
@@ -6832,7 +6854,7 @@ export async function helperAnswer(
 export type StartRecoveryError =
   | 'not_family'             // the other grown-up is not a parent of this family (or no such account): ONE answer
   | 'invalid_sheet'          // the key matches no live sheet
-  | 'ask_other_grownup'      // the sheet is right, but another grown-up with a working phone must help instead
+  | 'ask_other_grownup'      // kept for older callers; no longer returned (a working second parent gets a notice and a longer wait)
   | 'too_many_open' | 'too_many_recent';
 
 async function recoveryLoadCaps(q: Query, userId: string, now: Date): Promise<StartRecoveryError | null> {
@@ -6891,7 +6913,7 @@ export async function startRecoveryForGrownUp(
 export async function startRecoveryWithSheet(
   pool: pg.Pool, input: { key: string; deviceLabel?: string; now?: Date },
 ): Promise<{ ok: true; requestId: string; code: string; readyAt: string; expiresAt: string;
-             helperRequired: boolean; accountName: string }
+             helperRequired: boolean; accountName: string; otherGrownupsNotified: boolean }
           | { ok: false; reason: StartRecoveryError }> {
   const now = input.now ?? new Date();
   const norm = normaliseRecoveryCode('sheet', input.key);
@@ -6910,15 +6932,14 @@ export async function startRecoveryWithSheet(
       `SELECT s.id, u.display_name FROM recovery_sheet s JOIN app_user u ON u.id = s.user_id AND u.deactivated_at IS NULL
         WHERE s.key_hash = $1 AND s.retired_at IS NULL FOR UPDATE OF s`, [sheetDigest]);
     if (!live.length) return { ok: false, reason: 'invalid_sheet' } as const;
-    // another grown-up with a working phone: the safe way back is THEIR yes, not a sheet alone
-    if ((await otherParentsOf(q, userId)).some((p) => p.hasLivePhone)) {
-      return { ok: false, reason: 'ask_other_grownup' } as const;
-    }
+    // Another grown-up with a working phone: the sheet still works, but the wait is longer and that grown-up's
+    // phones show a notice they can stop it from. A co-parent who cannot or will not help cannot lock anyone out.
+    const withParent = (await otherParentsOf(q, userId, now)).some((p) => p.hasLivePhone);
     const cap = await recoveryLoadCaps(q, userId, now);
     if (cap) return { ok: false, reason: cap } as const;
     const helper = await q(
       `SELECT id FROM recovery_helper WHERE user_id = $1 AND accepted_at IS NOT NULL AND revoked_at IS NULL`, [userId]);
-    const ready = new Date(now.getTime() + RECOVERY_WAIT_SOLE_PARENT_MS);
+    const ready = new Date(now.getTime() + (withParent ? RECOVERY_WAIT_SHEET_WITH_PARENT_MS : RECOVERY_WAIT_SOLE_PARENT_MS));
     const rows = await q(
       `INSERT INTO recovery_request
          (user_id, mode, started_by_kind, secret_hash, device_label, created_at, expires_at, ready_at,
@@ -6929,7 +6950,8 @@ export async function startRecoveryWithSheet(
     await insertSecurityEvent(q, userId, 'recovery_started', { variant: 'sheet' });
     return { ok: true, requestId: rows[0].id, code, readyAt: ready.toISOString(),
              expiresAt: new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(),
-             helperRequired: helper.length > 0, accountName: live[0].display_name } as const;
+             helperRequired: helper.length > 0, accountName: live[0].display_name,
+             otherGrownupsNotified: withParent } as const;
   });
 }
 
@@ -7012,7 +7034,7 @@ export async function recoveryNoticesFor(
             canHelp: Array<{ userId: string; name: string }> }> {
   const now = input.now ?? new Date();
   return withSystemSession(pool, async (q) => {
-    const parents = await otherParentsOf(q, input.userId);
+    const parents = await otherParentsOf(q, input.userId, now);
     const ids = [input.userId, ...parents.map((p) => p.userId)];
     const rows = await q(
       `SELECT r.*, u.display_name AS account_name, s.display_name AS starter_name
@@ -7128,17 +7150,30 @@ export async function finishRecovery(
       const hasPin = typeof input.pin === 'string' && /^[0-9]{4,8}$/.test(input.pin);
       const keyNorm = input.sheetKey ? normaliseRecoveryCode('sheet', input.sheetKey) : null;
       if (!hasPin && !keyNorm) return { ok: false, reason: 'proof_required' } as const;
+      // A helping grown-up holds the request code, so the only thing between them and the account is the owner's
+      // PIN. Wrong PINs are counted across ALL of this account's requests in a day, not only this one, so opening
+      // fresh requests does not buy fresh guesses. The account's own PIN lockout is still never touched, and the
+      // printed sheet (which a helper does not hold) is not held up by it.
+      let pinBlocked = false;
+      if (hasPin) {
+        const spent = await q(
+          `SELECT COALESCE(sum(failed_attempts), 0)::int AS n FROM recovery_request
+            WHERE user_id = $1 AND mode = 'second_parent' AND created_at > $2::timestamptz - interval '24 hours'`,
+          [peek, now.toISOString()]);
+        pinBlocked = spent[0].n >= RECOVERY_PROOF_MAX_WRONG_PER_DAY;
+      }
       let matched = false;
       if (keyNorm) {
         const s = await q(`SELECT key_hash FROM recovery_sheet WHERE user_id = $1 AND retired_at IS NULL`, [peek]);
         matched = s.length > 0 && eqHex(recoveryCodeDigest('sheet', keyNorm), s[0].key_hash);
         if (matched) proof = 'sheet';
       }
-      if (!matched && hasPin) {
+      if (!matched && hasPin && !pinBlocked) {
         const p = await q(`SELECT pin_hash FROM pin_credential WHERE user_id = $1`, [peek]);
         matched = p.length > 0 && verifyPin(input.pin as string, p[0].pin_hash);
         if (matched) proof = 'pin';
       }
+      if (!matched && pinBlocked && !keyNorm) return { ok: false, reason: 'too_many_wrong' } as const;
       if (!matched) {
         const burned = r.failed_attempts + 1 >= RECOVERY_REQUEST_MAX_WRONG;
         await q(
