@@ -39,6 +39,7 @@ import 'adult_gate.dart' show AdultGate, AdultGateCard, CalmTryAgainCard;
 import 'api_client.dart' show ApiException, redeemDevicePairingCode;
 import 'kiosk_lock_colors.dart';
 import 'onboarding_shared.dart' show ChildOnboardingScaffold;
+import 'pairing_qr.dart' show ScanShape, classifyScan;
 
 class PairingRedeemScreen extends StatefulWidget {
   const PairingRedeemScreen({
@@ -50,6 +51,7 @@ class PairingRedeemScreen extends StatefulWidget {
     this.closingStep = false,
     this.onNotNow,
     this.localFirst = false,
+    this.onLocalPairingPicture,
   });
 
   final String baseUrl;
@@ -88,6 +90,11 @@ class PairingRedeemScreen extends StatefulWidget {
   /// everything keeps working without it and offers [onNotNow] ("Not now") as a real way on.
   /// The default (false) is the unchanged "connect first" screen.
   final bool localFirst;
+
+  /// Called when what was scanned is a picture for pairing a tablet on this wifi (`olive://...`), not an account code.
+  /// Nothing is sent to the server for it. The caller can take the person to the tablet screen; with null the
+  /// standalone screen says where to go and the child's closing step shows its one calm card.
+  final VoidCallback? onLocalPairingPicture;
 
   @override
   State<PairingRedeemScreen> createState() => _PairingRedeemScreenState();
@@ -139,6 +146,17 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
   Future<void> _submit(String code) async {
     final trimmed = code.trim();
     if (trimmed.isEmpty || _submitting) return;
+    // Only an account code's shapes (6 digits, or the id in its QR) ever reach the server.
+    switch (classifyScan(trimmed)) {
+      case ScanShape.localPairingPicture:
+        _notAnAccountCode(localPicture: true);
+        return;
+      case ScanShape.unknown:
+        _notAnAccountCode(localPicture: false);
+        return;
+      case ScanShape.serverCode:
+        break;
+    }
     setState(() {
       _submitting = true;
       _errorMessage = null;
@@ -159,21 +177,61 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
         _errorMessage = widget.closingStep ? null : _messageFor(e.error);
         if (widget.closingStep) _closing = _ClosingStage.tryAgain;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      // A server that answered with something that is not an Olive answer (not JSON, the wrong shape) is not a lost
+      // connection: it is its own failure, and must not read as "couldn't reach the server".
+      final bool network = !_isOtherFailure(e);
       setState(() {
         _submitting = false;
         _scanning = false;
         _scanHandledOnce = false;
-        // The closing step answers a missing connection with its own
-        // picture-only state instead of a sentence.
-        _offline = widget.closingStep;
-        if (widget.closingStep) _closing = _ClosingStage.card;
-        _errorMessage = widget.closingStep
-            ? null
-            : "Couldn't reach the server. Check your connection and try again.";
+        if (network) {
+          // The closing step answers a missing connection with its own
+          // picture-only state instead of a sentence.
+          _offline = widget.closingStep;
+          if (widget.closingStep) _closing = _ClosingStage.card;
+          _errorMessage = widget.closingStep
+              ? null
+              : "Couldn't reach the server. Check your connection and try again.";
+        } else {
+          if (widget.closingStep) _closing = _ClosingStage.tryAgain;
+          _errorMessage = widget.closingStep
+              ? null
+              : (e is FormatException
+                  ? "The server's answer wasn't what we expected. Check your connection and try again."
+                  : "Couldn't complete that. Check the code and try again.");
+        }
       });
     }
+  }
+
+  /// A failure that is NOT the network: a bad answer body (FormatException) or a programming-shaped error. Everything
+  /// else a request can throw (a refused or dropped connection, a timeout, a failed handshake, a client exception)
+  /// counts as the network.
+  static bool _isOtherFailure(Object e) => e is FormatException || e is Error;
+
+  /// What was scanned or typed is not an account code: nothing is sent. A picture for pairing a tablet goes where it
+  /// belongs; anything else is "that doesn't match" without asking the server.
+  void _notAnAccountCode({required bool localPicture}) {
+    if (localPicture && widget.onLocalPairingPicture != null) {
+      setState(() { _scanning = false; _scanHandledOnce = false; });
+      widget.onLocalPairingPicture!();
+      return;
+    }
+    setState(() {
+      _scanning = false;
+      _scanHandledOnce = false;
+      if (widget.closingStep) {
+        // A child reads nothing: the one calm card, whatever was scanned.
+        _closing = _ClosingStage.tryAgain;
+        _errorMessage = null;
+      } else {
+        _errorMessage = localPicture
+            ? 'That picture is for pairing a tablet, not an account code. Open "Her tablet" in More to pair one.'
+            : _messageFor('not_found');
+      }
+    });
   }
 
   /// Distinct wording per real server reason — see this file's own header.
@@ -211,6 +269,13 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
           errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() { _scanning = false; _scanHandledOnce = false; })),
         ),
       )),
+      const SizedBox(height: 8),
+      // Plain words on the grown-up's screen only: this scanner is for a code from a family account, not for a tablet.
+      if (!widget.closingStep)
+        Text(
+          'This scans a code from your family account on another device. To pair a tablet on this wifi, open "Her tablet" in More.',
+          key: const Key('pairingScannerCaption'), textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 12),
       TextButton(
         key: const Key('pairingCancelScanButton'),
@@ -260,14 +325,15 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
   ];
 
   Widget _buildStandalone(BuildContext context) => Scaffold(
-    body: SafeArea(child: Padding(
-      padding: const EdgeInsets.all(24),
+    // Scrollable: with the scanner's caption the content is taller than a small screen, and the "Type the code instead"
+    // button must never be pushed out of reach (it overflowed by 28 pixels in a 600 high window).
+    body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SizedBox(height: 24),
         Icon(Icons.link_rounded, size: 40,
           color: Theme.of(context).colorScheme.primary),
         const SizedBox(height: 16),
-        Text('Connect this device', textAlign: TextAlign.center,
+        Text(widget.role == 'guardian' ? 'Join your family account' : 'Connect this device', textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(

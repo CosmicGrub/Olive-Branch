@@ -241,7 +241,7 @@ Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) asyn
   runApp(_GuardianOnboardingApp(role: role, services: local));
 }
 
-/// Settings > Account > Connect this device: the optional code screen. "Not now" goes back.
+/// Settings > Account > Join your family account: the optional code screen. "Not now" goes back.
 void _openConnect(BuildContext context) {
   Navigator.of(context).push(MaterialPageRoute<void>(
     builder: (BuildContext routeContext) => PairingRedeemScreen(

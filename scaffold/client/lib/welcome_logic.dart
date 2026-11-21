@@ -105,7 +105,7 @@ String capabilityWords(Capability c, String child) {
     case Capability.ownPin:
       return 'Change their own PIN';
     case Capability.connectDevice:
-      return 'Connect a child’s device';
+      return 'Pair a child’s tablet';
     case Capability.unlockPlay:
       return 'Unlock $child’s tablet with their phone and play together';
     case Capability.messageChild:

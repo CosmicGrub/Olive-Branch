@@ -276,13 +276,17 @@ class ChallengeView {
 /// that proves its key refreshes its last-contact time (or pauses it if the key changed), and a stopped or forgotten
 /// tablet is told so. With a [familyId] (the same one the certificates were issued under) it renews certificates.
 class UnlockResponder {
-  UnlockResponder({required this.adultKey, required this.kids, DateTime Function()? now, this.trust, this.familyId})
+  UnlockResponder({required this.adultKey, required this.kids, DateTime Function()? now, this.trust, this.familyId, this.onDisconnected})
       : _now = now ?? DateTime.now;
   final DeviceKey adultKey;
   final Future<List<PairedKid>> Function() kids;
   final DateTime Function() _now;
   final TrustBook? trust;
   final String? familyId;
+
+  /// Called after the grown-up approved "Disconnect this tablet" (a tablet that asked to be disconnected showed its picture and
+  /// this phone signed the answer): the phone ends ITS side at once, so its list does not keep a tablet that has left. Null = nothing.
+  final Future<void> Function(PairedKid kid)? onDisconnected;
 
   /// Null unless the challenge is well formed, unexpired and names a tablet THIS phone paired (or one it must tell it
   /// is disconnected). Meeting a tablet that proves its key is what keeps the watch rules alive.
@@ -343,6 +347,7 @@ class UnlockResponder {
       }).toString();
     }
     final PairedKid kid = v.kid!;
+    if (c.purpose == UnlockPurpose.forget) await onDisconnected?.call(kid);
     final bool po = kid.phoneOnly;
     final Uint8List sig = await adultKey.sign(_signed(c.nonce, c.childFingerprint, c.purpose, c.expiresMs, po));
     String? x, cs;

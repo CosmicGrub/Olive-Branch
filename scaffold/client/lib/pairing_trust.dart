@@ -353,7 +353,6 @@ class TrustBook {
     required String addedBy,
   }) async {
     final TrustState s = await repo.load();
-    if (s.refusedKeys.contains(b64(deviceKey))) return null; // a stopped device is not re-added silently
     final int now = _ms;
     final TrustedDevice d = TrustedDevice(
       certId: certId, deviceKey: deviceKey, name: sanitizeDeviceName(deviceName), role: role, addedAtMs: now,
@@ -361,9 +360,16 @@ class TrustBook {
     );
     final PairingHistory h = await _history(s);
     await h.append(HistoryKind.added, now, who: d.name);
-    // Connecting a forgotten tablet again on purpose ends its "disconnected" mark, or its new pairing would be revoked.
-    final Set<String> forgotten = <String>{...s.forgottenKeys}..remove(b64(deviceKey));
-    await _write(s, h, devices: <TrustedDevice>[...s.devices.where((TrustedDevice x) => x.certId != certId), d], forgotten: forgotten);
+    // Connecting a tablet again on purpose ends its "disconnected" or "stopped" mark, or its new pairing would be revoked. The
+    // grown-up did this deliberately (their PIN or the code, the Match pictures and a Yes), so it is not silent: and an older
+    // record of the SAME device (another certificate id for the same key) is superseded, never left beside the new one.
+    final String enc = b64(deviceKey);
+    final Set<String> forgotten = <String>{...s.forgottenKeys}..remove(enc);
+    final Set<String> refused = <String>{...s.refusedKeys}..remove(enc);
+    await _write(s, h,
+        devices: <TrustedDevice>[...s.devices.where((TrustedDevice x) => x.certId != certId && b64(x.deviceKey) != enc), d],
+        forgotten: forgotten,
+        refused: refused);
     return d;
   }
 

@@ -322,7 +322,7 @@ void main() {
       final List<Map<String, dynamic>> sent = <Map<String, dynamic>>[];
       final PairingResult r = await _client(ck, _OldAdultTransport(w, sent)).pair(sid: w.sid, password: '4829');
       expect(r.ok, isFalse);
-      expect(r.failure, PairingFailure.notMatched, reason: 'the same calm outcome as any failed connection');
+      expect(r.failure, PairingFailure.versionMismatch, reason: 'the grown-up side can say why; the tablet only ever shows its one calm card');
       expect(sent.map((Map<String, dynamic> m) => m['t']), <String>['hello'], reason: 'no pake1 was sent');
       expect(w.attemptsLeft, 5);
       expect(w.isOpen, isTrue);

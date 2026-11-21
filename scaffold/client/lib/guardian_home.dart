@@ -37,9 +37,13 @@
 // pass. The existing crossAxisCount/effectiveColumnWidth/mainAxisExtent
 // computation below is ALSO unchanged — only which tiles land in which
 // grid, and each grid's fill color, changes.
+import 'her_tablet_screen.dart' show HerTabletBanner;
 import 'care_local_screens.dart' show CareDestination, localCareScreen;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'local_pin.dart' show kLocalGuardianScope;
+import 'local_services.dart' show LocalServices;
+import 'pairing_records.dart';
 import 'availability_screen.dart';
 import 'call_screen.dart';
 import 'care_note.dart';
@@ -116,7 +120,7 @@ class GuardianHome extends StatelessWidget {
     required this.actorLocalTime, this.childStateSentence,
     required this.childBands, required this.actorBands, this.overlapLabel,
     this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient,
-    this.dayPart, this.reachable});
+    this.dayPart, this.reachable, this.serverTabletPresent, this.pairedKids});
 
   final String childName, childLocalTime, childZoneAbbr, actorLocalTime;
   /// Real as of the same /now route send_time_guard.dart's live path now
@@ -128,6 +132,14 @@ class GuardianHome extends StatelessWidget {
   /// unknown), not defaulted to either bool.
   final String? dayPart;
   final bool? reachable;
+
+  /// Whether the SERVER lists a tablet for her (tri-state: null = not asked, or not answered). Only the live wrapper
+  /// knows; every other caller leaves it null. It joins the on-phone paired-tablet list in the state line (ISS-059).
+  final bool? serverTabletPresent;
+
+  /// Reads the on-phone paired-tablet list. Null = the real one (the 'pairedkids' area of this device's store);
+  /// injectable so a test can hand it a corrupt or unreadable list.
+  final Future<PairedKidsLoad> Function()? pairedKids;
   /// Nullable since v0.49.57 (was required) — no live route exists yet that
   /// derives a real one-sentence status ("Winding down for bed") the way
   /// /now and /ribbon derive every other field on this widget. Null renders
@@ -153,6 +165,20 @@ class GuardianHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    // Settings is one tap from here (ISS-063): a gear on the app bar, behind the same PIN the More hub's Settings row
+    // asks for. The title is plain ("Home"), never her name or a status.
+    appBar: AppBar(
+      title: const Text('Home'),
+      actions: <Widget>[
+        IconButton(
+          key: const Key('guardianHomeSettings'),
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: 'Settings',
+          onPressed: () => _moreScreenFor(context, childName: childName, baseUrl: baseUrl, guardianId: guardianId,
+              childId: childId, availabilityHttpClient: availabilityHttpClient).openSettings(context),
+        ),
+      ],
+    ),
     // LayoutBuilder sits ABOVE the scrollable, the same structural position
     // child_home.dart's own LayoutBuilder already establishes (that file's
     // own comment: "inside it, `constraints` are the Scaffold body's real
@@ -197,10 +223,11 @@ class GuardianHome extends StatelessWidget {
             // exactly as subordinate as they were.
             // Always one sentence: the caller's when it has one, else the honest
             // fallback (guardian_state_line.dart), never blank and never invented.
-            ShareRedact(child: Text(guardianStateLine(childName: childName, sentence: childStateSentence,
-                connected: baseUrl != null, dayPart: dayPart),
-              key: const Key('guardianStateLine'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+            _GuardianStateLine(childName: childName, sentence: childStateSentence,
+                connected: baseUrl != null, dayPart: dayPart,
+                serverTabletPresent: serverTabletPresent, pairedKids: pairedKids),
+            // The one button for her tablet: where it stands, and one tap to connect, unlock or disconnect it.
+            HerTabletBanner(childName: childName),
             const SizedBox(height: 4),
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
@@ -378,9 +405,70 @@ class GuardianHome extends StatelessWidget {
         const SizedBox(height: 16),
       ]));
 
-      return CoverCollapse(full: full, collapsed: collapsed);
+      // The app bar above takes kToolbarHeight off the body; the posture is read as if it did not (ISS-063).
+      return CoverCollapse(full: full, collapsed: collapsed, chromeHeight: kToolbarHeight);
     })),
   );
+}
+
+/// The one sentence under the hero. It reads the on-phone paired-tablet list itself (and again whenever that list
+/// changes), so "her tablet isn't connected yet" is said only when the list was read in full and is empty, and
+/// nothing is said when it cannot be read (ISS-059).
+class _GuardianStateLine extends StatefulWidget {
+  const _GuardianStateLine({required this.childName, required this.sentence, required this.connected,
+    required this.dayPart, required this.serverTabletPresent, required this.pairedKids});
+  final String childName;
+  final String? sentence, dayPart;
+  final bool connected;
+  final bool? serverTabletPresent;
+  final Future<PairedKidsLoad> Function()? pairedKids;
+
+  @override
+  State<_GuardianStateLine> createState() => _GuardianStateLineState();
+}
+
+class _GuardianStateLineState extends State<_GuardianStateLine> {
+  /// Tri-state: true = a tablet is on the list, false = list read and empty, null = unknown (not read yet, or unreadable).
+  bool? _paired;
+
+  @override
+  void initState() {
+    super.initState();
+    kPairedKidsChanged.addListener(_read);
+    _read();
+  }
+
+  @override
+  void dispose() {
+    kPairedKidsChanged.removeListener(_read);
+    super.dispose();
+  }
+
+  Future<PairedKidsLoad> _load() => widget.pairedKids != null
+      ? widget.pairedKids!()
+      : LocalStorePairedKidsRepository(LocalServices.current.area('pairedkids', ownerId: kLocalGuardianScope)).loadChecked();
+
+  Future<void> _read() async {
+    bool? next;
+    try {
+      final PairedKidsLoad l = await _load();
+      next = l.kids.isNotEmpty ? true : (l.verifiablyEmpty ? false : null);
+    } catch (_) {
+      next = null;
+    }
+    if (mounted && next != _paired) setState(() => _paired = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String? line = guardianStateLine(childName: widget.childName, sentence: widget.sentence,
+        connected: widget.connected, dayPart: widget.dayPart, tabletPaired: _paired,
+        serverTabletPresent: widget.serverTabletPresent);
+    if (line == null) return const SizedBox.shrink(key: Key('guardianStateLineNone'));
+    return ShareRedact(child: Text(line,
+      key: const Key('guardianStateLine'),
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)));
+  }
 }
 
 /// Sub-project 3b's own tier tag (docs/superpowers/specs/2026-09-12-
@@ -489,19 +577,26 @@ List<_TileSpec> _kGuardianTiles({
         httpClient: availabilityHttpClient)))),
   _TileSpec(icon: Icons.more_horiz, label: 'More', tier: _Tier.standard,
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => GuardianMoreScreen(childName: childName,
-        // The age the local family locked (guardian_local_scope.dart); 9 is the hub's own
-        // long-standing default when this tree has no local family.
-        childAge: GuardianLocalScope.maybeOf(context)?.family?.age ?? 9,
-        baseUrl: baseUrl, guardianId: guardianId,
-        // GuardianMoreScreen.childId is non-nullable (it also keys the
-        // family-agreement fetch, which needs SOME concrete child even
-        // pre-live-session) — same seed-dev.mjs 'Ivy' fallback
-        // main_live.dart's own defaultValue uses, not a fabricated
-        // placeholder.
-        childId: childId ?? 'aaaaaaaa-0000-4000-8000-000000000001',
-        availabilityHttpClient: availabilityHttpClient)))),
+      builder: (_) => _moreScreenFor(context, childName: childName, baseUrl: baseUrl, guardianId: guardianId,
+          childId: childId, availabilityHttpClient: availabilityHttpClient)))),
 ];
+
+/// The More hub, built the one way for the More tile and for the home's Settings gear.
+GuardianMoreScreen _moreScreenFor(BuildContext context, {
+  required String childName, required String? baseUrl, required String? guardianId, required String? childId,
+  required http.Client? availabilityHttpClient,
+}) => GuardianMoreScreen(childName: childName,
+  // The age the local family locked (guardian_local_scope.dart); 9 is the hub's own
+  // long-standing default when this tree has no local family.
+  childAge: GuardianLocalScope.maybeOf(context)?.family?.age ?? 9,
+  baseUrl: baseUrl, guardianId: guardianId,
+  // GuardianMoreScreen.childId is non-nullable (it also keys the
+  // family-agreement fetch, which needs SOME concrete child even
+  // pre-live-session) — same seed-dev.mjs 'Ivy' fallback
+  // main_live.dart's own defaultValue uses, not a fabricated
+  // placeholder.
+  childId: childId ?? 'aaaaaaaa-0000-4000-8000-000000000001',
+  availabilityHttpClient: availabilityHttpClient);
 
 class _Ribbon extends StatelessWidget {
   const _Ribbon({required this.label, required this.bands, required this.height});

@@ -141,10 +141,17 @@ class _AdultGateState extends State<AdultGate> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextButton(
-                  key: const Key('adultGateDisconnect'),
-                  onPressed: () => setState(() { _purpose = UnlockPurpose.forget; _stage = AdultGateStage.phone; }),
-                  child: const Text('Disconnect this tablet', style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 13)),
+                // Big and plain like the other two (a grown-up should not have to hunt for it); it still only SHOWS a picture
+                // the grown-up's phone must answer, so a child tapping it changes nothing.
+                SizedBox(
+                  width: 260,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    key: const Key('adultGateDisconnect'),
+                    onPressed: () => setState(() { _purpose = UnlockPurpose.forget; _stage = AdultGateStage.phone; }),
+                    icon: const Icon(Icons.link_off_rounded),
+                    label: const Text('Disconnect this tablet', style: TextStyle(fontSize: 17)),
+                  ),
                 ),
               ]),
             ),

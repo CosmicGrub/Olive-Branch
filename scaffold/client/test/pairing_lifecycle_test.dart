@@ -370,11 +370,16 @@ void main() {
       expect(await w.trust.isRevoked(w.ck.publicKey), isFalse);
     });
 
-    test('a STOPPED tablet stays turned away even if it is added again by accident', () async {
+    test('a STOPPED tablet is connected again only by a deliberate approval, which ends the refusal and leaves ONE record of it', () async {
       final _World w = await _world();
       await w.trust.stop('c1');
-      expect(await w.trust.add(certId: 'c2', deviceKey: w.ck.publicKey, deviceName: 'x', role: PairedRole.child, addedBy: 'Sam'), isNull);
       expect(await w.trust.isRefused(w.ck.publicKey), isTrue);
+      expect(await w.trust.observe('c1', w.ck.publicKey), isNull, reason: 'until then a stopped tablet is not treated as connected');
+      final TrustedDevice? again = await w.trust.add(certId: 'c2', deviceKey: w.ck.publicKey, deviceName: 'x', role: PairedRole.child, addedBy: 'Sam');
+      expect(again, isNotNull);
+      expect(await w.trust.isRefused(w.ck.publicKey), isFalse);
+      final List<TrustedDevice> all = await w.trust.devices();
+      expect(all.map((TrustedDevice d) => d.certId), <String>['c2'], reason: 'the old record of the same device is superseded, not left beside it');
     });
 
     test('forgetting is idempotent and survives a reload of the book', () async {

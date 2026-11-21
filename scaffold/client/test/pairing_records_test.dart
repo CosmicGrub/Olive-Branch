@@ -58,10 +58,13 @@ void main() {
     final LocalServices s = LocalServices.memory(isLive: true, demoSeeds: false, childId: 'c1');
     final LocalStorePairedKidsRepository r = LocalStorePairedKidsRepository(s.area('pairedkids', ownerId: kLocalGuardianScope));
     await r.add(PairedKid(certId: 'a', childDeviceKey: Uint8List(32), childId: 'kid', deviceName: 'Tablet', issuedAtMs: 5));
-    await r.add(PairedKid(certId: 'b', childDeviceKey: Uint8List(32), childId: 'kid', deviceName: 'Phone', issuedAtMs: 6));
+    await r.add(PairedKid(certId: 'b', childDeviceKey: Uint8List.fromList(List<int>.filled(32, 7)), childId: 'kid', deviceName: 'Phone', issuedAtMs: 6));
     expect((await r.load()).map((PairedKid k) => k.certId), <String>['a', 'b']);
-    await r.forget('a');
-    expect((await r.load()).single.certId, 'b');
+    // The same device connected again replaces its earlier record: one tablet is one row.
+    await r.add(PairedKid(certId: 'c', childDeviceKey: Uint8List(32), childId: 'kid', deviceName: 'Tablet', issuedAtMs: 9));
+    expect((await r.load()).map((PairedKid k) => k.certId), <String>['b', 'c']);
+    await r.forget('b');
+    expect((await r.load()).single.certId, 'c');
   });
 
   test('her age from the pairing is kept across a restart; a stored implausible age reads as none', () async {

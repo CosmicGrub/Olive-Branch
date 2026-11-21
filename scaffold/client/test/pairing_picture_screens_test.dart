@@ -80,6 +80,7 @@ Future<_Adult> _pumpAdult(WidgetTester t) async {
   final _Adult a = _Adult(pin, MemoryPairingPictureRepository(), TrustBook(MemoryTrustRepository()), AddingLock(), _FakeHost());
   await t.pumpWidget(MaterialApp(
       home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
     pin: pin,
     deviceKeys: MemoryDeviceKeyRepository(),
     kids: a.kids,

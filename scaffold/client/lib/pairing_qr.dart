@@ -35,6 +35,21 @@ PairingQr? parsePairingQr(String raw) {
   }
 }
 
+/// What a string handed to the account-code screen is. The account's code is a 6-digit number or the id in its QR
+/// (a UUID); anything else is NOT sent to the server. A picture made for pairing a tablet on this wifi
+/// (`olive://pair/1` from a phone, `olive://id/1` from a tablet) is recognised and sent nowhere.
+enum ScanShape { serverCode, localPairingPicture, unknown }
+
+final RegExp _kSixDigits = RegExp(r'^\d{6}$');
+final RegExp _kUuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+ScanShape classifyScan(String raw) {
+  final String t = raw.trim();
+  if (parsePairingQr(t) != null || t.toLowerCase().startsWith('olive://')) return ScanShape.localPairingPicture;
+  if (_kSixDigits.hasMatch(t) || _kUuid.hasMatch(t)) return ScanShape.serverCode;
+  return ScanShape.unknown;
+}
+
 /// Splits `host:port` (the last colon), or null.
 ({String host, int port})? splitHint(String hint) {
   final int i = hint.lastIndexOf(':');
