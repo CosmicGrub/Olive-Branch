@@ -734,7 +734,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
             if (sim.match != null && sim.match!.match != null) ...<Widget>[
               const SizedBox(height: 8),
               const Text('simulated tablet shows:'),
-              KeyedSubtree(key: const Key('connectSimMatch'), child: MatchCard(set: sim.match!.match!, iconSize: 36, forChild: true)),
+              KeyedSubtree(key: const Key('connectSimMatch'), child: MatchCard(set: sim.match!.match!, iconSize: 26, forChild: true)),
             ],
           ],
         ]),
@@ -920,9 +920,17 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       const SizedBox(height: 4),
       const Text('Her device is showing three pictures and a colour. Tap the card here that has the same ones.'),
       const SizedBox(height: 12),
+      if (widget.simulate && _sim?.match?.match != null) ...<Widget>[
+        // DEV-ONLY: the simulated tablet has no screen of its own, so its pictures are drawn here, labelled.
+        const Text('simulated tablet shows:', key: Key('connectSimMatchLabel')),
+        KeyedSubtree(key: const Key('connectSimMatch'), child: MatchCard(set: _sim!.match!.match!, iconSize: 26, forChild: true)),
+        const SizedBox(height: 12),
+      ],
       LayoutBuilder(builder: (BuildContext context, BoxConstraints box) {
         final double cardW = ((box.maxWidth - 12) / 2).clamp(120.0, 360.0);
-        final double icon = ((cardW - 40) / 3.4).clamp(24.0, 56.0);
+        // A card is about 4 icons wide (three pictures, their gaps and its own padding) plus the tap area's padding: sized so it
+        // never overflows its column (it did, by a few pixels, on a 500 wide tablet).
+        final double icon = ((cardW - 16) / 4.1).clamp(24.0, 56.0);
         return Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: <Widget>[
           for (int i = 0; i < c.sets.length; i++)
             SizedBox(
