@@ -187,8 +187,11 @@ const serviceBlock = (text, name) => {
     /concurrency:\s*\n\s+group:[^\n]+\n\s+cancel-in-progress:\s*(true|\$\{\{[^}]*pull_request[^}]*\}\})/.test(w), 'true');
   check('D CI hygiene', 'cancellation is scoped to pull_request runs (a push to main is never cancelled by the next merge)',
     /cancel-in-progress:\s*\$\{\{\s*github\.event_name == 'pull_request'\s*\}\}/.test(w), 'true');
-  check('D CI hygiene', 'the concurrency group is per workflow+ref (a new push cancels only ITS OWN older run)',
-    /group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.ref\s*\}\}/.test(w), 'true');
+  // ISS-029: per workflow + ref for a pull request (a new push cancels only ITS OWN older run), per COMMIT for a push (so
+  // a merge landing right after another cannot displace the first commit's pending run). tools/test/ci_workflows.test.mjs
+  // holds the exact expression; this keeps the property visible next to the other hygiene checks.
+  check('D CI hygiene', 'the concurrency group is per workflow+ref for a pull request and per commit for a push',
+    /group:\s*\$\{\{\s*github\.workflow\s*\}\}-\$\{\{\s*github\.event_name == 'pull_request' && github\.ref \|\| github\.sha\s*\}\}/.test(w), 'true');
   check('D CI hygiene', 'npm is cached via setup-node', /cache:\s*['"]?npm['"]?/.test(w) && /cache-dependency-path:\s*scaffold\/package-lock\.json/.test(w), 'true');
   check('D CI hygiene', 'the pub cache is enabled for Flutter', /cache:\s*true/.test(w), 'true');
   check('D CI hygiene', 'the workflow installs with a strict `npm ci` (no `|| npm install` fallback masking lockfile drift)',

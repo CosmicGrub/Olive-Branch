@@ -285,10 +285,14 @@ class GameDotsBoxes extends StatefulWidget {
     this.childName = 'Ivy',
     this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
+    this.random,
   });
 
   final String childName;
   final String parentName;
+  /// The source of the simulated opponent's choices. Null in the app (a fresh Random); a test passes a seeded or
+  /// scripted one so a game is reproducible.
+  final Random? random;
   /// How long the simulated opponent "thinks" before replying (and, per the
   /// cascade rule, before each FURTHER move in the same extra turn). Exposed
   /// for tests, not because a settings affordance belongs on this screen.
@@ -299,6 +303,7 @@ class GameDotsBoxes extends StatefulWidget {
 }
 
 class _GameDotsBoxesState extends State<GameDotsBoxes> {
+  late final Random _rand = widget.random ?? Random();
   DbState _state = newDotsAndBoxes();
   bool _parentThinking = false;
 
@@ -326,7 +331,7 @@ class _GameDotsBoxesState extends State<GameDotsBoxes> {
         setState(() => _parentThinking = false);
         return;
       }
-      final pick = moves[Random().nextInt(moves.length)];
+      final pick = moves[_rand.nextInt(moves.length)];
       final result = dbPlay(_state, Side.b, pick.kind, pick.r, pick.c);
       setState(() {
         _parentThinking = false;

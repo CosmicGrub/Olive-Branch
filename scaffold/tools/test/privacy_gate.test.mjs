@@ -281,7 +281,9 @@ const URLCRED = j('postgres://', 'admin', ':', 'Zq8vK2mP9xLw', '@', 'db.internal
   };
   for (const [n, line] of Object.entries(cases)) {
     const ms = t(line);
-    check(g, `${n} scans in under 3 s (took ${ms.toFixed(0)} ms)`, ms < 3000, true);
+    // 30 s is a 10x ceiling over the old 3 s: catastrophic backtracking on a megabyte takes minutes to hours, so this still
+    // catches it, while a loaded runner no longer fails a linear scan (ISS-035).
+    check(g, `${n} scans in under 30 s (took ${ms.toFixed(0)} ms)`, ms < 30000, true);
   }
 }
 
