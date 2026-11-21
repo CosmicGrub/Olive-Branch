@@ -16,7 +16,16 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
-### Care and calls safety structure (client and session runtime; no migration; MASTERFILE 7.22)
+### Encrypted family backup: the server half (migration 0054; server only, no screen yet)
+So a lost phone never costs the family its records. Full account in MASTERFILE 7.22.
+- **Sealed on the phone, opaque to the server.** Per-family vault, per-grown-up and per-device sessions, resumable chunked upload and download for weak links, idempotent begin, a hash chain signed by the phone so the phone can tell if the server edited, hid, reordered or rolled back a backup. The server lists exactly what it can see and holds no key.
+- **Nothing is silently overwritten.** The newest versions stay live; older ones become set-aside versions whose bytes are kept for a recovery window (default 180 days). The database refuses to delete or rewrite a committed backup. A separate allowance means set-aside copies never crowd out a new backup.
+- **Restore tied to the waiting period.** The family recovery key signs a one-time challenge; the request starts a 48-hour wait (72 with nobody to say yes, never under 24); every grown-up is told, anyone can cancel, a yes never shortens the wait, and only the asking phone gets a one-time download token after the wait.
+- **Pause, and one helper.** Either parent may pause the other's reach (reversible, noticed by all; a paused parent can still stop a restore). A single parent may name one helper who can only confirm or cancel a recovery. No route removes a parent.
+- **Isolation.** Nine tables, all with forced row level security, tested as the owner and the runtime role. Per-person rate limits, a kill switch (`BACKUP_VAULT_ENABLED=0`), a `sweep-backups` scheduler job. Children are refused on every route.
+- **Not built / not run.** No screen or phone-side sealing (separate lane), no push for the notices, no recovery-key replacement, nothing run on a device, no outside crypto review. No new data area (the data catalogue counts in 8.16.4 and 22.1 are unchanged); no version change.
+
+### Care and calls safety structure (client and session runtime; no migration; MASTERFILE 7.23)
 Eight register items (ISS-092 to ISS-095, ISS-099, ISS-100, ISS-106, ISS-107) closed as structure. No medical or legal wording was written.
 - **Demo content is debug-only.** `LocalServices.demoSeeds` defaults to false and is false in any non-debug build; the invented medicines, demo emergency card and demo grown-up code live in `client/lib/demo_fixtures.dart` behind `kDebugMode`; `lib/main.dart` (the preview) refuses to run in a release build. `tools/check-release-literals.mjs` opens a built apk and fails on any string in `tools/demo-literals.json`; `release-smoke.yml` runs it on the real release build.
 - **Allergy field, three states.** Unknown (default, `Not recorded`), confirmed none by a named guardian on a date, entries. One function words the emergency card, its read-aloud text, the local card, hospital mode, the meds screen and the doctor sheet; an empty list is never read as none. A box in the card editor records the confirmation.
