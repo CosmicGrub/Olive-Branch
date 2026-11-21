@@ -737,6 +737,7 @@ class RecoverySafetyScreen extends StatefulWidget {
 class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
   RecoverySummary? _s;
   bool _loading = true;
+  bool _busy = false;
   AccountProblem? _problem;
 
   DateTime _now() => (widget.now ?? DateTime.now)();
@@ -749,7 +750,9 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
 
   Future<void> _load() async {
     final RecoverySummary? s = await _guarded<RecoverySummary>(widget.service.summary,
-        setBusy: (bool _) {}, setProblem: (AccountProblem? p) => setState(() => _problem = p));
+        setBusy: (bool b) {
+          if (mounted) setState(() => _busy = b);
+        }, setProblem: (AccountProblem? p) => setState(() => _problem = p));
     if (!mounted) return;
     setState(() {
       _s = s ?? _s;
@@ -771,7 +774,9 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
     final bool? ok = await _guarded<bool>(() async {
       await widget.service.stop(requestId: n.requestId, pin: pin);
       return true;
-    }, setBusy: (bool _) {}, setProblem: (AccountProblem? p) => setState(() => _problem = p));
+    }, setBusy: (bool b) {
+          if (mounted) setState(() => _busy = b);
+        }, setProblem: (AccountProblem? p) => setState(() => _problem = p));
     if (ok == true && mounted) unawaited(_load());
   }
 
@@ -871,7 +876,9 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
                         await widget.service.removeHelper(pin: pin);
                         return true;
                       },
-                          setBusy: (bool _) {},
+                          setBusy: (bool b) {
+          if (mounted) setState(() => _busy = b);
+        },
                           setProblem: (AccountProblem? p) => setState(() => _problem = p));
                       if (ok == true && mounted) unawaited(_load());
                     },

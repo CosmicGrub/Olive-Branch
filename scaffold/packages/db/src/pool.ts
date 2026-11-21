@@ -5483,7 +5483,11 @@ export async function familyDevicesFor(
     const rows = await q(
       `SELECT pd.*, u.display_name AS owner_name, m.display_name AS marked_by_name,
               mf.id AS mf_id, mf.revoked_at AS mf_revoked_at, mf.paused_at AS mf_paused_at,
-              mf.lost_revoke_due_at AS mf_due_at
+              mf.lost_revoke_due_at AS mf_due_at,
+              (pd.role = 'child' AND NOT EXISTS (
+                 SELECT 1 FROM effective_guardianship g
+                  WHERE g.child_id = pd.target_id AND g.role = 'guardian' AND g.restricted = false
+                    AND g.user_id <> $1)) AS sole_guardian
          FROM paired_device pd
          LEFT JOIN app_user u ON pd.role = 'guardian' AND u.id = pd.target_id
          LEFT JOIN app_user m ON m.id = pd.lost_marked_by
@@ -5516,7 +5520,7 @@ export async function familyDevicesFor(
         markedByMe: state === 'paused' && r.lost_marked_by === userId,
         canMarkLost: state === 'active' && !isThis,
         canFound: state === 'paused' && !isThis && !(markedByOwner && r.role === 'guardian' && !isOwn && markerActive),
-        canConfirmLost: state === 'paused' && !isThis && (r.role === 'child' || isOwn),
+        canConfirmLost: state === 'paused' && !isThis && ((r.role === 'child' && r.sole_guardian === true) || isOwn),
         wipe: r.wiped_at ? 'done' : r.wipe_ordered_at ? 'ordered' : 'none',
         canOrderWipe: r.role === 'guardian' && isOwn && !isThis && state !== 'active' && !!r.lost_incident &&
           !r.wiped_at && !r.wipe_ordered_at,
