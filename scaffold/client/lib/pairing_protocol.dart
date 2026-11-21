@@ -72,6 +72,23 @@ const int kSourceMaxPake1 = 6;
 const int kSourceMaxFailures = 2;
 const int kMaxTrackedSources = 256;
 
+/// In the CODE way (the tablet shows a short code, the grown-up types it on the phone) the tablet asks the window "has the
+/// grown-up typed it yet?" every couple of seconds. Those asks carry nothing but one bit, and have their own per-source
+/// budget so they never use up the hello budget; 600 of them is twenty minutes at one every two seconds, longer than a window.
+const int kSourceMaxReady = 600;
+
+/// The code the tablet shows in the CODE way: this many digits, from the platform's random source.
+const int kPairingCodeDigits = 6;
+
+/// A fresh pairing code for the tablet to show (six decimal digits, uniform, from a cryptographic source).
+String newPairingCode([Random? random]) {
+  final Random r = random ?? Random.secure();
+  return List<String>.generate(kPairingCodeDigits, (_) => '${r.nextInt(10)}').join();
+}
+
+/// True for exactly [kPairingCodeDigits] ASCII digits.
+bool isPairingCode(String s) => s.length == kPairingCodeDigits && s.codeUnits.every((int c) => c >= 0x30 && c <= 0x39);
+
 /// The neutral seat name a window shows ("Player one" or "Player two"). It is derived from the random discovery
 /// handle (one bit of it), never from the adult, the family, the device or the session id, so it identifies nobody.
 String windowSeatLabel(List<int> discoveryHandle) => (discoveryHandle[2] & 1) == 0 ? 'Player one' : 'Player two';
@@ -151,7 +168,7 @@ class LoopbackPairingTransport implements PairingTransport {
 enum WindowState { open, awaitingApproval, approved, declined, closed }
 
 class _SourceUse {
-  int hello = 0, pake1 = 0, failures = 0;
+  int hello = 0, pake1 = 0, failures = 0, ready = 0;
 }
 
 class _Pending {
@@ -184,6 +201,8 @@ class AdultWindow extends ChangeNotifier {
     required this.childName,
     required this.childAge,
     required String? pin,
+    required String? unlockPin,
+    required this.awaitCode,
     required this.sid,
     required this.discoveryHandle,
     required this.qrSecret,
@@ -197,8 +216,10 @@ class AdultWindow extends ChangeNotifier {
     required this.requireMatch,
     required Random random,
     required this.refuseKey,
+    required this.wasStopped,
   })  : _random = random, // ignore: prefer_initializing_formals
         _pin = pin, // ignore: prefer_initializing_formals
+        _unlockPin = unlockPin, // ignore: prefer_initializing_formals
         _now = now, // ignore: prefer_initializing_formals
         attemptsLeft = maxAttempts;
 
@@ -240,6 +261,30 @@ class AdultWindow extends ChangeNotifier {
   /// the window stays silent to it (no answer, no attempt counted).
   final Future<bool> Function(List<int> deviceKey)? refuseKey;
 
+  /// Asked with a child device's public key when it passes key confirmation: true = the grown-up stopped that device
+  /// earlier. It is NOT turned away (a tablet that was set aside must be able to come back when its grown-up chooses): the
+  /// approval step says so in plain words and the grown-up decides, after the PIN or code, the Match and the name.
+  final Future<bool> Function(List<int> deviceKey)? wasStopped;
+
+  /// True when this window was opened in the CODE way: it has no password until the grown-up types the code the tablet shows
+  /// ([provideCode]), and says so (one bit) to a tablet that asks ([_handle] 'rdy').
+  final bool awaitCode;
+
+  /// Set once a child device passed key confirmation: that device was stopped before. See [wasStopped].
+  bool pendingWasStopped = false;
+
+  /// The CODE way: the grown-up typed the code the tablet shows. Only a window opened with [awaitCode] and still open takes
+  /// it, and only six digits. Until then the window has no password, so no key exchange can start.
+  bool provideCode(String code) {
+    if (!awaitCode || state != WindowState.open || _expired || !isPairingCode(code)) return false;
+    _pin = code;
+    notifyListeners();
+    return true;
+  }
+
+  /// True when the window has a password to run a key exchange with (always, except in the CODE way before the code is typed).
+  bool get hasPassword => _pin != null || qrSecret != null;
+
   /// When true, [approve] refuses until the adult picked the matching set ([pickMatch]). [open] defaults to TRUE so a
   /// new caller cannot forget it: skipping the Match step takes an explicit `requireMatch: false`.
   final bool requireMatch;
@@ -248,6 +293,10 @@ class AdultWindow extends ChangeNotifier {
   final bool phoneOnly;
 
   String? _pin;
+
+  /// The grown-up's OWN PIN, only for the typed-code check a tablet is given when phone-only is off. In the PIN ways it is the
+  /// same as the key-exchange password; in the CODE way the password is the tablet's code and this is still the grown-up's PIN.
+  String? _unlockPin;
   int attemptsLeft;
   WindowState state = WindowState.open;
   int _pake1Count = 0;
@@ -259,6 +308,7 @@ class AdultWindow extends ChangeNotifier {
   String _deviceName = '';
   Uint8List? _tagC;
   Uint8List? _sealed;
+  PairedKid? _kid;
   Uint8List? _pollNonce;
   final List<Uint8List> _helloNonces = <Uint8List>[];
 
@@ -353,7 +403,9 @@ class AdultWindow extends ChangeNotifier {
     required String childId,
     required String childName,
     int? childAge,
-    required String pin,
+    String? pin,
+    String? unlockPin,
+    bool awaitCode = false,
     bool offerQr = false,
     // DEFAULT (since the pairing hardening): the tablet is given NO typed-code verifier, so a tablet that is lost or
     // copied holds nothing an attacker can try millions of PINs against offline. Passing false is the grown-up's
@@ -362,6 +414,7 @@ class AdultWindow extends ChangeNotifier {
     Uint8List? familyKey,
     bool requireMatch = true,
     Future<bool> Function(List<int> deviceKey)? refuseKey,
+    Future<bool> Function(List<int> deviceKey)? wasStopped,
     Duration ttl = kWindowTtl,
     int maxAttempts = kWindowMaxAttempts,
     DateTime Function()? now,
@@ -369,14 +422,15 @@ class AdultWindow extends ChangeNotifier {
     Future<LocalPinRecord> Function(String pin)? makeUnlockVerifier,
     void Function(PairedKid kid)? onPaired,
   }) async {
+    assert(awaitCode || pin != null, 'a window needs a PIN, or to be opened in the code way');
     final Random r = random ?? Random.secure();
     Uint8List bytes(int n) => Uint8List.fromList(List<int>.generate(n, (_) => r.nextInt(256)));
     final DateTime Function() clock = now ?? DateTime.now;
     return AdultWindow._(
       adultKey: adultKey, adultName: adultName, familyId: familyId, childId: childId, childName: childName, childAge: _okAge(childAge),
-      pin: pin, sid: bytes(16), discoveryHandle: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
+      pin: awaitCode ? null : pin, unlockPin: unlockPin ?? pin, awaitCode: awaitCode, sid: bytes(16), discoveryHandle: bytes(16), qrSecret: offerQr ? bytes(16) : null, expiresAt: clock().add(ttl),
       maxAttempts: maxAttempts, now: clock, onPaired: onPaired, phoneOnly: phoneOnly,
-      familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey,
+      familyKey: familyKey, requireMatch: requireMatch, random: r, refuseKey: refuseKey, wasStopped: wasStopped,
       makeUnlockVerifier: makeUnlockVerifier ?? (String p) => _defaultVerifier(p, r),
     );
   }
@@ -419,6 +473,7 @@ class AdultWindow extends ChangeNotifier {
     if (state == WindowState.closed) return;
     state = WindowState.closed;
     _pin = null; // the PIN is held only while the window lives
+    _unlockPin = null;
     qrSecret = null;
     _pending = null;
     _pendingAt = null;
@@ -440,6 +495,8 @@ class AdultWindow extends ChangeNotifier {
     attemptsLeft -= 1;
     _pending = null;
     _pendingAt = null;
+    // The CODE way: a wrong code is spent. The grown-up types the code again (it is the tablet's, so it has not changed).
+    if (awaitCode) _pin = null;
     if (attemptsLeft <= 0) {
       close();
     } else {
@@ -512,9 +569,13 @@ class AdultWindow extends ChangeNotifier {
     // The advertisement carries a handle, not the session id: a nearby device opens with the handle and learns the
     // session id from the answer. Only the hello may use it.
     final Object? handleRaw = m['h'];
-    final bool handleOk = m['t'] == 'hello' && handleRaw is String && constantTimeEquals(unb64(handleRaw), discoveryHandle);
+    final bool handleOk = (m['t'] == 'hello' || m['t'] == 'rdy') && handleRaw is String && constantTimeEquals(unb64(handleRaw), discoveryHandle);
     if (!sidOk && !handleOk) return null;
     switch (m['t']) {
+      case 'rdy':
+        // The CODE way: "has the grown-up typed the code yet?" One bit, from a source that knows the window's handle or session id.
+        if (!awaitCode || state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.ready, kSourceMaxReady)) return null;
+        return <String, dynamic>{'t': 'rdy-ok', 'rd': hasPassword ? 1 : 0};
       case 'hello':
         if (state != WindowState.open || !_spend(source, (_SourceUse u) => ++u.hello, kSourceMaxHello)) return null;
         if (refuseKey != null && m['cpk'] is String && await refuseKey!(unb64(m['cpk'] as String))) return null;
@@ -626,6 +687,7 @@ class AdultWindow extends ChangeNotifier {
         _cpk = p.cpk;
         _deviceName = p.deviceName;
         _tagC = tagC;
+        pendingWasStopped = wasStopped != null && await wasStopped!(p.cpk);
         sas = Sas.fromBytes(await key.sas());
         _matchReal = MatchSet.fromBytes(await key.match());
         matchChoices = buildMatchChoices(_matchReal!, _random);
@@ -646,7 +708,11 @@ class AdultWindow extends ChangeNotifier {
         if (state == WindowState.awaitingApproval) return <String, dynamic>{'t': 'wait', 'n': b64(_pollNonce!)};
         if (state == WindowState.approved) {
           final Uint8List sealed = _sealed!;
+          final PairedKid? kid = _kid;
           close(); // a credential is handed over once, and only to a device that proved it holds the key
+          // The record of this tablet is made when the credential LEAVES this phone, not when the grown-up taps Yes: a tablet
+          // that never came back for it is not listed as connected.
+          if (kid != null) onPaired?.call(kid);
           return <String, dynamic>{'t': 'approved', 'sealed': b64(sealed)};
         }
         return null;
@@ -669,7 +735,7 @@ class AdultWindow extends ChangeNotifier {
     final PairingCert cert = await PairingCert.issue(adultKey,
         childDeviceKey: _cpk!, familyId: familyId, childId: childId, certId: certId, issuedAtMs: iat,
         expiresAtMs: iat + kCertLifetime.inMilliseconds);
-    final LocalPinRecord? verifier = phoneOnly ? null : await makeUnlockVerifier(_pin ?? '');
+    final LocalPinRecord? verifier = phoneOnly ? null : await makeUnlockVerifier(_unlockPin ?? '');
     final Map<String, Object?> body = <String, Object?>{
       'cert': cert.toJson(), 'apk': b64(adultKey.publicKey), 'an': adultName, 'childName': childName,
       if (childAge != null) 'ca': childAge,
@@ -681,8 +747,8 @@ class AdultWindow extends ChangeNotifier {
     final SecretBox box =
         await aes.encrypt(utf8.encode(jsonEncode(body)), secretKey: SecretKey(await _key!.channelKey()), aad: _aadCredential);
     _sealed = Uint8List.fromList(box.concatenation());
+    _kid = PairedKid(certId: certId, childDeviceKey: _cpk!, childId: childId, deviceName: _deviceName, issuedAtMs: iat, phoneOnly: phoneOnly);
     state = WindowState.approved;
-    onPaired?.call(PairedKid(certId: certId, childDeviceKey: _cpk!, childId: childId, deviceName: _deviceName, issuedAtMs: iat, phoneOnly: phoneOnly));
     notifyListeners();
     return true;
   }
@@ -691,6 +757,7 @@ class AdultWindow extends ChangeNotifier {
     if (state != WindowState.awaitingApproval) return;
     state = WindowState.declined;
     _pin = null;
+    _unlockPin = null;
     notifyListeners();
   }
 }
@@ -794,11 +861,29 @@ class ChildPairingClient {
     String? expectedFamilyId,
     Uint8List? expectedFamilyKey,
     void Function(PairingMatch match)? onMatched,
+    bool waitForCode = false,
+    void Function()? onWaitingForCode,
   }) async {
     if ((sid == null) == (handle == null)) {
       throw ArgumentError('pair() needs exactly one of sid (from a QR) or handle (from discovery)');
     }
     try {
+      if (waitForCode) {
+        // The CODE way: this tablet already shows its code; the window answers "not yet" until the grown-up has typed it. Nothing
+        // here depends on the code, so a stranger who sees this question learns only that a window is waiting.
+        Duration idle = Duration.zero;
+        onWaitingForCode?.call();
+        while (true) {
+          final Map<String, dynamic>? q = await transport.send(<String, dynamic>{
+            't': 'rdy', if (sid != null) 'sid': b64(sid) else 'h': b64(handle!),
+          });
+          if (q == null || q['t'] != 'rdy-ok') return const PairingResult.failed(PairingFailure.unreachable);
+          if (q['rd'] == 1) break;
+          if (idle > giveUpAfter) return const PairingResult.failed(PairingFailure.timedOut);
+          await _delay(pollEvery);
+          idle += pollEvery;
+        }
+      }
       final Map<String, dynamic>? hello = await transport.send(<String, dynamic>{
         't': 'hello', 'pv': kPairingProtocolVersion,
         if (sid != null) 'sid': b64(sid) else 'h': b64(handle!), 'cpk': b64(childKey.publicKey), 'dn': deviceName,

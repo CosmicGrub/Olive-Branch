@@ -179,6 +179,8 @@ class MemoryPairedKidsRepository implements PairedKidsRepository {
   Future<PairedKidsLoad> loadChecked() async => PairedKidsLoad(List<PairedKid>.of(_l));
   @override
   Future<void> add(PairedKid kid) async {
+    // The same device connected again replaces its earlier record: one tablet is one row, never two.
+    _l.removeWhere((PairedKid k) => constantTimeEquals(k.childDeviceKey, kid.childDeviceKey));
     _l.add(kid);
     (kPairedKidsChanged as _PairedKidsChanged).bump();
   }
@@ -275,7 +277,8 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
   }
 
   @override
-  Future<void> add(PairedKid kid) => _mutate((List<PairedKid> l) => l, append: kid);
+  Future<void> add(PairedKid kid) => _mutate(
+      (List<PairedKid> l) => l.where((PairedKid k) => !constantTimeEquals(k.childDeviceKey, kid.childDeviceKey)).toList(), append: kid);
 
   @override
   Future<void> forget(String certId) => _mutate((List<PairedKid> l) => l.where((PairedKid k) => k.certId != certId).toList());
