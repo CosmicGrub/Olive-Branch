@@ -350,6 +350,28 @@ class LocalNamespace {
         _recovery = RecoveryKind.none;
       });
 
+  /// A private copy of the WHOLE document (every key and value), read in one step. Backup uses it so an area is
+  /// taken as one consistent picture, never key by key while something else writes.
+  Future<Map<String, Object?>> snapshot() => _locked(() async {
+        final Object? copy = jsonDecode(jsonEncode(await _load()));
+        return Map<String, Object?>.from(copy as Map);
+      });
+
+  /// Replaces the WHOLE document in ONE atomic write: either every key of [data] is stored or the old document
+  /// stays exactly as it was (a refusal past the ceiling, or a crash, leaves it untouched). Restore uses it so an
+  /// area is never half old and half restored. Keys and values are checked like [put].
+  Future<void> replaceAll(Map<String, Object?> data) => _locked(() async {
+        final Map<String, Object?> next = <String, Object?>{};
+        for (final MapEntry<String, Object?> e in data.entries) {
+          _checkKey(e.key);
+          next[e.key] = _plainJson(e.key, e.value);
+        }
+        final String json = jsonEncode(next);
+        if (utf8.encode(json).length > spec.maxBytes) throw LocalStoreFull(spec.name, spec.maxBytes);
+        await _flush(next, json: json);
+        _cache = next;
+      });
+
   /// Typed read. A value this codec cannot decode is treated as absent.
   Future<T?> getTyped<T>(String key, StoreCodec<T> codec) async {
     final Object? json = await get(key);
@@ -433,6 +455,23 @@ class LocalStore {
 
   /// How many damaged documents are held in quarantine.
   Future<int> quarantined() => backend.quarantineCount();
+
+  /// The stored bytes of one document exactly as they are on disk (sealed documents stay sealed), or null. For
+  /// restore's undo copies; nothing else should read a document this way.
+  Future<Uint8List?> readRaw(String name) => backend.read(name);
+
+  /// Puts [bytes] back as the document [name] (atomically) and forgets any in-memory copy of it. The bytes must have
+  /// come from [readRaw] of the same name, so their sealing and associated data still match.
+  Future<void> writeRaw(String name, Uint8List bytes) async {
+    await backend.writeAtomic(name, bytes);
+    _open[name]?._forget();
+  }
+
+  /// Removes one document (and any in-memory copy of it).
+  Future<void> deleteRaw(String name) async {
+    await backend.delete(name);
+    _open[name]?._forget();
+  }
 
   /// Deletes every document whose name starts with [prefix] (for example
   /// `child.abc.` to forget one child profile). Quarantined copies are kept.

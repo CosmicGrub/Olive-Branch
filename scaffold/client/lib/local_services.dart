@@ -333,6 +333,23 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
           '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
           'needed to use Olive on this phone, and a device wipe removes it.'),
+  LocalDataEntry(
+      area: 'backupstate', scope: LocalScope.device, encrypted: true, maxBytes: 32 * 1024,
+      what: 'Backup, on this phone or tablet: when the last backup finished and where it went, how far an '
+          'unfinished one got (so it carries on instead of starting again), the public half of the backup key '
+          '(the half that can only lock a backup, never open one), a restore that is waiting or was stopped, '
+          'and the count of wrong tries toward a 15 minute rest. Never the backup key itself and never the '
+          'words on the recovery sheet. Sealed on the device.'),
+  LocalDataEntry(
+      area: 'backupaside', scope: LocalScope.device, encrypted: true, maxBytes: 4 * _mib,
+      what: 'Things set aside by a restore that found the same thing on this phone and in the backup and kept '
+          'both: the other copy, where it came from and when, so nothing is lost and a grown-up can look. '
+          'Grown-up side. Sealed on the device; never sent anywhere by itself.'),
+  LocalDataEntry(
+      area: 'restoreundo', scope: LocalScope.device, encrypted: true, maxBytes: 64 * _mib,
+      what: 'Only while a restore runs: a sealed copy of whatever this phone held before, so a restore that is '
+          'stopped half way puts everything back exactly as it was. Removed when the restore finishes or is '
+          'undone. Sealed on the device.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a
