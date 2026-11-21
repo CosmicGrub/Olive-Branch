@@ -159,6 +159,11 @@ export interface DbPort {
    * revoked."
    */
   isDeviceRevoked(deviceId: string): Promise<boolean>;
+  /**
+   * 0054 — is this grown-up's reach paused right now (another grown-up paused it, visibly, for at most 14
+   * days)? Optional so a port that predates it behaves as before. Checked for every grown-up session.
+   */
+  isAccountPaused?(userId: string): Promise<boolean>;
 }
 export type Query = (sql: string, params?: unknown[]) => Promise<any[]>;
 
@@ -486,6 +491,11 @@ export class Api {
     if (principal.deviceId) {
       const revoked = await this.db.isDeviceRevoked(principal.deviceId);
       if (revoked) return { status: 401, body: { error: 'device_revoked' } };
+    }
+    if (this.db.isAccountPaused && principal.userId && principal.roleName !== 'child') {
+      if (await this.db.isAccountPaused(principal.userId)) {
+        return { status: 401, body: { error: 'account_paused' } };
+      }
     }
 
     if (m.route.escalated && !principal.escalated) {

@@ -860,7 +860,12 @@ export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promi
 export type SecurityEventKind =
   | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
   | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added'
-  | 'account_recovered';
+  | 'account_recovered'
+  | 'device_lost' | 'device_found' | 'device_wipe_ordered' | 'device_wiped' | 'device_reapproved'
+  | 'account_paused' | 'account_resumed'
+  | 'parent_end_started' | 'parent_end_agreed' | 'parent_end_stopped' | 'parent_ended'
+  | 'recovery_sheet_made' | 'recovery_helper_named' | 'recovery_helper_ended'
+  | 'recovery_started' | 'recovery_confirmed' | 'recovery_stopped' | 'recovery_completed';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -882,6 +887,27 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   invite_created: 'A guardian invite was created',
   guardian_added: 'A grown-up was given access to a child',
   account_recovered: 'A guardian account was recovered on a new device; its earlier devices were signed out',
+  device_lost: 'A phone was marked as lost',
+  'device_lost:own': 'A grown-up marked one of their own phones as lost',
+  'device_lost:other': "A grown-up marked another grown-up's phone as lost",
+  'device_lost:child': "A grown-up marked a child's tablet as lost",
+  device_found: 'A phone that was marked as lost was approved to come back',
+  device_wipe_ordered: "A lost phone was told to erase the app's copy when it next connects",
+  device_wiped: "A lost phone confirmed it erased the app's copy",
+  device_reapproved: 'A phone that was marked as lost was checked with its PIN and is back',
+  account_paused: "A grown-up's access was paused",
+  account_resumed: "A grown-up's access was switched back on",
+  parent_end_started: 'Ending a grown-up was proposed; it waits 14 days unless they agree',
+  parent_end_agreed: 'The grown-up agreed to leave; the change took effect',
+  parent_end_stopped: 'Ending a grown-up was stopped',
+  parent_ended: 'A grown-up was ended after the 14 day wait',
+  recovery_sheet_made: 'A recovery sheet was made',
+  recovery_helper_named: 'A trusted helper was named for recovery',
+  recovery_helper_ended: 'A recovery helper was removed',
+  recovery_started: 'Someone asked to take over an account on a new phone; it waits at least 48 hours',
+  recovery_confirmed: 'A second grown-up said yes to a recovery',
+  recovery_stopped: 'A recovery on a new phone was stopped',
+  recovery_completed: 'An account was taken over on a new phone after the wait; its earlier phones were switched off',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -897,24 +923,25 @@ export function securityEventSummary(kind: SecurityEventKind, variant?: string):
  */
 export async function insertSecurityEvent(
   q: Query, actorId: string, kind: SecurityEventKind,
-  opts: { childId?: string | null; variant?: string } = {},
+  opts: { childId?: string | null; variant?: string; subjectUserId?: string | null } = {},
 ): Promise<number> {
   const summary = securityEventSummary(kind, opts.variant);
+  const subject = opts.subjectUserId ?? null;
   const rows = opts.childId
     ? await q(
-        `INSERT INTO security_event (child_id, actor_id, kind, summary)
-         VALUES ($1, $2, $3, $4) RETURNING seq`, [opts.childId, actorId, kind, summary])
+        `INSERT INTO security_event (child_id, actor_id, kind, summary, subject_user_id)
+         VALUES ($1, $2, $3, $4, $5) RETURNING seq`, [opts.childId, actorId, kind, summary, subject])
     : await q(
-        `INSERT INTO security_event (child_id, actor_id, kind, summary)
-         SELECT DISTINCT g.child_id, $1::uuid, $2::text, $3::text
+        `INSERT INTO security_event (child_id, actor_id, kind, summary, subject_user_id)
+         SELECT DISTINCT g.child_id, $1::uuid, $2::text, $3::text, $4::uuid
            FROM effective_guardianship g WHERE g.user_id = $1 RETURNING seq`,
-        [actorId, kind, summary]);
+        [actorId, kind, summary, subject]);
   return rows.length;
 }
 
 export async function recordSecurityEvent(
   pool: pg.Pool, actorId: string, kind: SecurityEventKind,
-  opts: { childId?: string | null; variant?: string } = {},
+  opts: { childId?: string | null; variant?: string; subjectUserId?: string | null } = {},
 ): Promise<number> {
   return withSystemSession(pool, (q) => insertSecurityEvent(q, actorId, kind, opts));
 }
@@ -922,6 +949,8 @@ export async function recordSecurityEvent(
 export interface SecurityEventRow {
   seq: number; kind: SecurityEventKind; summary: string; at: string;
   actor: { userId: string; name: string };
+  /** Whose phone or access this is about (0054); null for the older kinds. */
+  subject: { userId: string; name: string } | null;
 }
 
 /**
@@ -934,8 +963,10 @@ export async function securityEventsVia(
 ): Promise<SecurityEventRow[]> {
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 200);
   const rows = await q(
-    `SELECT e.seq, e.kind, e.summary, e.created_at, e.actor_id, u.display_name
+    `SELECT e.seq, e.kind, e.summary, e.created_at, e.actor_id, u.display_name,
+            e.subject_user_id, su.display_name AS subject_name
        FROM security_event e JOIN app_user u ON u.id = e.actor_id
+       LEFT JOIN app_user su ON su.id = e.subject_user_id
       WHERE e.child_id = $1 AND ($2::bigint IS NULL OR e.seq < $2::bigint)
       ORDER BY e.seq DESC LIMIT $3`,
     [childId, opts.beforeSeq ?? null, limit]);
@@ -943,6 +974,7 @@ export async function securityEventsVia(
     seq: Number(r.seq), kind: r.kind, summary: r.summary,
     at: new Date(r.created_at).toISOString(),
     actor: { userId: r.actor_id, name: r.display_name },
+    subject: r.subject_user_id ? { userId: r.subject_user_id, name: r.subject_name ?? '' } : null,
   }));
 }
 
@@ -4655,12 +4687,21 @@ export interface PairedDevice {
   pairedAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
+  /** 0054: marked lost (cut off, nothing deleted) and when; null when it is not lost. */
+  lostAt: string | null;
+  lostSeq: number;
+  wipeOrderedAt: string | null;
+  wipedAt: string | null;
+  needsReapproval: boolean;
 }
 
 function rowToPairedDevice(r: any): PairedDevice {
   return {
     id: r.id, role: r.role, targetId: r.target_id, label: r.label,
     pairedAt: r.paired_at, revokedAt: r.revoked_at, lastSeenAt: r.last_seen_at,
+    lostAt: r.lost_at ?? null, lostSeq: Number(r.lost_seq ?? 0),
+    wipeOrderedAt: r.wipe_ordered_at ?? null, wipedAt: r.wiped_at ?? null,
+    needsReapproval: r.needs_reapproval === true,
   };
 }
 
@@ -4901,7 +4942,7 @@ export async function pairedDevicesForChild(
   });
 }
 
-export type RevokePairedDeviceError = 'not_found';
+export type RevokePairedDeviceError = 'not_found' | 'use_mark_lost';
 
 /**
  * POST .../paired-devices/:deviceId/revoke — scoped to THIS exact childId
@@ -4917,7 +4958,7 @@ export async function revokePairedDevice(
 ): Promise<{ ok: true } | { ok: false; reason: RevokePairedDeviceError }> {
   return withSession(pool, { roleName: 'guardian', userId: callerId, childId: null }, async (q) => {
     const rows = await q(
-      `SELECT id, revoked_at FROM paired_device
+      `SELECT id, revoked_at, role, target_id FROM paired_device
         WHERE id = $1
           AND ((role = 'child' AND target_id = $2)
             OR (role = 'guardian' AND target_id IN (
@@ -4927,6 +4968,11 @@ export async function revokePairedDevice(
       [deviceId, childId],
     );
     if (!rows.length) return { ok: false, reason: 'not_found' };
+    // 0054: no parent can remove another parent's phone alone and for good. A grown-up's phone that is
+    // not the caller's own is marked LOST instead (immediate, visible, reversible).
+    if (rows[0].role === 'guardian' && rows[0].target_id !== callerId) {
+      return { ok: false, reason: 'use_mark_lost' };
+    }
     if (!rows[0].revoked_at) {
       await q(`UPDATE paired_device SET revoked_at = $2 WHERE id = $1`,
         [deviceId, now.toISOString()]);
@@ -4936,7 +4982,8 @@ export async function revokePairedDevice(
 }
 
 export type RefreshDeviceSessionError =
-  | 'invalid_device_credential' | 'device_revoked' | 'account_deactivated';
+  | 'invalid_device_credential' | 'device_revoked' | 'account_deactivated'
+  | 'device_lost' | 'device_needs_reapproval' | 'account_paused';
 
 /**
  * POST /v1/auth/session/refresh's real work — the device trades its long-lived
@@ -4969,13 +5016,14 @@ export async function refreshPairedDeviceSession(
   pool: pg.Pool, deviceId: string, deviceCredential: string, now: Date,
 ): Promise<
   | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-  | { ok: false; reason: RefreshDeviceSessionError }
+  | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean }
 > {
   return withSystemSession(pool, async (q) => {
     // `id::text = $1`, never casting the input to uuid: a garbage id must be a
     // clean not-found, not a Postgres cast error that surfaces as a 500.
     const rows = await q(
-      `SELECT id, role, target_id, revoked_at, credential_hash
+      `SELECT id, role, target_id, revoked_at, credential_hash, lost_at, wipe_ordered_at, wiped_at,
+              needs_reapproval
          FROM paired_device WHERE id::text = $1`,
       [deviceId],
     );
@@ -4987,9 +5035,19 @@ export async function refreshPairedDeviceSession(
       presented.length === stored.length && timingSafeEqual(presented, stored);
     if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
     if (row.revoked_at) return { ok: false, reason: 'device_revoked' };
+    // 0054: a phone marked lost learns it ONLY here, after proving its own credential, and is told whether
+    // a grown-up asked it to erase the app's local copy. Nothing about the family is in the answer.
+    if (row.lost_at) {
+      return { ok: false, reason: 'device_lost', wipe: row.wipe_ordered_at !== null && row.wiped_at === null };
+    }
+    if (row.needs_reapproval) return { ok: false, reason: 'device_needs_reapproval' };
     if (row.role === 'guardian') {
       const u = await q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [row.target_id]);
       if (!u.length || u[0].deactivated_at) return { ok: false, reason: 'account_deactivated' };
+      const p = await q(
+        `SELECT 1 FROM account_pause WHERE user_id = $1 AND resumed_at IS NULL AND expires_at > $2`,
+        [row.target_id, now.toISOString()]);
+      if (p.length) return { ok: false, reason: 'account_paused' };
     }
     await q(`UPDATE paired_device SET last_seen_at = $2 WHERE id = $1`,
       [row.id, now.toISOString()]);
@@ -5036,9 +5094,22 @@ export async function revokeOwnPairedDevice(
  */
 export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
-    const rows = await q(`SELECT revoked_at FROM paired_device WHERE id = $1`, [deviceId]);
+    const rows = await q(
+      `SELECT revoked_at, lost_at, needs_reapproval FROM paired_device WHERE id = $1`, [deviceId]);
     if (!rows.length) return true;
-    return rows[0].revoked_at !== null;
+    // 0054: a LOST phone and a phone waiting for its owner's PIN are cut off exactly like a revoked one
+    // (their live sessions die on the next request) but nothing is deleted, so they can come back.
+    return rows[0].revoked_at !== null || rows[0].lost_at !== null || rows[0].needs_reapproval === true;
+  });
+}
+
+/** 0054: is this grown-up's reach paused right now? (checked on every request of a grown-up session) */
+export async function isAccountPausedNow(pool: pg.Pool, userId: string): Promise<boolean> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT 1 FROM account_pause WHERE user_id = $1 AND resumed_at IS NULL AND expires_at > now()`,
+      [userId]);
+    return rows.length > 0;
   });
 }
 
@@ -6105,5 +6176,6 @@ export function dbPort(pool: pg.Pool): DbPort {
     withSession: (principal, fn) => withSession(pool, principal, fn),
     siblingLinkFor: (childA: string, childB: string) => siblingLinkFor(pool, childA, childB),
     isDeviceRevoked: (deviceId: string) => isPairedDeviceRevoked(pool, deviceId),
+    isAccountPaused: (userId: string) => isAccountPausedNow(pool, userId),
   };
 }
