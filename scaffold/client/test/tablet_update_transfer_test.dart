@@ -176,7 +176,11 @@ void main() {
     expect(r.receiver.doneBytes, greaterThanOrEqualTo(64 * 1024));
     expect(r.receiver.doneBytes % (64 * 1024), 0);
     expect(r.receiver.doneBytes, lessThanOrEqualTo(onDisk));
-    await waitFor(() => r.receiver.phase == ReceivePhase.ready, what: 'ready');
+    try {
+      await waitFor(() => r.receiver.phase == ReceivePhase.ready, what: 'ready', timeout: const Duration(seconds: 6));
+    } catch (_) {
+      fail('DBG phase=${r.receiver.phase} done=${r.receiver.doneBytes} sender=${r.sender!.phase} why=${r.receiver.refusal}');
+    }
     final StagedUpdate st = (await r.store.loadStaged())!;
     expect(await File('${r.tabletDir.path}/${st.fileName}').readAsBytes(), f.apk);
   });

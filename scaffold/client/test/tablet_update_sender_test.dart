@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:olive_client/tablet_update_port.dart';
 import 'package:olive_client/tablet_update_sender.dart';
 import 'package:olive_client/tablet_update_wire.dart';
 

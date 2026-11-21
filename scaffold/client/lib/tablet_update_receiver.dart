@@ -504,7 +504,10 @@ class TabletUpdateReceiver extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _stall?.cancel();
-    unawaited(_release());
+    // Closed behind any piece still being written, so the partial file is never left open (it must be renamable next run).
+    unawaited(_in?.cancel());
+    unawaited(_pres?.cancel());
+    unawaited(_locked(_release));
     super.dispose();
   }
 }

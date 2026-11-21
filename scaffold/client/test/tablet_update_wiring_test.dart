@@ -10,7 +10,6 @@ import 'package:olive_client/local_pairing.dart';
 import 'package:olive_client/play_admission.dart';
 import 'package:olive_client/play_credentials.dart';
 import 'package:olive_client/play_transport.dart';
-import 'package:olive_client/tablet_update_port.dart';
 import 'package:olive_client/tablet_update_receiver.dart';
 import 'package:olive_client/tablet_update_sender.dart';
 import 'package:olive_client/tablet_update_store.dart';

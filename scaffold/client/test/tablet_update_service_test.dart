@@ -1,7 +1,6 @@
 // OLIVE BRANCH — the tablet update service: installing without breaking the kiosk, repeating every check at the moment
 // of installing, results in grown-up words, the "what is new" once, resuming after the app restarts, the fallback where
 // the tablet fetches the update itself, and the phone's sharing. Headless.
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
