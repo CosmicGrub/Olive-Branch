@@ -464,6 +464,23 @@ class OliveApi {
   // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
   // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
   static const authRecover = '/v1/auth/recover';
+  // Recovery paths (db/migrations/0055_recovery_paths.sql): losing a phone without losing anything. A printed
+  // recovery sheet and ONE trusted helper (set up while a phone still works, own-PIN step-up), another grown-up's
+  // yes plus a waiting period, and the new phone's own calls (no session: every phone the account had is gone).
+  static const meRecoverySheet = '/v1/me/recovery-sheet';
+  static const meRecoverySheetCheck = '/v1/me/recovery-sheet/check';
+  static const meRecoveryHelper = '/v1/me/recovery-helper';
+  static const meRecoveryHelperRemove = '/v1/me/recovery-helper/remove';
+  static const meRecovery = '/v1/me/recovery';
+  static const meRecoveryStartFor = '/v1/me/recovery/start-for';
+  static const meRecoveryCancel = '/v1/me/recovery/:requestId/cancel';
+  static const authRecoveryStart = '/v1/auth/recovery/start';
+  static const authRecoveryStatus = '/v1/auth/recovery/status';
+  static const authRecoveryCancel = '/v1/auth/recovery/cancel';
+  static const authRecoveryFinish = '/v1/auth/recovery/finish';
+  static const authHelperAccept = '/v1/auth/helper/accept';
+  static const authHelperRequests = '/v1/auth/helper/requests';
+  static const authHelperAnswer = '/v1/auth/helper/answer';
   static const meChildren = '/v1/me/children';
   static const children = '/v1/children';
   static const childGuardianInvites = '/v1/children/:childId/guardian-invites';
@@ -2034,6 +2051,102 @@ Future<Map<String, dynamic>> recoverAccountWithCode(
       },
       client: client,
     );
+
+// ---- recovery paths (migration 0055) -------------------------------------------------------------------------------
+// Free functions in the same shape as the identity ones above. A reply is a map or an [ApiException]; the plain-words
+// layer is recovery_paths_logic.dart, and nothing here is ever shown to a person as it is.
+
+/// Make (or replace) the printed recovery key -- POST [OliveApi.meRecoverySheet], own-PIN step-up. The `key` in the
+/// answer is shown ONCE; the server keeps only a hash of it.
+Future<Map<String, dynamic>> makeRecoverySheetCall(String baseUrl, String sessionToken,
+        {required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoverySheet, {'pin': pin}, sessionToken: sessionToken, client: client);
+
+/// "Type it back from the paper" -- POST [OliveApi.meRecoverySheetCheck].
+Future<Map<String, dynamic>> checkRecoverySheetCall(String baseUrl, String sessionToken,
+        {required String key, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoverySheetCheck, {'key': key}, sessionToken: sessionToken, client: client);
+
+/// Name the ONE trusted helper -- POST [OliveApi.meRecoveryHelper], own-PIN step-up. The `code` in the answer is the
+/// invite to hand them (Olive does not send it).
+Future<Map<String, dynamic>> nameRecoveryHelperCall(String baseUrl, String sessionToken,
+        {required String pin, required String label, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoveryHelper, {'pin': pin, 'label': label},
+        sessionToken: sessionToken, client: client);
+
+/// Take the helper away -- POST [OliveApi.meRecoveryHelperRemove], own-PIN step-up.
+Future<Map<String, dynamic>> removeRecoveryHelperCall(String baseUrl, String sessionToken,
+        {required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoveryHelperRemove, {'pin': pin},
+        sessionToken: sessionToken, client: client);
+
+/// Everything the recovery screens and the notice banner draw from -- GET [OliveApi.meRecovery].
+Future<Map<String, dynamic>> fetchRecoverySummary(String baseUrl, String sessionToken, {http.Client? client}) =>
+    _identityGet(baseUrl, OliveApi.meRecovery, sessionToken, client: client);
+
+/// Start getting ANOTHER grown-up of the family back in on a new phone -- POST [OliveApi.meRecoveryStartFor],
+/// own-PIN step-up (that is the second grown-up's yes). The `code` in the answer goes to the person on the new phone.
+Future<Map<String, dynamic>> startRecoveryForCall(String baseUrl, String sessionToken,
+        {required String targetUserId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoveryStartFor, {'targetUserId': targetUserId, 'pin': pin},
+        sessionToken: sessionToken, client: client);
+
+/// Stop a recovery that is waiting -- POST [OliveApi.meRecoveryCancel], own-PIN step-up. Anyone who may see it may
+/// stop it, at any time.
+Future<Map<String, dynamic>> stopRecoveryCall(String baseUrl, String sessionToken,
+        {required String requestId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.meRecoveryCancel.replaceFirst(':requestId', requestId), {'pin': pin},
+        sessionToken: sessionToken, requireAck: true, client: client);
+
+/// One grown-up, the printed sheet -- POST [OliveApi.authRecoveryStart]. No session.
+Future<Map<String, dynamic>> startRecoveryWithSheetCall(String baseUrl,
+        {required String sheetKey, String deviceLabel = '', http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authRecoveryStart,
+        {'sheetKey': sheetKey, if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel}, client: client);
+
+/// How the new phone's recovery is going -- POST [OliveApi.authRecoveryStatus]. No session.
+Future<Map<String, dynamic>> recoveryStatusCall(String baseUrl, {required String code, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authRecoveryStatus, {'code': code}, client: client);
+
+/// The new phone gives up -- POST [OliveApi.authRecoveryCancel]. No session.
+Future<Map<String, dynamic>> cancelRecoveryFromNewPhoneCall(String baseUrl,
+        {required String code, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authRecoveryCancel, {'code': code}, requireAck: true, client: client);
+
+/// The new phone finishes once the wait is over -- POST [OliveApi.authRecoveryFinish]. No session. Returns
+/// `{token, expiresAt, userId, deviceId, deviceCredential, devicesSignedOut, sheetSpent, children}` for a NEW device
+/// of the SAME account.
+Future<Map<String, dynamic>> finishRecoveryCall(String baseUrl,
+        {required String code, String? pin, String? sheetKey, String? newPin, String deviceLabel = '',
+        http.Client? client}) =>
+    _identityPost(
+        baseUrl,
+        OliveApi.authRecoveryFinish,
+        {
+          'code': code,
+          'pin': ?pin,
+          'sheetKey': ?sheetKey,
+          'newPin': ?newPin,
+          if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
+        },
+        client: client);
+
+/// The person handed a helper invite opens it on their own phone -- POST [OliveApi.authHelperAccept]. No session: it
+/// returns a helper key (not an account) that opens the two helper calls below and nothing else.
+Future<Map<String, dynamic>> acceptRecoveryHelperInviteCall(String baseUrl,
+        {required String code, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authHelperAccept, {'code': code}, client: client);
+
+/// The recoveries that name this helper -- POST [OliveApi.authHelperRequests]. No session.
+Future<Map<String, dynamic>> helperRequestsCall(String baseUrl,
+        {required String helperKey, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authHelperRequests, {'helperKey': helperKey}, client: client);
+
+/// The helper's whole power: yes or no to ONE recovery that names them -- POST [OliveApi.authHelperAnswer].
+Future<Map<String, dynamic>> helperAnswerCall(String baseUrl,
+        {required String helperKey, required String requestId, required bool yes, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authHelperAnswer,
+        {'helperKey': helperKey, 'requestId': requestId, 'answer': yes ? 'yes' : 'no'}, client: client);
 
 /// The children the signed-in grown-up holds a live edge to -- GET
 /// [OliveApi.meChildren]. How a guardian client learns child ids at all.

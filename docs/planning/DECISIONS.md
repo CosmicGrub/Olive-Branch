@@ -9,6 +9,15 @@ Rules every contributor follows. Newest first inside each group. Source: owner i
 - **Server runs in Docker, calls use the owner's self-hosted Jitsi.** Oracle, VPS, Cloudflare tunnel and self-hosted LiveKit hosting plans are scrapped for much later. (2026-11-09 and 2026-11-14)
 - **Keep the early ages (the 3-4 band stays); more things unlock as the child gets older.** A minimum-age-5 rule was proposed and retracted. (2026-11-09)
 
+## Losing a phone and recovering an account (2026-11-21)
+
+- Nothing is ever lost: data, drawings, scores, memories, messages. Recovery brings the new phone into the SAME account; it never makes a second one.
+- No grown-up can remove another alone. Either grown-up may PAUSE another's reach (reversible, visible to all, a notice on every device). Ending a grown-up needs both, or a 14 day wait with notices.
+- Getting an account back needs a second grown-up's yes and a 48 hour wait with a notice on every phone, and anyone can stop it.
+- One grown-up uses a printed recovery sheet and may name ONE trusted helper who can only confirm a recovery and nothing else.
+- Backup is encrypted on the phone before it leaves, so the server cannot read it; a recovery key is held by the family; the child's private areas stay out of the family backup so no grown-up key opens them. Travel mode never goes to the other grown-up. No location anywhere.
+- Every screen for this is plain adult words, one idea at a time, and a child sees none of it.
+
 ## Product rules
 
 - A child sees no counts, scores, streaks, rewards, trophies, location or error text (prohibitions P1-P11, `MASTERFILE.md` §2.1).

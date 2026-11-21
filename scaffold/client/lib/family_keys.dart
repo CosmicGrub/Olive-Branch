@@ -191,6 +191,9 @@ Future<RotationPlan> planKeyRotation(LedgerState state, {Random? random}) async 
   for (final LedgerDevice d in state.devices) {
     final Uint8List? agree = d.agree;
     if (agree == null) continue;
+    // A suspended device (marked as lost) gets no new key: it cannot read anything written after the pause. It is
+    // brought back by pausing being lifted and a fresh rotation, never by a wrap it was already holding.
+    if (state.isPaused(d.key)) continue;
     final DeviceRecord rec = DeviceRecord(key: d.key, agree: agree);
     wraps.add(<String, Object?>{
       'to': d.key,

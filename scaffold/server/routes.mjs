@@ -48,6 +48,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
          pairedDevicesForChild, revokePairedDevice,
          refreshPairedDeviceSession, revokeOwnPairedDevice,
+         markDeviceLost, foundDevice, confirmDeviceLost, familyDevicesFor,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
@@ -57,6 +58,11 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          artifactDeliveredToChild, deliveredArtifactForIntent,
          webauthnCredentialById, updateWebauthnSignCount,
          signUpWithAllowance, precheckSignup, recoverAccount, childrenOf, createChildForGuardian,
+         makeRecoverySheet, checkRecoverySheet, recoverySheetOf, inviteRecoveryHelper,
+         acceptRecoveryHelperInvite, removeRecoveryHelper, recoveryHelperOf, helperOpenRequests,
+         helperAnswer, startRecoveryForGrownUp, startRecoveryWithSheet, recoveryStatusByCode,
+         cancelRecoveryByCode, recoveryNoticesFor, cancelRecoveryAsGrownUp, finishRecovery,
+         RECOVERY_WAIT_SECOND_PARENT_MS, RECOVERY_WAIT_SOLE_PARENT_MS,
          claimGuardianInvite, confirmGuardianInvite, declineGuardianInvite,
          guardianInvitesFor } from '../packages/db/src/pool.mjs';
 import { RULE_CATEGORIES } from '../packages/parent-learn/src/learn.mjs';
@@ -75,7 +81,8 @@ import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
 import { assertImageWithinLimits } from '../packages/homework/src/measure.mjs';
-import { createPairingMissBudget, createRecoveryMissBudget, createUploadLimiter } from './rate_limit.mjs';
+import { createPairingMissBudget, createRecoveryMissBudget, createRecoverySheetMissBudget,
+         createRecoveryHelperMissBudget, createUploadLimiter } from './rate_limit.mjs';
 import { cleanName as cleanIdentityName, cleanTz, cleanBirthDate } from './identity_input.mjs';
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
@@ -891,6 +898,272 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
+  // ===========================================================================
+  // RECOVERY PATHS (migration 0055): losing a phone without losing anything.
+  // See the long comment above makeRecoverySheet() in packages/db/src/pool.ts
+  // for the whole design. In short: the printed sheet and the trusted helper are
+  // set up while the grown-up still has a phone (own-PIN step-up); getting back
+  // in on a new phone needs no session at all and runs under /v1/auth/ (so the
+  // per-IP throttle and the small unauthenticated body cap apply); a child
+  // session never reaches any of it.
+  // ===========================================================================
+  const recoverySheetMissBudget = opts.recoverySheetMissBudget ?? createRecoverySheetMissBudget();
+  const recoveryHelperMissBudget = opts.recoveryHelperMissBudget ?? createRecoveryHelperMissBudget();
+  const isAdultSession = (c) => c.principal.roleName !== 'child' && !!c.principal.userId;
+  const missBlocked = (budget) => {
+    const b = budget.check();
+    return b.blocked ? { status: 429, body: { error: 'recovery_rate_limited', retryAfterSec: b.retryAfterSec } } : null;
+  };
+  const START_STATUS = { not_family: 403, invalid_sheet: 403, ask_other_grownup: 403,
+    too_many_open: 429, too_many_recent: 429 };
+
+  // POST /v1/me/recovery-sheet — make (or replace) the printed recovery key. Own-PIN step-up. The key is in the
+  // answer ONCE and nowhere else; only its hash is stored.
+  api.register({
+    method: 'POST', path: '/v1/me/recovery-sheet', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await makeRecoverySheet(pool, { userId: c.principal.userId, now: new Date() });
+      if (!r.ok) return { status: 404, body: { error: r.reason } };
+      return { status: 201, body: { key: r.key, replacedOlder: r.replacedOlder, stoppedRecoveries: r.cancelledOpen } };
+    },
+  });
+
+  // POST /v1/me/recovery-sheet/check — "type it back from the paper".
+  api.register({
+    method: 'POST', path: '/v1/me/recovery-sheet/check', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      if (typeof c.body?.key !== 'string') return { status: 400, body: { error: 'recovery_key_required' } };
+      const r = await checkRecoverySheet(pool, { userId: c.principal.userId, key: c.body.key, now: new Date() });
+      if (!r.ok) return { status: r.reason === 'no_sheet' ? 404 : 403, body: { error: r.reason } };
+      return { status: 200, body: { ok: true, confirmedAt: r.confirmedAt } };
+    },
+  });
+
+  // POST /v1/me/recovery-helper — name the ONE trusted helper (a first name). Own-PIN step-up. The invite code is
+  // in the answer once; hand it to them yourself, Olive does not send it.
+  api.register({
+    method: 'POST', path: '/v1/me/recovery-helper', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await inviteRecoveryHelper(pool, {
+        userId: c.principal.userId, label: typeof c.body?.label === 'string' ? c.body.label : '', now: new Date() });
+      if (!r.ok) return { status: r.reason === 'invalid_label' ? 400 : 404, body: { error: r.reason } };
+      return { status: 201, body: { code: r.code, expiresAt: r.expiresAt, replacedOlder: r.replacedOlder } };
+    },
+  });
+
+  api.register({
+    method: 'POST', path: '/v1/me/recovery-helper/remove', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      return { status: 200, body: { ok: true, removed: await removeRecoveryHelper(pool, {
+        userId: c.principal.userId, now: new Date() }) } };
+    },
+  });
+
+  // GET /v1/me/recovery — everything the recovery screens and the notice banner draw from, for EVERY phone the
+  // grown-up has: the sheet, the helper, the recoveries that wait (their own account's and the other grown-ups'),
+  // the ones that ended lately, and the grown-ups they could help.
+  api.register({
+    method: 'GET', path: '/v1/me/recovery', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const now = new Date();
+      const [sheet, helper, notices] = await Promise.all([
+        recoverySheetOf(pool, c.principal.userId),
+        recoveryHelperOf(pool, c.principal.userId, now),
+        recoveryNoticesFor(pool, { userId: c.principal.userId, now })]);
+      return { status: 200, body: { sheet, helper, ...notices,
+        waits: { secondParentHours: RECOVERY_WAIT_SECOND_PARENT_MS / 3_600_000,
+                 soleParentHours: RECOVERY_WAIT_SOLE_PARENT_MS / 3_600_000 } } };
+    },
+  });
+
+  // POST /v1/me/recovery/start-for — a grown-up of the family starts getting ANOTHER grown-up back in on a new
+  // phone. Own-PIN step-up: that is the second grown-up's yes.
+  api.register({
+    method: 'POST', path: '/v1/me/recovery/start-for', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const target = c.body?.targetUserId;
+      if (typeof target !== 'string' || !/^[0-9a-f-]{36}$/i.test(target)) {
+        return { status: 400, body: { error: 'target_required' } };
+      }
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await startRecoveryForGrownUp(pool, {
+        helperUserId: c.principal.userId, targetUserId: target, now: new Date() });
+      if (!r.ok) return { status: START_STATUS[r.reason] ?? 403, body: { error: r.reason } };
+      return { status: 201, body: { requestId: r.requestId, code: r.code, readyAt: r.readyAt,
+        expiresAt: r.expiresAt, targetName: r.targetName } };
+    },
+  });
+
+  // POST /v1/me/recovery/:requestId/cancel — anyone can stop it, at any time: the account's own phones or another
+  // grown-up of the family. Own-PIN step-up (a phone left unlocked must not be enough to stop the real owner's way back).
+  api.register({
+    method: 'POST', path: '/v1/me/recovery/:requestId/cancel', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (!isAdultSession(c)) return { status: 403, body: { error: 'guardian_session_required' } };
+      const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+      if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+      const r = await cancelRecoveryAsGrownUp(pool, {
+        userId: c.principal.userId, requestId: c.params.requestId, now: new Date() });
+      if (!r.ok) return { status: 404, body: { error: 'not_found' } };
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // POST /v1/auth/recovery/start — NO SESSION: one grown-up, the printed sheet.
+  api.register({
+    method: 'POST', path: '/v1/auth/recovery/start', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      if (typeof b.sheetKey !== 'string' || b.sheetKey.length < 16 || b.sheetKey.length > 64) {
+        return { status: 400, body: { error: 'recovery_key_required' } };
+      }
+      const blocked = missBlocked(recoverySheetMissBudget);
+      if (blocked) return blocked;
+      const r = await startRecoveryWithSheet(pool, {
+        key: b.sheetKey, deviceLabel: typeof b.deviceLabel === 'string' ? b.deviceLabel : '', now: new Date() });
+      if (!r.ok) {
+        if (r.reason === 'invalid_sheet') recoverySheetMissBudget.hit();
+        return { status: START_STATUS[r.reason] ?? 403, body: { error: r.reason } };
+      }
+      return { status: 201, body: { code: r.code, readyAt: r.readyAt, expiresAt: r.expiresAt,
+        helperRequired: r.helperRequired, accountName: r.accountName } };
+    },
+  });
+
+  // POST /v1/auth/recovery/status — NO SESSION: the new phone asks how its recovery is going.
+  api.register({
+    method: 'POST', path: '/v1/auth/recovery/status', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'recovery_code_required' } };
+      const blocked = missBlocked(recoveryMissBudget);
+      if (blocked) return blocked;
+      const r = await recoveryStatusByCode(pool, { code: c.body.code, now: new Date() });
+      if (!r.ok) { recoveryMissBudget.hit(); return { status: 404, body: { error: r.reason } }; }
+      return { status: 200, body: r.status };
+    },
+  });
+
+  // POST /v1/auth/recovery/cancel — NO SESSION: the new phone gives up.
+  api.register({
+    method: 'POST', path: '/v1/auth/recovery/cancel', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'recovery_code_required' } };
+      const blocked = missBlocked(recoveryMissBudget);
+      if (blocked) return blocked;
+      const ok = await cancelRecoveryByCode(pool, { code: c.body.code, now: new Date() });
+      if (!ok) { recoveryMissBudget.hit(); return { status: 404, body: { error: 'invalid_recovery' } }; }
+      return { status: 200, body: { ok: true } };
+    },
+  });
+
+  // POST /v1/auth/recovery/finish — NO SESSION: the new phone finishes, once the waiting period is over.
+  api.register({
+    method: 'POST', path: '/v1/auth/recovery/finish', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      if (typeof b.code !== 'string') return { status: 400, body: { error: 'recovery_code_required' } };
+      if (b.pin != null && (typeof b.pin !== 'string' || !/^[0-9]{4,8}$/.test(b.pin))) {
+        return { status: 400, body: { error: 'pin_required' } };
+      }
+      if (b.newPin != null && (typeof b.newPin !== 'string' || !/^[0-9]{4,8}$/.test(b.newPin))) {
+        return { status: 400, body: { error: 'invalid_pin_format' } };
+      }
+      const blocked = missBlocked(recoveryMissBudget);
+      if (blocked) return blocked;
+      const deviceLabel = typeof b.deviceLabel === 'string' ? b.deviceLabel.trim().slice(0, 60) : '';
+      const now = new Date();
+      // scrypt blocks the one event loop: only hash the new PIN once the request is actually ready to finish.
+      let newPinHash = null;
+      if (typeof b.newPin === 'string') {
+        const st = await recoveryStatusByCode(pool, { code: b.code, now });
+        if (st.ok && st.status.phase === 'ready') newPinHash = hashPin(b.newPin);
+      }
+      const r = await finishRecovery(pool, {
+        code: b.code, pin: b.pin ?? null, sheetKey: typeof b.sheetKey === 'string' ? b.sheetKey : null,
+        newPinHash, deviceLabel, now });
+      if (!r.ok) {
+        if (r.reason === 'invalid_recovery') recoveryMissBudget.hit();
+        const status = r.reason === 'too_many_wrong' ? 423
+          : (r.reason === 'too_early' || r.reason === 'waiting_for_helper') ? 409
+          : r.reason === 'proof_required' ? 400 : 403;
+        return { status, body: { error: r.reason, ...(r.readyAt ? { readyAt: r.readyAt } : {}) } };
+      }
+      const sessionToken = api.issueSessionToken({
+        userId: r.userId, roleName: 'guardian', childId: null, escalated: false, deviceId: r.deviceId });
+      const kids = await childrenOf(pool, r.userId);
+      return { status: 201, body: {
+        token: sessionToken, expiresAt: api.sessionExpiresAt(), userId: r.userId,
+        deviceId: r.deviceId, deviceCredential: r.deviceCredential,
+        devicesSignedOut: r.devicesSignedOut, sheetSpent: r.sheetSpent, children: kids.length } };
+    },
+  });
+
+  // POST /v1/auth/helper/accept — NO SESSION: the person handed an invite opens it on their own phone. They get a
+  // helper key, not an account: it opens the two helper routes below and nothing else.
+  api.register({
+    method: 'POST', path: '/v1/auth/helper/accept', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      if (typeof c.body?.code !== 'string') return { status: 400, body: { error: 'invite_code_required' } };
+      const blocked = missBlocked(recoveryHelperMissBudget);
+      if (blocked) return blocked;
+      const r = await acceptRecoveryHelperInvite(pool, { code: c.body.code, now: new Date() });
+      if (!r.ok) { recoveryHelperMissBudget.hit(); return { status: 403, body: { error: r.reason } }; }
+      return { status: 201, body: { helperKey: r.helperKey, accountName: r.accountName, label: r.label } };
+    },
+  });
+
+  // POST /v1/auth/helper/requests — NO SESSION: the recoveries that name this helper (first name and times only).
+  api.register({
+    method: 'POST', path: '/v1/auth/helper/requests', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      if (typeof c.body?.helperKey !== 'string') return { status: 400, body: { error: 'helper_key_required' } };
+      const blocked = missBlocked(recoveryHelperMissBudget);
+      if (blocked) return blocked;
+      const list = await helperOpenRequests(pool, { helperKey: c.body.helperKey, now: new Date() });
+      if (!list) { recoveryHelperMissBudget.hit(); return { status: 403, body: { error: 'invalid_helper' } }; }
+      return { status: 200, body: { requests: list } };
+    },
+  });
+
+  // POST /v1/auth/helper/answer — NO SESSION: yes or no to ONE recovery that names this helper. The whole of the
+  // helper's power.
+  api.register({
+    method: 'POST', path: '/v1/auth/helper/answer', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const b = c.body ?? {};
+      if (typeof b.helperKey !== 'string') return { status: 400, body: { error: 'helper_key_required' } };
+      if (b.answer !== 'yes' && b.answer !== 'no') return { status: 400, body: { error: 'answer_required' } };
+      const blocked = missBlocked(recoveryHelperMissBudget);
+      if (blocked) return blocked;
+      const r = await helperAnswer(pool, { helperKey: b.helperKey, requestId: b.requestId, answer: b.answer, now: new Date() });
+      if (!r.ok) {
+        recoveryHelperMissBudget.hit();
+        return { status: r.reason === 'invalid_helper' ? 403 : 404, body: { error: r.reason } };
+      }
+      return { status: 200, body: { ok: true, result: r.result } };
+    },
+  });
+
   // GET /v1/me/children — how a guardian client learns its children's ids.
   api.register({
     method: 'GET', path: '/v1/me/children', action: null,
@@ -1214,9 +1487,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: 400, body: { error: 'device_credential_required' } };
       }
       const result = await refreshPairedDeviceSession(
-        pool, deviceId, deviceCredential, new Date());
+        pool, deviceId, deviceCredential, new Date(),
+        { pin: typeof c.body?.pin === 'string' ? c.body.pin : undefined });
       if (!result.ok) {
-        const status = result.reason === 'account_deactivated' ? 403 : 401;
+        // 0056: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
+        // phone back from a pause must show its owner's PIN once (pin_required / pin_incorrect / pin_locked).
+        const status = result.reason === 'account_deactivated' ? 403
+          : (result.reason === 'pin_required' || result.reason === 'pin_incorrect' || result.reason === 'pin_locked') ? 403
+          : 401;
         return { status, body: { error: result.reason } };
       }
       const sessionToken = api.issueSessionToken({
@@ -1303,6 +1581,99 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         pool, c.childId, c.params.deviceId, c.principal.userId, now);
       if (!result.ok) return { status: 404, body: { error: result.reason } };
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+
+  // ===========================================================================
+  // LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql. A grown-up
+  // marks a phone or tablet as lost from ANOTHER device (their own other
+  // phone, another grown-up's phone of the same family, a child's tablet of
+  // the same family), behind their own PIN. The device is paused at once and
+  // refused on its next request; every grown-up gets a notice (the security
+  // feed); nothing is deleted; it can come back for 72 hours ("I have it"),
+  // after which the cut-off is final. See the pool functions for the rules.
+  // ===========================================================================
+  const lostFailure = (r) => ({
+    status: r.reason === 'not_found' ? 404
+      : r.reason === 'rate_limited' ? 429
+      : r.reason === 'owner_only' ? 403
+      : 409,
+    body: { error: r.reason },
+  });
+  const lostView = (r) => ({
+    deviceId: r.deviceId, state: r.state, incidentId: r.incidentId, already: r.already,
+    revokeDueAt: r.revokeDueAt ? new Date(r.revokeDueAt).toISOString() : null,
+  });
+  const lostGate = async (c) => {
+    if (c.principal.roleName === 'child' || !c.principal.userId) {
+      return { status: 403, body: { error: 'guardian_session_required' } };
+    }
+    const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+    if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+    return null;
+  };
+  const incidentOf = (c) => (typeof c.body?.incidentId === 'string' ? c.body.incidentId : '');
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // GET /v1/me/devices -- the phones and tablets this grown-up may see and act on, with what each may be asked.
+  api.register({
+    method: 'GET', path: '/v1/me/devices', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const devices = await familyDevicesFor(pool, c.principal.userId, c.principal.deviceId ?? null, new Date());
+      return { status: 200, body: { devices } };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/mark-lost  {pin}
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/mark-lost', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await markDeviceLost(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: r.already ? 200 : 201, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/found  {pin, incidentId}  -- "I have it"
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/found', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await foundDevice(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/confirm-lost  {pin, incidentId}  -- "It is lost"
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/confirm-lost', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await confirmDeviceLost(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: lostView(r) };
     },
   });
 

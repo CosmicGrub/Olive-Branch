@@ -93,8 +93,9 @@ ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
 /// Holds the loaded local family (so a changed age shows everywhere at once) and the
 /// optional "connect this device" action.
 class GuardianLocalController extends ChangeNotifier {
-  // ignore: prefer_initializing_formals
-  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount}) : _family = family;
+  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount, this.onLostPhone})
+      // ignore: prefer_initializing_formals
+      : _family = family;
 
   final GuardianLocalServices services;
 
@@ -105,6 +106,10 @@ class GuardianLocalController extends ChangeNotifier {
   /// Opens the optional family account page (make an account, sign in, add a child, invite another grown-up). Null
   /// when the build has no server to reach. A phone with no account is the normal phone: nothing waits on this.
   final void Function(BuildContext context)? onAccount;
+
+  /// Opens "Lost your phone?" (recovery_paths_screens.dart): the way back into the account and the family on a new phone,
+  /// reached from the PIN prompt's "Forgot your PIN?". Null when the build has no server to reach.
+  final void Function(BuildContext context)? onLostPhone;
 
   LocalFamily? _family;
   LocalFamily? get family => _family;

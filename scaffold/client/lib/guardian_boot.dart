@@ -39,6 +39,7 @@ import 'auth_session.dart';
 import 'device_identity.dart';
 import 'device_role.dart';
 import 'family_account_entry.dart';
+import 'recovery_paths_entry.dart' show openLostPhone;
 import 'family_account_store.dart';
 import 'guardian_home_live.dart';
 import 'app_lock.dart';
@@ -234,7 +235,8 @@ Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) asyn
   final bool pinSet = await _safe(local.pin.isSet, false);
   if (family != null && pinSet) {
     final GuardianLocalController controller =
-        GuardianLocalController(local, family: family, onConnect: _openConnect, onAccount: _openAccount);
+        GuardianLocalController(local, family: family, onConnect: _openConnect, onAccount: _openAccount,
+            onLostPhone: _openLostPhone);
     runApp(OliveLocalGuardian(initialTheme: defaultAppTheme, controller: controller));
     return;
   }
@@ -258,6 +260,10 @@ void _openConnect(BuildContext context) {
 /// grown-up). Everything on this phone keeps working whatever happens there.
 void _openAccount(BuildContext context) => openFamilyAccount(context,
     baseUrl: kLiveBaseUrl, onCodeRedeemed: completeGuardianRedeem);
+
+/// "Forgot your PIN?", then "I lost my phone": the lost-phone paths (recovery_paths_screens.dart). Optional and
+/// server-backed like the account page; nothing is sent until a grown-up asks.
+void _openLostPhone(BuildContext context) => openLostPhone(context, baseUrl: kLiveBaseUrl);
 
 /// The child the connected shell looks at. A development build names one; otherwise it is the child added to this
 /// phone's account; otherwise the seeded default (which is the case for a phone paired with a code, whose child is
