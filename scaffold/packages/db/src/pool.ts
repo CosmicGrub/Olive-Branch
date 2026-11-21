@@ -862,7 +862,8 @@ export type SecurityEventKind =
   | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added'
   | 'account_recovered'
   | 'recovery_sheet_made' | 'recovery_helper_named' | 'recovery_helper_removed'
-  | 'recovery_started' | 'recovery_approved' | 'recovery_stopped';
+  | 'recovery_started' | 'recovery_approved' | 'recovery_stopped'
+  | 'device_lost' | 'device_found' | 'device_lost_final';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -895,6 +896,9 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   'recovery_stopped:helper': 'The trusted helper said no, so getting an account back on a new phone was stopped',
   'recovery_stopped:grownup': 'A grown-up stopped getting an account back on a new phone; nothing changed',
   'recovery_stopped:wrong_guesses': 'Getting an account back on a new phone was stopped after too many wrong tries',
+  device_lost: 'A phone or tablet was marked as lost and cut off from new updates',
+  device_found: 'A phone or tablet marked as lost was found and is back in use',
+  device_lost_final: 'A phone or tablet marked as lost was removed from the family',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -4668,13 +4672,37 @@ export interface PairedDevice {
   pairedAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
+  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0056. */
+  state: DeviceStanding;
+  pausedAt: string | null;
+  /** When a paused device becomes revoked by itself (the notice ends). Null unless paused. */
+  revokeDueAt: string | null;
+  /** Names the open "marked as lost" report; an answer to it must quote it. Null unless paused. */
+  incidentId: string | null;
 }
 
-function rowToPairedDevice(r: any): PairedDevice {
+function rowToPairedDevice(r: any, now: Date = new Date()): PairedDevice {
   return {
     id: r.id, role: r.role, targetId: r.target_id, label: r.label,
     pairedAt: r.paired_at, revokedAt: r.revoked_at, lastSeenAt: r.last_seen_at,
+    state: standingOfRow(r, now),
+    pausedAt: r.paused_at ?? null,
+    revokeDueAt: r.lost_revoke_due_at ?? null,
+    incidentId: r.lost_incident ?? null,
   };
+}
+
+export type DeviceStanding = 'active' | 'paused' | 'revoked';
+
+/** The standing a paired_device row has at [now]: a paused device whose notice has run out counts as revoked even
+ *  before the row is rewritten (the rewrite is lazy, see settleDueLostDevice). */
+export function standingOfRow(r: any, now: Date): DeviceStanding {
+  if (r.revoked_at) return 'revoked';
+  if (r.paused_at) {
+    const due = r.lost_revoke_due_at ? new Date(r.lost_revoke_due_at).getTime() : Infinity;
+    return due <= now.getTime() ? 'revoked' : 'paused';
+  }
+  return 'active';
 }
 
 /**
@@ -4949,7 +4977,8 @@ export async function revokePairedDevice(
 }
 
 export type RefreshDeviceSessionError =
-  | 'invalid_device_credential' | 'device_revoked' | 'account_deactivated';
+  | 'invalid_device_credential' | 'device_revoked' | 'account_deactivated'
+  | 'device_paused' | 'pin_required' | 'pin_incorrect' | 'pin_locked';
 
 /**
  * POST /v1/auth/session/refresh's real work — the device trades its long-lived
@@ -4980,15 +5009,20 @@ export type RefreshDeviceSessionError =
  */
 export async function refreshPairedDeviceSession(
   pool: pg.Pool, deviceId: string, deviceCredential: string, now: Date,
+  opts: { pin?: string } = {},
 ): Promise<
   | { ok: true; deviceId: string; role: PairableRole; targetId: string }
   | { ok: false; reason: RefreshDeviceSessionError }
 > {
-  return withSystemSession(pool, async (q) => {
+  type First =
+    | { ok: true; deviceId: string; role: PairableRole; targetId: string }
+    | { ok: false; reason: RefreshDeviceSessionError; reproof?: { id: string; userId: string } };
+  const first = await withSystemSession<First>(pool, async (q) => {
     // `id::text = $1`, never casting the input to uuid: a garbage id must be a
     // clean not-found, not a Postgres cast error that surfaces as a 500.
     const rows = await q(
-      `SELECT id, role, target_id, revoked_at, credential_hash
+      `SELECT id, role, target_id, revoked_at, credential_hash,
+              paused_at, lost_revoke_due_at, reproof_required
          FROM paired_device WHERE id::text = $1`,
       [deviceId],
     );
@@ -4999,14 +5033,41 @@ export async function refreshPairedDeviceSession(
     const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
       presented.length === stored.length && timingSafeEqual(presented, stored);
     if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
-    if (row.revoked_at) return { ok: false, reason: 'device_revoked' };
+    // Migration 0056: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
+    // they are on every other request, and only after the credential is proved (nobody learns a device's standing
+    // without holding its credential).
+    await settleDueLostDevice(q, row.id, now);
+    const st = standingOfRow(
+      (await q(`SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = $1`, [row.id]))[0], now);
+    if (st === 'revoked') return { ok: false, reason: 'device_revoked' };
+    if (st === 'paused') return { ok: false, reason: 'device_paused' };
     if (row.role === 'guardian') {
       const u = await q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [row.target_id]);
       if (!u.length || u[0].deactivated_at) return { ok: false, reason: 'account_deactivated' };
     }
+    if (row.reproof_required === true) {
+      // Back from a pause: its owner shows their own PIN once before this phone gets a session again (screen L5).
+      return { ok: false, reason: 'pin_required', reproof: { id: row.id, userId: row.target_id } };
+    }
     await q(`UPDATE paired_device SET last_seen_at = $2 WHERE id = $1`,
       [row.id, now.toISOString()]);
     return { ok: true, deviceId: row.id, role: row.role, targetId: row.target_id };
+  });
+  if (first.ok) return first;
+  if (!first.reproof) return { ok: false, reason: first.reason };
+  const { id, userId } = first.reproof;
+  if (typeof opts.pin !== 'string' || !/^[0-9]{4,8}$/.test(opts.pin)) return { ok: false, reason: 'pin_required' };
+  const pin = await attemptPinFor(pool, userId, opts.pin);
+  if (pin.locked) return { ok: false, reason: 'pin_locked' };
+  if (!pin.hasCredential || !pin.matched) return { ok: false, reason: 'pin_incorrect' };
+  return withSystemSession(pool, async (q) => {
+    // Clear the flag only if the device is still in the state we checked (a pause that began meanwhile keeps it).
+    const u = await q(
+      `UPDATE paired_device SET reproof_required = false, last_seen_at = $2
+        WHERE id = $1 AND revoked_at IS NULL AND paused_at IS NULL RETURNING id, role, target_id`,
+      [id, now.toISOString()]);
+    if (!u.length) return { ok: false, reason: 'device_paused' };
+    return { ok: true, deviceId: u[0].id, role: u[0].role, targetId: u[0].target_id };
   });
 }
 
@@ -5049,9 +5110,291 @@ export async function revokeOwnPairedDevice(
  */
 export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Promise<boolean> {
   return withSystemSession(pool, async (q) => {
-    const rows = await q(`SELECT revoked_at FROM paired_device WHERE id = $1`, [deviceId]);
+    const rows = await q(`SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = $1`, [deviceId]);
     if (!rows.length) return true;
-    return rows[0].revoked_at !== null;
+    return standingOfRow(rows[0], new Date()) === 'revoked';
+  });
+}
+
+// ===========================================================================
+// LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql.
+//
+// "Mark as lost" pauses a device at once (its session and its refresh are
+// refused, so it receives nothing new), tells every grown-up, and starts a 72
+// hour notice. Nothing is deleted anywhere. While the notice runs the device
+// can come back ("I have it"); when it ends, or when the owner says "It is
+// lost", the device is revoked for good (the existing permanent cut-off).
+//
+// Every function here runs as `system` and does its OWN authorization in SQL,
+// inside the one transaction that holds the device row's lock (FOR UPDATE), so
+// two people acting at the same instant are serialised: the first to take the
+// lock wins and the second sees the new state. The routes are the first lock
+// (a signed-in grown-up, their own PIN); this is the second.
+// ===========================================================================
+
+/** The notice a marked device gets before it is cut off for good (identity design 4.4, owner decision SD-3). */
+export const LOST_NOTICE_MS = 72 * 60 * 60 * 1000;
+/** One device may be marked this many times in a day; more is a loop, not a loss. */
+export const LOST_MARK_LIMIT_PER_DAY = 3;
+
+export type LostFailure =
+  | 'not_found' | 'already_revoked' | 'this_device' | 'rate_limited'
+  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only';
+
+export type LostResult =
+  | { ok: true; deviceId: string; state: DeviceStanding; incidentId: string | null;
+      revokeDueAt: string | null; ownerUserId: string | null; already: boolean }
+  | { ok: false; reason: LostFailure };
+
+/** Rewrites a paused device whose notice has run out into a revoked one, once, and records it. */
+async function settleDueLostDevice(q: Query, deviceId: string, now: Date): Promise<boolean> {
+  const rows = await q(
+    `UPDATE paired_device SET revoked_at = lost_revoke_due_at
+      WHERE id = $1 AND revoked_at IS NULL AND paused_at IS NOT NULL AND lost_revoke_due_at <= $2
+      RETURNING id, lost_incident, lost_marked_by, role`,
+    [deviceId, now.toISOString()]);
+  if (!rows.length) return false;
+  const r = rows[0];
+  await q(
+    `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+     VALUES ($1, $2, 'cut_off', NULL, $3)`, [deviceId, r.lost_incident, now.toISOString()]);
+  if (r.lost_marked_by) await insertSecurityEvent(q, r.lost_marked_by, 'device_lost_final');
+  return true;
+}
+
+/**
+ * The standing packages/api/src/api.ts needs on EVERY request that carries a deviceId claim. Fails CLOSED: a device
+ * that resolves to no row at all is 'revoked'. A paused device whose notice has run out is rewritten here, once.
+ */
+export async function pairedDeviceStanding(
+  pool: pg.Pool, deviceId: string, now: Date = new Date(),
+): Promise<DeviceStanding> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = $1`, [deviceId]);
+    if (!rows.length) return 'revoked';
+    const st = standingOfRow(rows[0], now);
+    if (st === 'revoked' && !rows[0].revoked_at) await settleDueLostDevice(q, deviceId, now);
+    return st;
+  });
+}
+
+/**
+ * How the caller relates to a device row, or null when they have no business with it (the caller then answers
+ * 'not_found', the same as for an id that does not exist). The owner of a grown-up's device is its account; any
+ * live, unrestricted grown-up of a family that shares a child with that account is a "family" grown-up; a child's
+ * tablet belongs to every live grown-up of that child.
+ */
+async function lostRelation(q: Query, d: any, userId: string): Promise<{ owner: boolean } | null> {
+  if (d.role === 'guardian') {
+    if (d.target_id === userId) return { owner: true };
+    const rows = await q(
+      `SELECT 1 FROM effective_guardianship a
+         JOIN effective_guardianship b ON b.child_id = a.child_id
+        WHERE a.user_id = $1 AND a.role = 'guardian' AND a.restricted = false
+          AND b.user_id = $2 AND b.role = 'guardian' AND b.restricted = false
+        LIMIT 1`, [userId, d.target_id]);
+    return rows.length ? { owner: false } : null;
+  }
+  const rows = await q(
+    `SELECT 1 FROM effective_guardianship a
+      WHERE a.user_id = $1 AND a.role = 'guardian' AND a.restricted = false AND a.child_id = $2 LIMIT 1`,
+    [userId, d.target_id]);
+  return rows.length ? { owner: false } : null;
+}
+
+const lostOk = (d: any, state: DeviceStanding, already: boolean, extra: Partial<{ incidentId: string | null; revokeDueAt: string | null }> = {}): LostResult => ({
+  ok: true, deviceId: d.id, state, already,
+  incidentId: extra.incidentId ?? null, revokeDueAt: extra.revokeDueAt ?? null,
+  ownerUserId: d.role === 'guardian' ? d.target_id : null,
+});
+
+/** "Mark as lost": pauses the device and starts the notice. Idempotent: an already-marked device keeps its first
+ *  incident and its first deadline (marking again never restarts the 72 hours). */
+export async function markDeviceLost(
+  pool: pg.Pool,
+  p: { deviceId: string; userId: string; fromDeviceId: string | null; now: Date },
+): Promise<LostResult> {
+  return withSystemSession<LostResult>(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [p.deviceId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const d = rows[0];
+    const rel = await lostRelation(q, d, p.userId);
+    if (!rel) return { ok: false, reason: 'not_found' };
+    if (p.fromDeviceId && p.fromDeviceId === d.id) return { ok: false, reason: 'this_device' };
+    await settleDueLostDevice(q, d.id, p.now);
+    const fresh = (await q(`SELECT * FROM paired_device WHERE id = $1`, [d.id]))[0];
+    const st = standingOfRow(fresh, p.now);
+    if (st === 'revoked') return { ok: false, reason: 'already_revoked' };
+    if (st === 'paused') {
+      return lostOk(fresh, 'paused', true, { incidentId: fresh.lost_incident, revokeDueAt: fresh.lost_revoke_due_at });
+    }
+    const recent = await q(
+      `SELECT count(*)::int AS n FROM device_lost_event
+        WHERE device_id = $1 AND kind = 'marked' AND created_at > $2::timestamptz - interval '24 hours'`,
+      [d.id, p.now.toISOString()]);
+    if (recent[0].n >= LOST_MARK_LIMIT_PER_DAY) return { ok: false, reason: 'rate_limited' };
+    const incident = randomUUID();
+    const due = new Date(p.now.getTime() + LOST_NOTICE_MS).toISOString();
+    await q(
+      `UPDATE paired_device
+          SET paused_at = $2, lost_incident = $3, lost_marked_by = $4, lost_revoke_due_at = $5,
+              lost_marked_from = $6
+        WHERE id = $1`, [d.id, p.now.toISOString(), incident, p.userId, due, p.fromDeviceId]);
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'marked', $3, $4)`, [d.id, incident, p.userId, p.now.toISOString()]);
+    await insertSecurityEvent(q, p.userId, 'device_lost');
+    return lostOk(d, 'paused', false, { incidentId: incident, revokeDueAt: due });
+  });
+}
+
+/** "I have it": the device comes back. Must quote the incident it answers; must arrive before the notice ends. A
+ *  device its OWNER marked can only be resumed by its owner. A grown-up's phone must then show its owner's PIN once
+ *  (reproof_required) before it gets a session again. */
+export async function foundDevice(
+  pool: pg.Pool,
+  p: { deviceId: string; userId: string; fromDeviceId: string | null; incidentId: string; now: Date },
+): Promise<LostResult> {
+  return withSystemSession<LostResult>(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [p.deviceId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const d = rows[0];
+    const rel = await lostRelation(q, d, p.userId);
+    if (!rel) return { ok: false, reason: 'not_found' };
+    if (p.fromDeviceId && p.fromDeviceId === d.id) return { ok: false, reason: 'this_device' };
+    await settleDueLostDevice(q, d.id, p.now);
+    const fresh = (await q(`SELECT * FROM paired_device WHERE id = $1`, [d.id]))[0];
+    const st = standingOfRow(fresh, p.now);
+    if (st === 'revoked') {
+      // The notice ran out (or it was confirmed): the cut-off is final. A found phone comes back by being added again.
+      return { ok: false, reason: 'too_late' };
+    }
+    if (st !== 'paused') return { ok: false, reason: 'not_paused' };
+    if (fresh.lost_incident !== p.incidentId) return { ok: false, reason: 'stale_incident' };
+    if (fresh.lost_marked_by === fresh.target_id && fresh.role === 'guardian' && !rel.owner) {
+      // The owner reported it themselves: another grown-up may not undo that report, unless the phone it was
+      // reported from is no longer active (a thief's phone, since paused).
+      const from = fresh.lost_marked_from
+        ? (await q(`SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = $1`, [fresh.lost_marked_from]))[0]
+        : null;
+      if (!from || standingOfRow(from, p.now) === 'active') return { ok: false, reason: 'owner_only' };
+    }
+    const u = await q(
+      `UPDATE paired_device
+          SET paused_at = NULL, lost_incident = NULL, lost_marked_by = NULL, lost_revoke_due_at = NULL,
+              lost_marked_from = NULL,
+              reproof_required = (role = 'guardian')
+        WHERE id = $1 AND revoked_at IS NULL AND paused_at IS NOT NULL AND lost_incident = $2
+          AND lost_revoke_due_at > $3 RETURNING id`,
+      [d.id, p.incidentId, p.now.toISOString()]);
+    if (!u.length) return { ok: false, reason: 'too_late' };
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'found', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
+    await insertSecurityEvent(q, p.userId, 'device_found');
+    return lostOk(d, 'active', false);
+  });
+}
+
+/** "It is lost": ends the notice early and cuts the device off for good. A grown-up's phone only by its owner (the
+ *  other grown-up waits the 72 hours); a child's tablet by any of its grown-ups. */
+export async function confirmDeviceLost(
+  pool: pg.Pool,
+  p: { deviceId: string; userId: string; fromDeviceId: string | null; incidentId: string; now: Date },
+): Promise<LostResult> {
+  return withSystemSession<LostResult>(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [p.deviceId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const d = rows[0];
+    const rel = await lostRelation(q, d, p.userId);
+    if (!rel) return { ok: false, reason: 'not_found' };
+    if (p.fromDeviceId && p.fromDeviceId === d.id) return { ok: false, reason: 'this_device' };
+    await settleDueLostDevice(q, d.id, p.now);
+    const fresh = (await q(`SELECT * FROM paired_device WHERE id = $1`, [d.id]))[0];
+    const st = standingOfRow(fresh, p.now);
+    if (st === 'revoked') return { ok: false, reason: 'already_revoked' };
+    if (st !== 'paused') return { ok: false, reason: 'not_paused' };
+    if (fresh.lost_incident !== p.incidentId) return { ok: false, reason: 'stale_incident' };
+    if (fresh.role === 'guardian' && !rel.owner) return { ok: false, reason: 'owner_only' };
+    const u = await q(
+      `UPDATE paired_device SET revoked_at = $2
+        WHERE id = $1 AND revoked_at IS NULL AND paused_at IS NOT NULL AND lost_incident = $3 RETURNING id`,
+      [d.id, p.now.toISOString(), p.incidentId]);
+    if (!u.length) return { ok: false, reason: 'already_revoked' };
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'confirmed', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
+    await insertSecurityEvent(q, p.userId, 'device_lost_final');
+    return lostOk(d, 'revoked', false, { incidentId: p.incidentId });
+  });
+}
+
+export interface FamilyDevice {
+  id: string;
+  role: PairableRole;
+  label: string;
+  /** The grown-up's first name for a grown-up's phone; null for a child's tablet. */
+  ownerName: string | null;
+  isThisDevice: boolean;
+  isOwn: boolean;
+  state: DeviceStanding;
+  pausedAt: string | null;
+  revokeDueAt: string | null;
+  incidentId: string | null;
+  /** Who marked it, by first name (a grown-up of this family), or null. */
+  markedByName: string | null;
+  markedByMe: boolean;
+  canMarkLost: boolean;
+  canFound: boolean;
+  canConfirmLost: boolean;
+}
+
+/** The devices a grown-up may see and act on: their own phones, the other grown-ups' phones of the same family and
+ *  the family's children's tablets. Never a credential, never a place. Newest first, revoked ones last. */
+export async function familyDevicesFor(
+  pool: pg.Pool, userId: string, fromDeviceId: string | null, now: Date,
+): Promise<FamilyDevice[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT pd.*, u.display_name AS owner_name, m.display_name AS marked_by_name,
+              mf.id AS mf_id, mf.revoked_at AS mf_revoked_at, mf.paused_at AS mf_paused_at,
+              mf.lost_revoke_due_at AS mf_due_at
+         FROM paired_device pd
+         LEFT JOIN app_user u ON pd.role = 'guardian' AND u.id = pd.target_id
+         LEFT JOIN app_user m ON m.id = pd.lost_marked_by
+         LEFT JOIN paired_device mf ON mf.id = pd.lost_marked_from
+        WHERE (pd.role = 'guardian' AND (pd.target_id = $1 OR EXISTS (
+                 SELECT 1 FROM effective_guardianship a JOIN effective_guardianship b ON b.child_id = a.child_id
+                  WHERE a.user_id = $1 AND a.role = 'guardian' AND a.restricted = false
+                    AND b.user_id = pd.target_id AND b.role = 'guardian' AND b.restricted = false)))
+           OR (pd.role = 'child' AND EXISTS (
+                 SELECT 1 FROM effective_guardianship a
+                  WHERE a.user_id = $1 AND a.role = 'guardian' AND a.restricted = false AND a.child_id = pd.target_id))
+        ORDER BY (pd.revoked_at IS NULL) DESC, pd.paired_at DESC LIMIT 100`, [userId]);
+    return rows.map((r: any): FamilyDevice => {
+      const state = standingOfRow(r, now);
+      const isOwn = r.role === 'guardian' && r.target_id === userId;
+      const isThis = fromDeviceId !== null && fromDeviceId === r.id;
+      const markedByOwner = r.lost_marked_by != null && r.lost_marked_by === r.target_id;
+      // A report the owner made themselves can be undone by a second grown-up only once the phone it was made
+      // from is no longer active.
+      const markerActive = r.mf_id == null ||
+        standingOfRow({ revoked_at: r.mf_revoked_at, paused_at: r.mf_paused_at, lost_revoke_due_at: r.mf_due_at }, now) === 'active';
+      return {
+        id: r.id, role: r.role, label: r.label,
+        ownerName: r.role === 'guardian' ? (r.owner_name ?? null) : null,
+        isThisDevice: isThis, isOwn, state,
+        pausedAt: state === 'paused' ? r.paused_at : null,
+        revokeDueAt: state === 'paused' ? r.lost_revoke_due_at : null,
+        incidentId: state === 'paused' ? r.lost_incident : null,
+        markedByName: state === 'paused' ? (r.marked_by_name ?? null) : null,
+        markedByMe: state === 'paused' && r.lost_marked_by === userId,
+        canMarkLost: state === 'active' && !isThis,
+        canFound: state === 'paused' && !isThis && !(markedByOwner && r.role === 'guardian' && !isOwn && markerActive),
+        canConfirmLost: state === 'paused' && !isThis && (r.role === 'child' || isOwn),
+      };
+    });
   });
 }
 
@@ -6118,6 +6461,7 @@ export function dbPort(pool: pg.Pool): DbPort {
     withSession: (principal, fn) => withSession(pool, principal, fn),
     siblingLinkFor: (childA: string, childB: string) => siblingLinkFor(pool, childA, childB),
     isDeviceRevoked: (deviceId: string) => isPairedDeviceRevoked(pool, deviceId),
+    deviceStanding: (deviceId: string) => pairedDeviceStanding(pool, deviceId),
   };
 }
 
