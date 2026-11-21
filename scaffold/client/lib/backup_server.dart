@@ -222,24 +222,31 @@ class ServerVersion {
   }
 }
 
-enum HistoryProblem { gap, chainBroken, chainValueWrong, badSignature, notOurs, rollback, highWaterChanged }
+enum HistoryProblem { gap, chainBroken, chainValueWrong, rollback, highWaterChanged }
 
 class HistoryVerdict {
-  const HistoryVerdict.ok(this.headSeq, this.headChain)
+  const HistoryVerdict.ok(this.headSeq, this.headChain, {this.skipped = const <int>{}})
       : problem = null,
         atSeq = null;
   const HistoryVerdict.bad(HistoryProblem this.problem, {this.atSeq})
       : headSeq = 0,
-        headChain = '';
+        headChain = '',
+        skipped = const <int>{};
   final HistoryProblem? problem;
   final int? atSeq;
   final int headSeq;
   final String headChain;
+
+  /// Versions whose chain value is right but which a phone of THIS family did not write (not certified by the sheet, or
+  /// not signed by the phone they name): someone with a stolen sign-in appended them. They are never restored, and they
+  /// do not stop the family's own backups from being found.
+  final Set<int> skipped;
   bool get ok => problem == null;
 }
 
 /// The phone's check of a whole listed history (oldest first): every chain value recomputed, every link unbroken,
-/// every signature good, every writer certified by the sheet, nothing older than what this phone has already seen.
+/// nothing older than what this phone has already seen. A version that links properly but was not written by a phone
+/// the sheet certified is left out of [HistoryVerdict.skipped], never trusted and never fatal.
 Future<HistoryVerdict> verifyServerHistory({
   required String vaultId,
   required List<ServerVersion> versions,
@@ -249,6 +256,7 @@ Future<HistoryVerdict> verifyServerHistory({
   String? highChain,
 }) async {
   Uint8List prev = kGenesisChain;
+  final Set<int> skipped = <int>{};
   int? expect = versions.isEmpty ? null : versions.first.seq;
   for (final ServerVersion v in versions) {
     if (v.seq != expect) return HistoryVerdict.bad(HistoryProblem.gap, atSeq: v.seq);
@@ -262,8 +270,7 @@ Future<HistoryVerdict> verifyServerHistory({
         m.kind != kind ||
         !await BackupAuthority.verifyWriter(authority.publicKey, kind, m.writer, m.cert) ||
         !await DeviceKey.verify(m.writer, chainSigMessage(want), v.signature)) {
-      return HistoryVerdict.bad(m == null || m.kind != kind ? HistoryProblem.notOurs : HistoryProblem.badSignature,
-          atSeq: v.seq);
+      skipped.add(v.seq);
     }
     prev = want;
     expect = v.seq + 1;
@@ -276,7 +283,7 @@ Future<HistoryVerdict> verifyServerHistory({
       return HistoryVerdict.bad(HistoryProblem.highWaterChanged, atSeq: highSeq);
     }
   }
-  return HistoryVerdict.ok(head?.seq ?? 0, head?.chain ?? hexString(kGenesisChain));
+  return HistoryVerdict.ok(head?.seq ?? 0, head?.chain ?? hexString(kGenesisChain), skipped: skipped);
 }
 
 bool _eq(List<int> a, List<int> b) {
@@ -659,7 +666,7 @@ class ServerRestore {
         int got = 0;
         final Set<String> writers = <String>{};
         for (final ServerVersion v in all.reversed) {
-          if (!v.live || got >= maxVersions) continue;
+          if (!v.live || got >= maxVersions || verdict.skipped.contains(v.seq)) continue;
           final PublicManifest m = PublicManifest.parse(v.manifest)!;
           final String wtag = writerTag(m.writer);
           // One whole backup per writing phone is all a restore uses; a few extra guard against a damaged newest.

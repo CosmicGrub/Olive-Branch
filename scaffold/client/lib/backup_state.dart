@@ -167,6 +167,21 @@ class BackupStateStore {
     await _ns.put('sheet.${kind.name}', m);
   }
 
+  // --- where this phone puts its backups ---------------------------------------------------------------------------
+  /// The folder this phone writes to, or null (a path is a place on this phone, never shown as is).
+  Future<String?> folderPath() async {
+    final Object? v = await _ns.get('dest.folder');
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
+  Future<void> setFolderPath(String? path) =>
+      path == null || path.isEmpty ? _ns.delete('dest.folder') : _ns.put('dest.folder', path);
+
+  /// Whether the family's server is one of the places (grown-up phones only).
+  Future<bool> serverOn() async => (await _ns.get('dest.server')) == true;
+
+  Future<void> setServerOn(bool on) => on ? _ns.put('dest.server', true) : _ns.delete('dest.server');
+
   // --- wrong tries on a typed sheet ------------------------------------------------------------------------------
   static const int kTriesBeforeRest = 5;
   static const int kRestMs = 15 * 60 * 1000;

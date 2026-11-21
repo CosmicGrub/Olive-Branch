@@ -36,7 +36,6 @@ const Map<String, BackupClass> kBackupClass = <String, BackupClass>{
   'pairedkids': BackupClass.family,
   'learn': BackupClass.family,
   'localfamily': BackupClass.family,
-  'outbox': BackupClass.family,
   // her home, as a grown-up set it
   'access': BackupClass.home,
   'plan': BackupClass.home,
@@ -68,6 +67,7 @@ const Map<String, BackupClass> kBackupClass = <String, BackupClass>{
   'daytime': BackupClass.never,
   'playsave': BackupClass.never,
   'onboarding': BackupClass.never,
+  'outbox': BackupClass.never,
   'screenshares': BackupClass.never,
   'role': BackupClass.never,
   'devicekey': BackupClass.never,
