@@ -21,6 +21,9 @@ dependencies:
   # prebuilt call UI — call_screen.dart builds its own, deliberately (see
   # that file's own header for why that's the right tradeoff here).
   livekit_client: ^2.8.1
+  # The lan-p2p call provider (2026-11-21) uses the media stack directly. It was already in the build as livekit_client's own
+  # dependency; it is named here, at the SAME locked version, because lib/lan_webrtc_port.dart now imports it.
+  flutter_webrtc: 1.6.0
   # MASTERFILE 16.2 #6, REVERSED a third time (2026-11-09): self-hosted Jitsi is
   # the default call provider again, LiveKit stays selectable (CALL_PROVIDER on
   # the server picks per grant; lib/call_provider.dart is the seam). The SDK

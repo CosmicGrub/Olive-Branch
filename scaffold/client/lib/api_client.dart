@@ -570,6 +570,15 @@ class OliveApi {
   // provider name only; never a secret or the server URL.
   static const callAvailability = '/v1/children/:childId/calls/availability';
 
+  // GET .../calls/pending -- the foreground ring: "is anyone calling this side of this child's family right now?".
+  // A device with no push service asks every couple of seconds. The answer is only ever a call addressed to the
+  // asker: for the child, calls a grown-up started; for a grown-up, calls the child started that name them.
+  static const callPending = '/v1/children/:childId/calls/pending';
+
+  // POST/GET .../calls/:sessionId/signal -- the handshake mailbox of a direct (lan-p2p) call: offer, answer, ICE
+  // candidates, restart, mode, bye. Only the two people in THAT call may use it; none of it is media.
+  static const callSignal = '/v1/children/:childId/calls/:sessionId/signal';
+
   Uri _uri(String path, [String? childId, Map<String, String>? query]) => Uri.parse(
       '$baseUrl${childId != null ? path.replaceFirst(':childId', childId) : path}')
           .replace(queryParameters: query);
@@ -1200,8 +1209,29 @@ class OliveApi {
   /// guardian with no live edge to this child) — same posture as
   /// [setGuardianPin] above: a failed call-start must never be silently
   /// swallowed into "nothing happened."
-  Future<Map<String, dynamic>> startCall(String childId) =>
-      _post(calls, const {}, childId: childId);
+  ///
+  /// A CHILD session may start one too (2026-11-21): the server then rings an approved grown-up of hers
+  /// ([toUserId] names which one; absent means the first approved one). A grown-up session never sends it.
+  Future<Map<String, dynamic>> startCall(String childId, {String? toUserId}) =>
+      _post(calls, <String, dynamic>{'toUserId': ?toUserId}, childId: childId);
+
+  /// The calls waiting to be answered by THIS side right now: `{calls: [{sessionId, from, startedAt}]}`. Polled
+  /// every couple of seconds by a device that has no push service (call_poller.dart). `from` is a first name or null.
+  Future<Map<String, dynamic>> fetchPendingCalls(String childId) => _get(callPending, childId: childId);
+
+  /// One handshake message to the other side of a direct call. Returns `{seq}`. Throws [ApiException] (404 when the
+  /// call is over, 403 not_a_participant, 413 for an oversized message, 409 call_closed).
+  Future<Map<String, dynamic>> postCallSignal(
+          String childId, String sessionId, String kind, Map<String, dynamic> payload) =>
+      _post(callSignal.replaceFirst(':sessionId', sessionId), <String, dynamic>{'kind': kind, 'payload': payload},
+          childId: childId);
+
+  /// The handshake messages the OTHER side sent after [after], waiting up to [waitSeconds] for one:
+  /// `{signals: [{seq, from, kind, payload}], closed}`.
+  Future<Map<String, dynamic>> fetchCallSignals(String childId, String sessionId,
+          {int after = 0, int waitSeconds = 0}) =>
+      _get(callSignal.replaceFirst(':sessionId', sessionId),
+          childId: childId, query: <String, String>{'after': '$after', 'wait': '$waitSeconds'});
 
   /// The callee's own real join — see [callJoin]'s own doc comment for the
   /// fuller account of why this route exists at all. Returns

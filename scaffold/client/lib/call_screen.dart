@@ -37,6 +37,7 @@ import 'call_modes.dart';
 import 'call_provider.dart';
 import 'call_presence.dart';
 import 'call_provider_registry.dart';
+import 'call_signaling.dart';
 import 'degradation_banner.dart';
 import 'form_factors.dart' as ff;
 import 'kiosk_channel.dart';
@@ -68,6 +69,8 @@ class CallScreen extends StatefulWidget {
     this.accentColor,
     this.kiosk,
     this.providerFactory,
+    this.signalingFactory,
+    this.remoteLabel,
   });
 
   /// 'dad' or 'ivy' — matches local-call-room-server.mjs's fixed identities.
@@ -108,6 +111,14 @@ class CallScreen extends StatefulWidget {
   /// the registry, which picks the engine from the grant.
   final CallProviderFactory? providerFactory;
 
+  /// The handshake channel for a direct (lan-p2p) call: how this device passes offer, answer and ICE to the other.
+  /// Real wiring is `ServerCallSignaling.factory(apiProvider, childId)`. Ignored by the Jitsi and LiveKit engines.
+  final CallSignalingFactory? signalingFactory;
+
+  /// What to call the OTHER person on the dialing screen ("Calling Ivy"). [displayName] is this side's own name and
+  /// is what the engine announces. Null falls back to [displayName], as before.
+  final String? remoteLabel;
+
   @override
   State<CallScreen> createState() => _CallScreenState();
 }
@@ -121,6 +132,9 @@ class _CallScreenState extends State<CallScreen> {
   CallUnavailableReason _reason = CallUnavailableReason.unreachable;
   CallViewState _view = const CallViewState();
   bool _finished = false;
+  CallGrant? _grant;
+  bool _endReported = false;
+  bool _cancelled = false;
   // Bumped on each attempt so a late result from an abandoned attempt (Try
   // again, or leaving the screen) can never act on the new state.
   int _attempt = 0;
@@ -198,8 +212,9 @@ class _CallScreenState extends State<CallScreen> {
     try {
       final grant = await _fetchGrant();
       if (!mounted || attempt != _attempt) return;
+      _grant = grant;
       final provider = (widget.providerFactory ??
-          (g) => defaultCallProviderFor(g, kiosk: widget.kiosk))(grant);
+          (g) => defaultCallProviderFor(g, kiosk: widget.kiosk, signaling: widget.signalingFactory?.call(g)))(grant);
       _provider = provider;
       _sub = provider.states.listen(_onView);
       _qualityTicker = Timer.periodic(
@@ -223,9 +238,29 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  /// Tells the server the call is over, once. A direct call that never connected (she cancelled, nobody answered)
+  /// is closed here too, so its log row ends with the right reason; the other engines keep their old rule.
+  void _reportEnd() {
+    if (_endReported) return;
+    _endReported = true;
+    unawaited(widget.onCallEnd?.call());
+  }
+
+  bool get _isDirect => _grant?.kind == CallProviderKind.lanP2p;
+
   void _onView(CallViewState v) {
-    if (!mounted || _finished) return;
+    if (!mounted || _finished || _cancelled) return;
     if (v.phase == CallPhase.ended) {
+      if (!v.everConnected && _isDirect) {
+        // Nobody came, or the other side hung up first. A child is never shown a screen about it: it just closes.
+        // A grown-up gets the plain unavailable line below, with a way to try again.
+        _reportEnd();
+        if (!_isGuardian) {
+          _finished = true;
+          unawaited(Navigator.of(context).maybePop());
+          return;
+        }
+      }
       if (v.everConnected) {
         _finished = true;
         // Fire-and-forget, deliberately: popping the Navigator must never wait
@@ -233,7 +268,7 @@ class _CallScreenState extends State<CallScreen> {
         // user on a screen that already knows the call is over (record-keeping
         // only; no server-side media revocation happens here, a disclosed,
         // separate gap).
-        widget.onCallEnd?.call();
+        _reportEnd();
         unawaited(Navigator.of(context).maybePop());
       } else {
         // The call never really started: calm, and nothing to record.
@@ -268,12 +303,27 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    // Leaving a direct call by any road (back button, cancel, the engine ending) closes its log row once.
+    if (_isDirect) _reportEnd();
     CallPresence.leave();
     _qualityTicker?.cancel();
     unawaited(_sub?.cancel());
     final p = _provider;
     if (p != null) unawaited(p.dispose());
     super.dispose();
+  }
+
+  /// Before anyone has answered: stop calling and go back. The other side is told (bye) and the log row is closed
+  /// as cancelled, never shown as a failed call.
+  Future<void> _cancel() async {
+    _cancelled = true;
+    try {
+      await _provider?.leave();
+    } catch (e) {
+      debugPrint('[olive.call] leave threw on cancel (non-fatal): $e');
+    }
+    if (_isDirect) _reportEnd();
+    if (mounted) unawaited(Navigator.of(context).maybePop());
   }
 
   Future<void> _hangUp() async {
@@ -303,9 +353,14 @@ class _CallScreenState extends State<CallScreen> {
         ff.Posture.foldTabletop;
       switch (_stage) {
         case _Stage.fetching:
-          return Center(child: _Status(message: callingLine(widget.displayName), color: widget.accentColor));
+          return Center(child: _Status(message: callingLine(widget.remoteLabel ?? widget.displayName),
+              color: widget.accentColor, onCancel: _cancel));
         case _Stage.joining:
-          return Center(child: _Status(message: joiningLine(widget.displayName), color: widget.accentColor));
+          return Center(child: _Status(
+              message: _isDirect && (_grant?.isCaller ?? false)
+                  ? callingLine(widget.remoteLabel ?? widget.displayName)
+                  : joiningLine(widget.remoteLabel ?? widget.displayName),
+              color: widget.accentColor, onCancel: _cancel));
         case _Stage.unavailable:
           return Center(child: _UnavailableState(
             message: callUnavailableLine(_reason, isGuardian: _isGuardian),
@@ -323,7 +378,7 @@ class _CallScreenState extends State<CallScreen> {
             return Center(child: _OnACallSurface(
               displayName: widget.displayName, onHangUp: _hangUp, color: widget.accentColor));
           }
-          return InCallView(
+          final Widget inCall = InCallView(
             tabletop: tabletop,
             localVideo: _view.hasLocalVideo ? p.buildLocalVideo() : null,
             remoteVideo: _view.hasRemoteVideo ? p.buildRemoteVideo() : null,
@@ -339,14 +394,26 @@ class _CallScreenState extends State<CallScreen> {
             awaitingResumeConsent: _view.awaitingResumeConsent,
             onResumeVideo: () => unawaited(p.setCameraEnabled(true)),
           );
+          // The all-party notice: nothing in a direct call records, and every call says so, quietly, to both sides.
+          if (!_isDirect) return inCall;
+          return Stack(fit: StackFit.expand, children: [
+            inCall,
+            const Positioned(
+              top: 12, left: 0, right: 0,
+              child: Center(child: Text('This call is not recorded.',
+                key: Key('callNotRecordedNotice'), style: TextStyle(color: Colors.white54, fontSize: 12))),
+            ),
+          ]);
       }
     }),
   );
 }
 
 class _Status extends StatelessWidget {
-  const _Status({required this.message, this.color});
+  const _Status({required this.message, this.color, this.onCancel});
   final String message;
+  /// Stop before anyone has answered. Null on the engines that have no such moment.
+  final Future<void> Function()? onCancel;
   /// Her real curated colour, when the caller resolved one. Plain white when null.
   final Color? color;
   @override
@@ -354,6 +421,14 @@ class _Status extends StatelessWidget {
     CircularProgressIndicator(color: color ?? Colors.white),
     const SizedBox(height: 16),
     Text(message, textAlign: TextAlign.center, style: TextStyle(color: color ?? Colors.white)),
+    if (onCancel != null) ...[
+      const SizedBox(height: 16),
+      TextButton(
+        key: const Key('callCancelButton'),
+        onPressed: () => unawaited(onCancel!()),
+        child: Text('Cancel', style: TextStyle(color: color ?? Colors.white70)),
+      ),
+    ],
   ]);
 }
 

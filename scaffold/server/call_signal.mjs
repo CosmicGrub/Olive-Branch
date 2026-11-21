@@ -9,7 +9,7 @@
 // Isolation is the route's job (it only reaches this after the session check proves the principal is one of the
 // two participants of THAT child's call); this module additionally never lets one side read its own messages back
 // and never mixes sessions. Bounds: 400 messages and 16 KiB per message, 256 live sessions, 10 minutes.
-export const SIGNAL_KINDS = Object.freeze(['offer', 'answer', 'ice', 'mode', 'bye']);
+export const SIGNAL_KINDS = Object.freeze(['offer', 'answer', 'ice', 'restart', 'mode', 'bye']);
 export const SIGNAL_ROLES = Object.freeze(['caller', 'callee']);
 
 export function createSignalHub({

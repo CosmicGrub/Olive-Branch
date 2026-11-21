@@ -17,13 +17,18 @@ library;
 
 import 'package:flutter/foundation.dart' show immutable;
 
-import 'call_provider.dart' show CallProviderKind, CallUnavailableReason, callUnavailableLine;
+import 'call_provider.dart' show CallProviderKind, CallUnavailableReason, callUnavailableLine, tabletUnreachableLine;
 
 /// What the server says about placing a call right now. Never carries an address, an app id or a secret: the
 /// server sends only a provider name and two booleans.
 @immutable
 class CallAvailability {
-  const CallAvailability({required this.provider, required this.available, required this.sameNetworkOnly});
+  const CallAvailability({
+    required this.provider,
+    required this.available,
+    required this.sameNetworkOnly,
+    this.tabletReachable,
+  });
 
   /// The engine the server would use, or null for a name this build does not know.
   final CallProviderKind? provider;
@@ -31,6 +36,10 @@ class CallAvailability {
 
   /// True when the call server is only reachable on the home network (a private or single-label address).
   final bool sameNetworkOnly;
+
+  /// lan-p2p, asked by a grown-up: true when her tablet has asked the server in the last few seconds, false when it
+  /// has not, null when the server did not say (another provider, an older server, a child asking).
+  final bool? tabletReachable;
 
   /// null when the answer is not usable. `available` must be a real boolean; "true" the string is not true.
   static CallAvailability? tryParse(Object? body) {
@@ -43,18 +52,21 @@ class CallAvailability {
       provider: switch (provider) {
         'jitsi' => CallProviderKind.jitsi,
         'livekit' => CallProviderKind.livekit,
+        'lan-p2p' => CallProviderKind.lanP2p,
         _ => null,
       },
       available: available,
       // Only an explicit true narrows the claim; anything else is "no restriction known".
       sameNetworkOnly: available && same == true,
+      // Only a real boolean counts; "false" the string, a number or a missing field is "not said".
+      tabletReachable: available && body['tabletReachable'] is bool ? body['tabletReachable'] as bool : null,
     );
   }
 }
 
 /// Why a device did or did not ring, from the server's single `ringState` word. An unknown or missing word
 /// (an older server, a malformed body) is [unknown]: said nothing about, not guessed at.
-enum CallRingState { rang, quietHours, noDevices, noPushCapability, sendFailed, unknown }
+enum CallRingState { rang, quietHours, noDevices, noPushCapability, sendFailed, tabletUnreachable, unknown }
 
 CallRingState ringStateOf(Object? wire) => switch (wire) {
       'rang' => CallRingState.rang,
@@ -62,6 +74,7 @@ CallRingState ringStateOf(Object? wire) => switch (wire) {
       'no_devices' => CallRingState.noDevices,
       'no_push_capability' => CallRingState.noPushCapability,
       'send_failed' => CallRingState.sendFailed,
+      'tablet_unreachable' => CallRingState.tabletUnreachable,
       _ => CallRingState.unknown,
     };
 
@@ -69,6 +82,8 @@ CallRingState ringStateOf(Object? wire) => switch (wire) {
 String? availabilityLine(CallAvailability? a) {
   if (a == null) return null;
   if (!a.available) return callUnavailableLine(CallUnavailableReason.providerOff, isGuardian: true);
+  // lan-p2p: her tablet is not reaching the server just now. Say so BEFORE the grown-up taps, with one next step.
+  if (a.tabletReachable == false) return tabletUnreachableLine;
   if (a.sameNetworkOnly) {
     return 'Calls only work while you and the tablet are both on the home Wi-Fi.';
   }
@@ -86,6 +101,7 @@ String? ringStateLine(CallRingState state, {String? childName}) {
     CallRingState.noDevices => '$who has not been set up for rings yet, so it did not ring.',
     CallRingState.noPushCapability => '$who cannot show pop-up alerts, so it did not ring.',
     CallRingState.sendFailed => 'The ring did not go through. You can wait in the call or try again in a little while.',
+    CallRingState.tabletUnreachable => tabletUnreachableLine,
   };
 }
 

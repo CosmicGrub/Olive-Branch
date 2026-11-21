@@ -23,7 +23,9 @@ import 'package:flutter/widgets.dart';
 import 'call_modes.dart' show CallMode;
 import 'degradation_banner.dart' show Condition, Quality;
 
-enum CallProviderKind { jitsi, livekit }
+/// [lanP2p] (wire name `lan-p2p`): a direct device-to-device WebRTC call set up through the server's authenticated
+/// signalling routes. No media server, no account. lan_p2p_call_provider.dart.
+enum CallProviderKind { jitsi, livekit, lanP2p }
 
 /// The provider-specific half of a call response (server/call_grant.mjs),
 /// parsed. `provider` absent means an older/dev server that only speaks
@@ -41,7 +43,25 @@ class CallGrant {
     this.serverURL,
     this.moderator = false,
     this.observerOnly = false,
+    this.sessionId,
+    this.role,
+    this.iceServers = const <Map<String, dynamic>>[],
+    this.relayOnly = false,
   });
+
+  /// lan-p2p: no token and no server address. The call is set up by passing offer, answer and ICE messages
+  /// through the signalling routes ([sessionId]); [iceServers] is the configured STUN/TURN list (empty on the home
+  /// Wi-Fi) and [relayOnly] forces every packet through TURN. [role] is who makes the offer ('caller') and who
+  /// answers it ('callee').
+  const CallGrant.lanP2p({
+    required String sessionId,
+    required String role,
+    String displayName = '',
+    String? identity,
+    List<Map<String, dynamic>> iceServers = const <Map<String, dynamic>>[],
+    bool relayOnly = false,
+  }) : this._(kind: CallProviderKind.lanP2p, displayName: displayName, identity: identity, sessionId: sessionId,
+            role: role, iceServers: iceServers, relayOnly: relayOnly);
 
   /// LiveKit: a signed room token and the project URL it was signed for.
   const CallGrant.livekit({required String token, required String wsURL, String displayName = '', String? identity})
@@ -71,6 +91,14 @@ class CallGrant {
   final String? serverURL;
   final bool moderator;
   final bool observerOnly;
+  final String? sessionId;
+  /// 'caller' or 'callee' (lan-p2p only).
+  final String? role;
+  final List<Map<String, dynamic>> iceServers;
+  final bool relayOnly;
+
+  /// Whether this side makes the offer.
+  bool get isCaller => role != 'callee';
 
   /// Throws [FormatException] for a body that is not a usable grant, so a
   /// half-formed response can never reach an engine as a half-formed join.
@@ -90,6 +118,32 @@ class CallGrant {
         moderator: j['moderator'] == true, observerOnly: j['observerOnly'] == true,
       );
     }
+    if (provider == 'lan-p2p') {
+      final sid = need('sessionId');
+      final role = j['role'];
+      if (role != 'caller' && role != 'callee') throw const FormatException('call grant has no usable "role"');
+      final raw = j['iceServers'];
+      final servers = <Map<String, dynamic>>[];
+      if (raw is List) {
+        for (final s in raw) {
+          if (s is! Map) throw const FormatException('call grant has a malformed "iceServers" entry');
+          final urls = s['urls'];
+          if (urls is! List || urls.isEmpty || urls.any((u) => u is! String || u.isEmpty)) {
+            throw const FormatException('call grant has an ice server with no urls');
+          }
+          servers.add(<String, dynamic>{
+            'urls': List<String>.from(urls),
+            if (s['username'] is String) 'username': s['username'],
+            if (s['credential'] is String) 'credential': s['credential'],
+          });
+        }
+      } else if (raw != null) {
+        throw const FormatException('call grant has a malformed "iceServers"');
+      }
+      return CallGrant.lanP2p(
+        sessionId: sid, role: role as String, displayName: name, identity: identity,
+        iceServers: servers, relayOnly: j['iceTransportPolicy'] == 'relay');
+    }
     if (provider == null || provider == 'livekit') {
       return CallGrant.livekit(token: need('token'), wsURL: need('wsURL'), displayName: name, identity: identity);
     }
@@ -105,6 +159,8 @@ enum CallUnavailableReason {
   providerOff,
   /// Nothing reachable: no network, a timeout, the host not answering.
   unreachable,
+  /// lan-p2p: the server could not tell that her tablet is awake and reaching it (grown-up wording only).
+  tabletUnreachable,
   /// The grant itself was unusable, or the transport policy refused it
   /// (for example a non-https Jitsi address in a release build).
   refused,
@@ -257,17 +313,23 @@ String callUnavailableLine(CallUnavailableReason reason, {required bool isGuardi
       CallUnavailableReason.providerOff => "Calls aren't switched on just now. Let's try again in a little while.",
       CallUnavailableReason.unreachable => "The call isn't ready just now. Let's try again in a little while.",
       CallUnavailableReason.refused => "The call isn't ready just now. Let's try again in a little while.",
+      CallUnavailableReason.tabletUnreachable => "The call isn't ready just now. Let's try again in a little while.",
     };
   }
   return switch (reason) {
     CallUnavailableReason.providerOff =>
-      "Calls are switched off. On the home PC run calls-on, then try again.",
+      "Calls are not switched on here. On the home PC switch calls on (calls-up-dev), then try again.",
+    CallUnavailableReason.tabletUnreachable => tabletUnreachableLine,
     CallUnavailableReason.unreachable =>
       "Can't reach the call right now. Check you are on the home Wi-Fi and that the home PC is on with calls switched on.",
     CallUnavailableReason.refused =>
       "This call can't be started from here. Check the call settings on the server, then try again.",
   };
 }
+
+/// For the grown-up when her tablet is not reaching the server: one plain next step. Never shown to a child.
+const String tabletUnreachableLine =
+    "Her tablet can't be reached right now. Check it is awake with Olive open and on the same Wi-Fi, then try again.";
 
 /// "Calling Dad…" (guardian view of the child's name too): same everywhere.
 String callingLine(String who) => 'Calling $who…';
