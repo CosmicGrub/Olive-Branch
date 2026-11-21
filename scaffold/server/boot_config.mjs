@@ -50,7 +50,14 @@ export function databaseUrlProblem(url) {
   const m = /^(postgres(?:ql)?):\/\/([^@/?#]*)@/.exec(url);
   if (!m) {
     // No credentials part (trust auth, a socket path) is allowed as long as it parses at all.
-    try { const u = new URL(url); return /^postgres(ql)?:$/.test(u.protocol) ? null : 'DATABASE_URL must start with postgres:// or postgresql://'; }
+    try {
+      const u = new URL(url);
+      if (!/^postgres(ql)?:$/.test(u.protocol)) return 'DATABASE_URL must start with postgres:// or postgresql://';
+      // An '@' that the URL parser did not read as the credentials separator means a / or ? inside
+      // the password ended the credentials early (so the "host" is really the user name).
+      if (url.includes('@') && !u.username) return `DATABASE_URL has a / or ? inside its credentials, so the host would be read wrongly. ${HEX_HINT}`;
+      return null;
+    }
     catch { return 'DATABASE_URL is not a valid URL'; }
   }
   const [user, ...rest] = m[2].split(':');

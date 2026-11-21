@@ -156,6 +156,33 @@ const count = async (where, params = []) => Number((await admin.query(`SELECT co
   // --- a materialised row keeps no stale stamp that could hide it later.
   await runRematerializeSweep(pool, { now: NOW });
   check(g, 'a row that was materialised is ready (the CAS write still works with the new column)', (await stateOf(fresh)).state, 'ready');
+
+  // --- a re-queue that lands between the scan and the end-of-scan stamp must not be overwritten.
+  await admin.query(`UPDATE delivery_intent SET rematerialize_checked_at = now() WHERE state = 'pending'`);
+  const target = (await admin.query(`SELECT id FROM delivery_intent WHERE state = 'pending' AND child_id = $1 ORDER BY created_at LIMIT 1`, [CHILD])).rows[0].id;
+  await admin.query(`UPDATE delivery_intent SET rematerialize_checked_at = now() - interval '1 hour' WHERE id = $1`, [target]);
+  let raced = 0;
+  const racingPool = new Proxy(pool, { get(t, k) {
+    if (k !== 'connect') { const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; }
+    return async (...a) => {
+      const c = await t.connect(...a);
+      return new Proxy(c, { get(ct, ck) {
+        const v = ct[ck];
+        if (ck !== 'query') return typeof v === 'function' ? v.bind(ct) : v;
+        return async (...qa) => {
+          if (typeof qa[0] === 'string' && /UPDATE delivery_intent d SET rematerialize_checked_at/.test(qa[0])) {
+            raced++;
+            await admin.query(`UPDATE delivery_intent SET rematerialize_checked_at = NULL WHERE id = $1`, [target]);
+          }
+          return v.apply(ct, qa);
+        };
+      } });
+    };
+  } });
+  await runRematerializeSweep(racingPool, { now: NOW, batchLimit: 1 });
+  check(g, 'the race hook actually fired', raced >= 1, true);
+  check(g, 'a re-queue reset that lands before the stamp keeps its place at the front (stamp stays NULL)',
+    (await admin.query(`SELECT rematerialize_checked_at AS c FROM delivery_intent WHERE id = $1`, [target])).rows[0].c, null);
 }
 
 // ============================================================================

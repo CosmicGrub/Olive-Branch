@@ -234,7 +234,8 @@ const keepAlive = setInterval(() => {}, 1000);
   check(g, 'no credentials (trust auth) is accepted', url('postgres://db:5432/x'), 'ok');
   for (const [why, u] of [['a literal @', 'postgres://app:pa@ss@db:5432/x'], ['a slash', 'postgres://app:ab/cd@db:5432/x'],
     ['a #', 'postgres://app:abc#d@db:5432/x'], ['a space', 'postgres://app:a b@db:5432/x'], ['a ?', 'postgres://app:a?b@db:5432/x'],
-    ['a raw %', 'postgres://app:a%zz@db:5432/x'], ['a colon in the password', 'postgres://app:a:b@db:5432/x']]) {
+    ['a raw %', 'postgres://app:a%zz@db:5432/x'], ['a colon in the password', 'postgres://app:a:b@db:5432/x'],
+    ['digits then a slash', 'postgres://app_runtime:123/abc@db:5432/olive'], ['digits then a ?', 'postgres://app_runtime:12?x@db:5432/olive']]) {
     check(g, `a password with ${why} is refused`, url(u) === 'ok' ? 'ACCEPTED' : 'refused', 'refused');
   }
   check(g, 'a non-postgres URL is refused', url('mysql://u:p@db/x') === 'ok' ? 'ACCEPTED' : 'refused', 'refused');

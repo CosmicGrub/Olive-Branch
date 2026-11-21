@@ -235,7 +235,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
     `SELECT id, child_id, policy,
             to_char(target_instant AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS target_instant,
             target_daypart, target_local_date::text AS target_local_date,
-            target_event_id, batch_seq,
+            target_event_id, batch_seq, rematerialize_checked_at::text AS seen_stamp,
             to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at
        FROM delivery_intent
       WHERE state = 'pending'
@@ -248,6 +248,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
   // can stay pending for a legitimate reason (no bedtime yet, an event that has not happened) sat
   // at the front for ever and, at 500 of them, no newer message was ever looked at again.
   const leftPendingIds = [];
+  const leftPendingStamps = [];
 
   let materialized = 0, expired = 0, stillPending = 0, skippedRows = 0, errored = 0;
   const ctxCache = new Map();
@@ -272,7 +273,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
       // defensively anyway (an honest skip + a warning line) rather than
       // letting one bad row crash the whole sweep.
       skippedRows++;
-      leftPendingIds.push(row.id);
+      leftPendingIds.push(row.id); leftPendingStamps.push(row.seen_stamp ?? null);
       errLine({ event: 'warn', job: 'rematerialize', reason: 'missing_child_ctx',
         intent_id: row.id, child_id: row.child_id, at: DateTime.utc().toISO() });
       continue;
@@ -299,7 +300,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
           RETURNING id`,
         [row.id, result.scheduledAt.toUTC().toISO(), result.tz],
       ));
-      if (updated.length) materialized++; else { stillPending++; leftPendingIds.push(row.id); }
+      if (updated.length) materialized++; else { stillPending++; leftPendingIds.push(row.id); leftPendingStamps.push(row.seen_stamp ?? null); }
       continue;
     }
 
@@ -309,15 +310,15 @@ export async function runRematerializeSweep(pool, opts = {}) {
           WHERE id = $1 AND state = 'pending' RETURNING id`,
         [row.id],
       ));
-      if (updated.length) expired++; else { stillPending++; leftPendingIds.push(row.id); }
+      if (updated.length) expired++; else { stillPending++; leftPendingIds.push(row.id); leftPendingStamps.push(row.seen_stamp ?? null); }
       continue;
     }
 
     stillPending++;
-    leftPendingIds.push(row.id);
+    leftPendingIds.push(row.id); leftPendingStamps.push(row.seen_stamp ?? null);
     } catch (e) {
       errored++;
-      leftPendingIds.push(row.id);
+      leftPendingIds.push(row.id); leftPendingStamps.push(row.seen_stamp ?? null);
       errLine({ event: 'row_error', job: 'rematerialize', intent_id: row.id,
         child_id: row.child_id, error: String(e?.message ?? e).slice(0, 300),
         at: DateTime.utc().toISO() });
@@ -327,8 +328,12 @@ export async function runRematerializeSweep(pool, opts = {}) {
   if (leftPendingIds.length) {
     try {
       await withSystemSession(pool, (q) => q(
-        `UPDATE delivery_intent SET rematerialize_checked_at = now()
-          WHERE id = ANY($1::uuid[]) AND state = 'pending'`, [leftPendingIds]));
+        // Only a row whose stamp is still the one this scan read: if invalidate_for_child() reset it
+        // to NULL meanwhile (a re-queue), the stamp must not push it back out of the front of the queue.
+        `UPDATE delivery_intent d SET rematerialize_checked_at = now()
+           FROM unnest($1::uuid[], $2::timestamptz[]) AS u(id, seen)
+          WHERE d.id = u.id AND d.state = 'pending'
+            AND d.rematerialize_checked_at IS NOT DISTINCT FROM u.seen`, [leftPendingIds, leftPendingStamps]));
     } catch (e) {
       // Not fatal: the rows simply keep their place in the queue and are looked at again.
       errLine({ event: 'warn', job: 'rematerialize', reason: 'stamp_failed',
