@@ -161,6 +161,10 @@ class Fam {
         'voided=${(s.voided.keys.toList()..sort())}',
         'rejected=${(s.rejected.entries.map((MapEntry<String, String> e) => '${e.key}:${e.value}').toList()..sort())}',
         'forks=${<String>[for (final LedgerFork f in s.forks) '${f.parentHex}>${f.childrenHex.join(',')}']}',
+        'paused=${<String>[for (final PauseInfo p in s.paused) '${p.gidHex}<${p.byGidHex}@${p.atMs}']}',
+        'notices=${<String>[for (final EndNotice n in s.endNotices) '${n.gidHex}<${n.byGidHex}@${n.effMs}']}',
+        'limits=${(s.limits.entries.map((MapEntry<String, List<int>> e) => '${e.key}:${e.value}').toList()..sort())}',
+        'standing=${(s.standing.entries.map((MapEntry<String, int> e) => '${e.key}:${e.value}').toList()..sort())}',
         'heads=${(s.heads.map(hexOf).toList()..sort())}',
         'history=${s.history}',
       ].join('\n');

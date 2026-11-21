@@ -18,11 +18,24 @@
 //     claimed by two concurrent additions belongs to the canonically earlier one. A revoked or departed key or
 //     person can never come back: the tombstone is permanent. Every fork is REPORTED, never silently resolved.
 //
+//  6. NOBODY REMOVES A PARENT ALONE (the owner's co-parent rules). Either parent may PAUSE the other at once; a pause is
+//     visible to everyone, reversible by any OTHER parent (never by the paused one, and a paused parent cannot pause back),
+//     and it takes away only the power to start things, never what they can see, their say on welcomes, or leaving.
+//     Ending a parent needs both parents (`guardian.remove`: the person agrees) or a 14 day notice that every device
+//     shows and only the one who gave it can take back (`access.end` with reason `notice`). A carer is ended at once by
+//     the parent who welcomed them, or with that parent's yes. Two parents who pause each other at the same time both
+//     lose (neither pause stands), so nobody is ever locked out of both.
+//  7. LIMITS ON A PARENT ARE AN AGREEMENT. `limits.agree` takes effect only with the limited parent's own signed yes,
+//     counted only after a 24 hour think-over, and may switch off only settings, connecting a child's device and
+//     welcoming others. A parent may tighten their own limits at once; loosening or ending them needs the other
+//     parents' yes. `standing.ok` is a parent's advance yes to Look-only welcomes (never a parent, never one who can
+//     act), at most 90 days, taken back by writing a newer one.
+//
 // PROVISIONAL. The design (section 11) says the merge rule of 3.2 is the piece most likely to need revision once it
 // is fuzzed, and this is a first model of it, tested on the hostile cases listed in the test file. Read the residual
 // risks in the PR description before relying on it. Not built here: any storage, the gossip, the settle-in screens,
-// the fork "accept" tap, rate limits and cooldown, the 72-hour hold for a family of one, and the pause/limits/standing
-// behaviours (those entry types are reserved: valid, recorded, no effect).
+// the fork "accept" tap, rate limits and cooldown, the 72-hour hold for a family of one, and key rotation after
+// someone is removed (a removed phone still holds the family keys it already had).
 import 'dart:typed_data';
 
 import 'family_ledger.dart';
@@ -36,8 +49,12 @@ class LedgerMember {
     required this.profile,
     required this.activatedAtMs,
     required this.deviceKeysHex,
+    this.welcomedByGidHex,
   });
   final String gidHex, name;
+
+  /// The parent whose request brought this person in; null for the founder.
+  final String? welcomedByGidHex;
 
   /// 'guardian' or 'carer'.
   final String kind;
@@ -83,10 +100,32 @@ class LedgerDevice {
 
 /// A gated entry that has not taken effect. [status] is 'pending', 'lapsed' (silence ran out) or 'declined'.
 class PendingItem {
-  PendingItem(this.hashHex, this.type, this.status, this.subjectGidHex, this.name, this.expMs);
+  PendingItem(this.hashHex, this.type, this.status, this.subjectGidHex, this.name, this.expMs,
+      {this.proposerGidHex, this.requiredGidsHex = const <String>[], this.yesGidsHex = const <String>[], this.notBeforeMs});
   final String hashHex, type, status;
   final String? subjectGidHex, name;
   final int? expMs;
+
+  /// Who asked, which people must say yes, which of them already have, and (for a limits agreement) the time before
+  /// which a yes is not counted. A person's own phone is not a "person" here: the new person's own yes is separate.
+  final String? proposerGidHex;
+  final List<String> requiredGidsHex, yesGidsHex;
+  final int? notBeforeMs;
+}
+
+/// A parent or carer whose access is paused: who paused it, when, and the entry that did.
+class PauseInfo {
+  PauseInfo(this.gidHex, this.byGidHex, this.atMs, this.hashHex);
+  final String gidHex, byGidHex, hashHex;
+  final int atMs;
+}
+
+/// A notice that someone's place in the village will end: given [atMs], takes effect at [effMs] unless the one who gave it
+/// takes it back. Every device shows it for the whole wait.
+class EndNotice {
+  EndNotice(this.gidHex, this.byGidHex, this.atMs, this.effMs, this.hashHex);
+  final String gidHex, byGidHex, hashHex;
+  final int atMs, effMs;
 }
 
 /// Two or more entries that follow the same entry. The family is told in one plain sentence; nothing is dropped.
@@ -115,6 +154,10 @@ class LedgerState {
         heads = const <Uint8List>[],
         legacyFids = const <String>[],
         history = const <String>[],
+        paused = const <PauseInfo>[],
+        endNotices = const <EndNotice>[],
+        limits = const <String, List<int>>{},
+        standing = const <String, int>{},
         genesisDeviceKey = null;
 
   LedgerState._ok({
@@ -134,6 +177,10 @@ class LedgerState {
     required this.history,
     required this.genesisDeviceKey,
     required this.nowMs,
+    required this.paused,
+    required this.endNotices,
+    required this.limits,
+    required this.standing,
   })  : ok = true,
         failure = null;
 
@@ -166,6 +213,36 @@ class LedgerState {
   /// Hashes of the entries that took effect, in the one canonical order.
   final List<String> history;
 
+  /// Whose access is paused right now. Pausing is visible to every parent and never a removal.
+  final List<PauseInfo> paused;
+
+  /// Notices of an end that are still running (the 14 day wait).
+  final List<EndNotice> endNotices;
+
+  /// The capabilities switched off for a parent by an agreement they signed, by person id. Empty list = none.
+  final Map<String, List<int>> limits;
+
+  /// Standing OK: the end time of each parent's advance yes to Look-only welcomes (active while it is after now).
+  final Map<String, int> standing;
+
+  bool isPaused(String gidHex) => paused.any((PauseInfo p) => p.gidHex == gidHex);
+  PauseInfo? pauseOf(String gidHex) {
+    for (final PauseInfo p in paused) {
+      if (p.gidHex == gidHex) return p;
+    }
+    return null;
+  }
+
+  EndNotice? noticeFor(String gidHex) {
+    for (final EndNotice n in endNotices) {
+      if (n.gidHex == gidHex) return n;
+    }
+    return null;
+  }
+
+  List<int> limitsOf(String gidHex) => limits[gidHex] ?? const <int>[];
+  bool standingActive(String gidHex) => (standing[gidHex] ?? 0) > nowMs;
+
   FamilyPin? get pin => ok ? FamilyPin(fid!, genesisHash!) : null;
 
   LedgerDevice? deviceFor(List<int> key) {
@@ -185,7 +262,7 @@ class LedgerState {
   /// May this key sign a ledger entry that needs a full grown-up (not settling in) at [atMs]?
   bool canAct(List<int> key, int atMs) {
     final LedgerDevice? d = deviceFor(key);
-    return d != null && d.kind == 'guardian' && !d.settlingAt(atMs);
+    return d != null && d.kind == 'guardian' && !d.settlingAt(atMs) && !isPaused(d.gidHex ?? '');
   }
 
   bool isSettling(List<int> key, int atMs) => deviceFor(key)?.settlingAt(atMs) ?? false;
@@ -211,7 +288,9 @@ class _Gate {
     required this.exp,
     required this.voterKeys,
     required this.proposerKeys,
+    this.yesNotBefore,
   });
+  final int? yesNotBefore; // a yes dated before this is not counted (the think-over)
   final String proposerGid;
   final Set<String> required; // gids whose yes is needed (the proposer's own signature is its yes)
   final String? acceptKey; // the candidate device that must accept its own addition
@@ -240,8 +319,9 @@ class _Node {
 }
 
 class _Mem {
-  _Mem(this.gidHex, this.name, this.kind, this.profile, this.activatedAt);
+  _Mem(this.gidHex, this.name, this.kind, this.profile, this.activatedAt, [this.welcomedBy]);
   final String gidHex, name, kind;
+  final String? welcomedBy;
   final MemberProfile? profile;
   final int activatedAt;
 }
@@ -252,6 +332,10 @@ class _St {
   final Set<String> knownKeys = <String>{}, knownGids = <String>{}, deadKeys = <String>{}, deadGids = <String>{};
   FamilyPolicy policy = const FamilyPolicy();
   int epoch = 0;
+  final Map<String, PauseInfo> paused = <String, PauseInfo>{};
+  final Map<String, EndNotice> pendingEnds = <String, EndNotice>{};
+  final Map<String, List<int>> limits = <String, List<int>>{};
+  final Map<String, int> standing = <String, int>{};
 
   List<LedgerDevice> devicesOf(String gid) =>
       <LedgerDevice>[for (final LedgerDevice d in devices.values) if (d.gidHex == gid) d];
@@ -442,12 +526,25 @@ class _Reducer {
     final bool settling = d.settlingAt(e.issuedAtMs);
     final Map<String, Object?> b = e.body;
     String? bad;
+    // A paused parent can leave, defend their own phone and take back their own notice, and can still SAY yes or no (a
+    // vote is not an entry); they cannot start anything else until another parent resumes them.
+    final String myGid = d.gidHex ?? '';
+    if (s.paused.containsKey(myGid) &&
+        e.type != EntryType.guardianLeave &&
+        e.type != EntryType.deviceRevokeCancel &&
+        e.type != EntryType.accessEndCancel) {
+      n.reject = 'signer-paused';
+      return;
+    }
+    final List<int> myLimits = s.limits[myGid] ?? const <int>[];
     switch (e.type) {
       case EntryType.memberAdd:
-        bad = settling ? 'signer-settling' : await _memberAdd(n, s, d);
+        bad = settling ? 'signer-settling' : (myLimits.contains(11) ? 'welcome-limited' : await _memberAdd(n, s, d));
         break;
       case EntryType.deviceAdd:
-        bad = settling ? 'signer-settling' : await _deviceAdd(n, s, d);
+        bad = settling
+            ? 'signer-settling'
+            : ((b['kind'] == 'child' && myLimits.contains(8)) ? 'connect-limited' : await _deviceAdd(n, s, d));
         break;
       case EntryType.deviceRevoke:
         bad = settling ? 'signer-settling' : _deviceRevoke(n, s, d);
@@ -462,17 +559,34 @@ class _Reducer {
         bad = settling ? 'signer-settling' : _remove(n, s, d);
         break;
       case EntryType.policySet:
-        bad = settling ? 'signer-settling' : _policySet(n, s, d);
+        bad = settling ? 'signer-settling' : (myLimits.contains(6) ? 'settings-limited' : _policySet(n, s, d));
         break;
       case EntryType.keyRotate:
         bad = settling ? 'signer-settling' : _keyRotate(n, s);
         break;
-      default: // the reserved types
-        if (settling) {
-          bad = 'signer-settling';
-        } else if (!s.members.containsKey(hexOf(b['gid']! as Uint8List))) {
-          bad = 'unknown-subject';
-        }
+      case EntryType.accessPause:
+        bad = settling ? 'signer-settling' : _pause(n, s, d);
+        break;
+      case EntryType.accessResume:
+        bad = settling ? 'signer-settling' : _resume(n, s, d);
+        break;
+      case EntryType.accessEnd:
+        bad = settling ? 'signer-settling' : _accessEnd(n, s, d);
+        break;
+      case EntryType.accessEndCancel:
+        bad = _endCancel(n, s, d);
+        break;
+      case EntryType.limitsAgree:
+        bad = settling ? 'signer-settling' : _limitsAgree(n, s, d);
+        break;
+      case EntryType.limitsTighten:
+        bad = settling ? 'signer-settling' : _limitsTighten(n, s, d);
+        break;
+      case EntryType.standingOk:
+        bad = settling ? 'signer-settling' : _standingOk(n, s, d);
+        break;
+      default:
+        bad = 'unknown-type';
     }
     if (bad != null) {
       n.reject = bad;
@@ -515,8 +629,137 @@ class _Reducer {
     if (expected.length != given.length || !_sameList(expected, given)) return 'electorate-wrong';
     if (!given.contains(proposerGid)) return 'proposer-not-in-electorate';
     n.settleHours = kind == 'guardian' ? s.policy.settleHours : defaultSettleHours(profile.preset);
-    n.gate = _gateFor(s, proposerGid: proposerGid, required: given.where((String x) => x != proposerGid).toSet(),
+    // A Standing OK is a parent's advance yes, and it covers ONLY a person who can look and nothing else (never a parent,
+    // never someone who can act) in a family that asks every parent about those. Their name stays on the list; their yes
+    // is already in, so nobody waits for them.
+    final bool covered = kind == 'carer' && profile.reach == Reach.look && rule == 'all';
+    final Set<String> needed = <String>{
+      for (final String x in given)
+        if (x != proposerGid && !(covered && (s.standing[x] ?? 0) > n.e.issuedAtMs)) x,
+    };
+    n.gate = _gateFor(s, proposerGid: proposerGid, required: needed,
         acceptKey: keyHex, exp: exp, includeSettlingVoters: false, asOf: n.e.issuedAtMs);
+    return null;
+  }
+
+  // ------------------------------------------------------------------------------------------------------------
+  // Pause, end, limits, Standing OK
+  // ------------------------------------------------------------------------------------------------------------
+
+  String? _subjectMember(_St s, Map<String, Object?> b) => s.members.containsKey(hexOf(_gidOf(b))) ? null : 'unknown-subject';
+
+  String? _pause(_Node n, _St s, LedgerDevice signer) {
+    final String? bad = _subjectMember(s, n.e.body);
+    if (bad != null) return bad;
+    final String gid = hexOf(_gidOf(n.e.body));
+    if (gid == signer.gidHex) return 'cannot-pause-yourself';
+    if (s.paused.containsKey(gid)) return 'already-paused';
+    return null;
+  }
+
+  String? _resume(_Node n, _St s, LedgerDevice signer) {
+    final String? bad = _subjectMember(s, n.e.body);
+    if (bad != null) return bad;
+    final String gid = hexOf(_gidOf(n.e.body));
+    if (gid == signer.gidHex) return 'cannot-resume-yourself';
+    if (!s.paused.containsKey(gid)) return 'not-paused';
+    return null;
+  }
+
+  String? _accessEnd(_Node n, _St s, LedgerDevice signer) {
+    final String? bad = _subjectMember(s, n.e.body);
+    if (bad != null) return bad;
+    final String gid = hexOf(_gidOf(n.e.body));
+    final _Mem m = s.members[gid]!;
+    if (gid == signer.gidHex) return 'use-leave';
+    final String reason = n.e.body['reason']! as String;
+    final int at = n.e.issuedAtMs;
+    if (reason == 'notice') {
+      // The long way: any parent, for anyone, with a wait every device can see. One notice at a time per person.
+      if (s.pendingEnds.containsKey(gid)) return 'notice-already-running';
+      return null;
+    }
+    if (reason != 'ended') return 'reason-not-supported';
+    // The short way is for a carer. A parent is ended together (guardian.remove, the parent agrees) or by notice.
+    if (m.kind != 'carer') return 'parents-end-together-or-by-notice';
+    final String? welcomer = m.welcomedBy;
+    if (welcomer == signer.gidHex) return null; // the parent who welcomed them may end it at once
+    // Anyone else needs the welcoming parent's yes; if that parent is no longer here, every other parent's.
+    final bool welcomerHere = welcomer != null && s.members[welcomer]?.kind == 'guardian';
+    final Set<String> required = welcomerHere
+        ? <String>{welcomer}
+        : <String>{for (final String x in s.electors(at)) if (x != signer.gidHex) x};
+    if (required.isEmpty) return null;
+    n.gate = _gateFor(s, proposerGid: signer.gidHex!, required: required, acceptKey: null, exp: at + kApprovalLifetimeMs,
+        includeSettlingVoters: true, asOf: at);
+    return null;
+  }
+
+  String? _endCancel(_Node n, _St s, LedgerDevice signer) {
+    final String h = hexOf(n.e.body['end']! as Uint8List);
+    if (!n.anc.contains(h)) return 'end-not-seen';
+    final _Node? en = nodes[h];
+    if (en == null || en.reject != null || en.type != EntryType.accessEnd || en.e.body['reason'] != 'notice') return 'not-a-notice';
+    if (en.signerHex != n.signerHex && s.devices[en.signerHex]?.gidHex != signer.gidHex) return 'only-the-one-who-gave-notice';
+    if (en.e.issuedAtMs + kEndNoticeMs <= n.e.issuedAtMs) return 'too-late-to-cancel';
+    return null;
+  }
+
+  /// A list of capability numbers in the one canonical form: strictly ascending, only ones a limit may touch.
+  static bool _limitList(Object? v) {
+    if (v is! List) return false;
+    int last = 0;
+    for (final Object? x in v) {
+      if (x is! int || x <= last || !kLimitableCapabilities.contains(x)) return false;
+      last = x;
+    }
+    return true;
+  }
+
+  String? _limitsAgree(_Node n, _St s, LedgerDevice signer) {
+    final Map<String, Object?> b = n.e.body;
+    final String gid = hexOf(_gidOf(b));
+    final _Mem? m = s.members[gid];
+    if (m == null) return 'unknown-subject';
+    if (m.kind != 'guardian') return 'limits-are-for-a-parent';
+    if (!_limitList(b['limits'])) return 'limits-not-allowed';
+    final List<int> list = <int>[for (final Object? x in b['limits']! as List) x! as int];
+    final int at = n.e.issuedAtMs, until = b['until']! as int;
+    final List<int> current = s.limits[gid] ?? const <int>[];
+    if (gid == signer.gidHex) {
+      // A request to loosen or end the limits: fewer than now, and every other parent must say yes.
+      if (current.isEmpty || !list.every(current.contains) || list.length >= current.length) return 'not-a-loosening';
+      if (until < at || until > at + kApprovalLifetimeMs) return 'bad-think-over';
+      final Set<String> others = <String>{for (final String x in s.electors(at)) if (x != gid) x};
+      if (others.isEmpty) return 'nobody-to-agree';
+      n.gate = _gateFor(s, proposerGid: gid, required: others, acceptKey: null, exp: at + kApprovalLifetimeMs,
+          includeSettlingVoters: false, asOf: at, yesNotBefore: until);
+      return null;
+    }
+    // Limits on another parent: only with that parent's own yes, after the think-over. Nothing changes before then.
+    if (list.isEmpty) return 'limits-empty';
+    if (until < at + kThinkOverMs || until > at + kApprovalLifetimeMs) return 'bad-think-over';
+    n.gate = _gateFor(s, proposerGid: signer.gidHex!, required: <String>{gid}, acceptKey: null, exp: at + kApprovalLifetimeMs,
+        includeSettlingVoters: true, asOf: at, yesNotBefore: until);
+    return null;
+  }
+
+  String? _limitsTighten(_Node n, _St s, LedgerDevice signer) {
+    final Map<String, Object?> b = n.e.body;
+    final String gid = hexOf(_gidOf(b));
+    if (gid != signer.gidHex) return 'only-yourself';
+    if (!_limitList(b['limits'])) return 'limits-not-allowed';
+    final List<int> list = <int>[for (final Object? x in b['limits']! as List) x! as int];
+    final List<int> current = s.limits[gid] ?? const <int>[];
+    if (!current.every(list.contains) || list.length <= current.length) return 'not-tighter';
+    return null;
+  }
+
+  String? _standingOk(_Node n, _St s, LedgerDevice signer) {
+    final Map<String, Object?> b = n.e.body;
+    if (hexOf(_gidOf(b)) != signer.gidHex) return 'only-yourself';
+    final int until = b['until']! as int;
+    if (until < 0 || until > n.e.issuedAtMs + kStandingMaxMs) return 'bad-until';
     return null;
   }
 
@@ -671,6 +914,7 @@ class _Reducer {
     required int? exp,
     required bool includeSettlingVoters,
     required int asOf,
+    int? yesNotBefore,
   }) {
     final Map<String, String> voterKeys = <String, String>{};
     for (final String r in required) {
@@ -685,6 +929,7 @@ class _Reducer {
       exp: exp,
       voterKeys: voterKeys,
       proposerKeys: <String>{for (final LedgerDevice d in s.devicesOf(proposerGid)) d.keyHex},
+      yesNotBefore: yesNotBefore,
     );
   }
 
@@ -713,6 +958,8 @@ class _Reducer {
         continue;
       }
       if (v.answer == 'withdraw') continue; // only the proposer withdraws
+      final int? notBefore = g.yesNotBefore;
+      if (v.answer == 'yes' && notBefore != null && v.atMs < notBefore) continue; // answered before the think-over ended
       if (v.answer == 'no') {
         refusals.add(v);
       } else {
@@ -790,11 +1037,29 @@ class _Reducer {
     };
   }
 
+  /// True when a notice's own clock cannot be trusted: some entry that does NOT build on the notice, written by a device of
+  /// the parent who gave it or of the person it is about, is dated later than the notice by more than the clock skew. An
+  /// honest notice is written on top of what its writer had seen, so such an entry shows the notice was backdated
+  /// (a stale parent plus a stale time) to skip the wait. The notice then simply does not count and can be given again.
+  bool _staleNotice(_Node notice, Set<String>? include, String by, String subject, _St st) {
+    final int floor = notice.e.issuedAtMs + kClockSkewMs;
+    for (final _Node x in order) {
+      if (include != null && x.topo != 0 && !include.contains(x.h)) continue;
+      if (x.reject != null || identical(x, notice) || x.e.issuedAtMs <= floor || x.anc.contains(notice.h)) continue;
+      final String? g = st.devices[x.signerHex]?.gidHex;
+      if (g != null && (g == by || g == subject)) return true;
+    }
+    return false;
+  }
+
   _St _fold(Set<String>? include, int asOf, {required bool useVoid}) {
     final _St st = _St();
     final List<_Node> policyNodes = <_Node>[];
     final List<_Node> revokes = <_Node>[];
     final Set<String> cancelled = <String>{};
+    final List<_Node> pauseNodes = <_Node>[], resumeNodes = <_Node>[], noticeEnds = <_Node>[], limitNodes = <_Node>[];
+    final List<_Node> standingNodes = <_Node>[];
+    final Set<String> endCancelled = <String>{};
     final Set<String> revokedByNow = _revokedKeys(include, asOf, useVoid);
     for (final _Node n in order) {
       if (include != null && n.topo != 0 && !include.contains(n.h)) continue; // the genesis is in every fold
@@ -834,7 +1099,8 @@ class _Reducer {
           final DeviceRecord dev = DeviceRecord.fromValue(b['dev'])!;
           final String gid = hexOf(b['gid']! as Uint8List);
           final String kind = b['kind']! as String;
-          st.members[gid] = _Mem(gid, b['name']! as String, kind, MemberProfile.fromValue(b['profile']), act);
+          st.members[gid] = _Mem(gid, b['name']! as String, kind, MemberProfile.fromValue(b['profile']), act,
+              st.devices[n.signerHex]?.gidHex);
           st.devices[hexOf(dev.key)] = LedgerDevice(
               key: dev.key, kind: kind, gidHex: gid, childId: null, name: b['name']! as String, agree: dev.agree,
               activatedAtMs: act, settleUntilMs: act + n.settleHours * 3600000, legacy: false, addedByHex: n.h);
@@ -873,9 +1139,93 @@ class _Reducer {
         case EntryType.keyRotate:
           if ((b['epoch']! as int) > st.epoch) st.epoch = b['epoch']! as int;
           break;
+        case EntryType.accessPause:
+          pauseNodes.add(n);
+          break;
+        case EntryType.accessResume:
+          resumeNodes.add(n);
+          break;
+        case EntryType.accessEnd:
+          if (b['reason'] == 'ended') {
+            st.deadGids.add(hexOf(b['gid']! as Uint8List)); // a carer, ended by the parent who welcomed them (or with their yes)
+          } else {
+            noticeEnds.add(n);
+          }
+          break;
+        case EntryType.accessEndCancel:
+          endCancelled.add(hexOf(b['end']! as Uint8List));
+          break;
+        case EntryType.limitsAgree:
+        case EntryType.limitsTighten:
+          limitNodes.add(n);
+          break;
+        case EntryType.standingOk:
+          standingNodes.add(n);
+          break;
         default:
-          break; // reserved types change nothing
+          break;
       }
+    }
+    // A notice ends someone only when its wait is over and the one who gave it has not taken it back. Taken in the order
+    // the waits end, a parent who has already been removed cannot also remove, and the last parent is never removed.
+    final List<_Node> orderedEnds = List<_Node>.of(noticeEnds)
+      ..sort((_Node a, _Node b) {
+        final int c = a.e.issuedAtMs.compareTo(b.e.issuedAtMs);
+        return c != 0 ? c : a.h.compareTo(b.h);
+      });
+    for (final _Node e in orderedEnds) {
+      if (endCancelled.contains(e.h)) continue;
+      final String gid = hexOf(e.e.body['gid']! as Uint8List);
+      final String by = st.devices[e.signerHex]?.gidHex ?? '';
+      if (st.deadGids.contains(by) || st.deadGids.contains(gid) || !st.members.containsKey(gid)) continue;
+      // A notice written against an old head with an old time would skip its own wait. It counts only if neither the one
+      // who gave it nor the one it is about has written, off to the side of it, anything later than it (see _staleNotice).
+      if (_staleNotice(e, include, by, gid, st)) continue;
+      final int eff = e.e.issuedAtMs + kEndNoticeMs;
+      if (eff > asOf) {
+        st.pendingEnds.putIfAbsent(gid, () => EndNotice(gid, by, e.e.issuedAtMs, eff, e.h));
+        continue;
+      }
+      if (st.members[gid]!.kind == 'guardian') {
+        final bool another = st.members.values.any((_Mem m) => m.kind == 'guardian' && m.gidHex != gid && !st.deadGids.contains(m.gidHex));
+        if (!another) continue;
+      }
+      st.deadGids.add(gid);
+    }
+    // Pauses: in force unless a resume that FOLLOWS the pause covers it. A resume that never saw it changes nothing, so a
+    // pause always beats a concurrent resume.
+    for (final _Node p in pauseNodes) {
+      final String gid = hexOf(p.e.body['gid']! as Uint8List);
+      if (st.deadGids.contains(gid) || st.paused.containsKey(gid)) continue;
+      final bool covered = resumeNodes.any((_Node r) => hexOf(r.e.body['gid']! as Uint8List) == gid && r.anc.contains(p.h));
+      if (covered) continue;
+      st.paused[gid] = PauseInfo(gid, st.devices[p.signerHex]?.gidHex ?? '', p.e.issuedAtMs, p.h);
+    }
+    // Limits: an agreement replaces the list, a tightening adds to it. Both are only here if they took effect.
+    for (final _Node n in limitNodes) {
+      final String gid = hexOf(n.e.body['gid']! as Uint8List);
+      final List<int> list = <int>[for (final Object? x in n.e.body['limits']! as List) x! as int];
+      if (n.type == EntryType.limitsAgree) {
+        st.limits[gid] = list;
+      } else {
+        st.limits[gid] = <int>{...(st.limits[gid] ?? const <int>[]), ...list}.toList()..sort();
+      }
+    }
+    st.limits.removeWhere((String g, List<int> l) => l.isEmpty || st.deadGids.contains(g));
+    // Standing OK: of a parent's newest entries (the ones no other of theirs follows) the strictest stands, so taking one
+    // back by writing a shorter one always works, even beside a longer one written at the same time.
+    final Map<String, List<_Node>> byGiver = <String, List<_Node>>{};
+    for (final _Node n in standingNodes) {
+      (byGiver[hexOf(n.e.body['gid']! as Uint8List)] ??= <_Node>[]).add(n);
+    }
+    for (final MapEntry<String, List<_Node>> g in byGiver.entries) {
+      int? until;
+      for (final _Node x in g.value) {
+        if (g.value.any((_Node y) => !identical(x, y) && y.anc.contains(x.h))) continue;
+        final int u = x.e.body['until']! as int;
+        if (until == null || u < until) until = u;
+      }
+      if (until != null && !st.deadGids.contains(g.key)) st.standing[g.key] = until;
     }
     for (final _Node r in revokes) {
       if (cancelled.contains(r.h)) continue;
@@ -934,8 +1284,25 @@ class _Reducer {
       }
     }
     final List<_Node> rotations = <_Node>[for (final _Node n in good) if (n.type == EntryType.keyRotate) n];
+    // Two parents who pause each other without having seen each other's pause: neither stands, so nobody is locked out of
+    // both. The family is shown the fork and either can pause again knowing what the other did.
+    final List<_Node> pauses = <_Node>[for (final _Node n in good) if (n.type == EntryType.accessPause) n];
+    final Set<_Node> mutual = <_Node>{};
+    for (final _Node a in pauses) {
+      for (final _Node b in pauses) {
+        if (identical(a, b) || a.anc.contains(b.h) || b.anc.contains(a.h)) continue;
+        final String? ag = keyGid[a.signerHex], bg = keyGid[b.signerHex];
+        if (ag != null && bg != null && ag == hexOf(b.e.body['gid']! as Uint8List) && bg == hexOf(a.e.body['gid']! as Uint8List)) {
+          mutual..add(a)..add(b);
+        }
+      }
+    }
+    for (final _Node n in mutual) {
+      n.voided = true;
+      n.voidReason = 'mutual-pause';
+    }
     for (final _Node n in good) {
-      if (n.type == EntryType.genesis) continue;
+      if (n.type == EntryType.genesis || n.voided) continue;
       final String sk = n.signerHex;
       final String? sg = keyGid[sk];
       // (a) The entry that made this signer a member is itself void: nothing the signer did survives.
@@ -959,6 +1326,21 @@ class _Reducer {
         n.voided = true;
         n.voidReason = 'signer-removed-concurrently';
         continue;
+      }
+      // (b2) The signer was paused on a branch this entry is not part of, and this entry was written after that pause:
+      // a pause beats a concurrent add. Leaving, defending their own phone and taking back their own notice still stand.
+      if (n.type != EntryType.guardianLeave && n.type != EntryType.deviceRevokeCancel && n.type != EntryType.accessEndCancel) {
+        for (final _Node p in pauses) {
+          if (p.voided || sg == null || hexOf(p.e.body['gid']! as Uint8List) != sg) continue;
+          if (n.anc.contains(p.h) || p.anc.contains(n.h) || n.e.issuedAtMs < p.e.issuedAtMs) continue;
+          final bool covered = good.any((_Node r) =>
+              r.type == EntryType.accessResume && r.anc.contains(p.h) && hexOf(r.e.body['gid']! as Uint8List) == sg);
+          if (covered) continue;
+          n.voided = true;
+          n.voidReason = 'signer-paused-concurrently';
+          break;
+        }
+        if (n.voided) continue;
       }
       // (c) Two concurrent additions of the same device key: the canonically earlier one keeps it.
       if (n.type == EntryType.memberAdd || n.type == EntryType.deviceAdd) {
@@ -994,6 +1376,7 @@ class _Reducer {
       for (final _Mem m in st.members.values)
         LedgerMember(
           gidHex: m.gidHex, name: m.name, kind: m.kind, profile: m.profile, activatedAtMs: m.activatedAt,
+          welcomedByGidHex: m.welcomedBy,
           deviceKeysHex: <String>[for (final LedgerDevice d in st.devicesOf(m.gidHex)) d.keyHex]..sort(),
         ),
     ]..sort((LedgerMember a, LedgerMember b) => a.gidHex.compareTo(b.gidHex));
@@ -1021,6 +1404,10 @@ class _Reducer {
         b['gid'] is Uint8List ? hexOf(b['gid']! as Uint8List) : null,
         b['name'] as String?,
         exp,
+        proposerGidHex: g.proposerGid,
+        requiredGidsHex: g.required.toList()..sort(),
+        yesGidsHex: g.yesAt.keys.where((String k) => k != '*').toList()..sort(),
+        notBeforeMs: g.yesNotBefore,
       ));
     }
     // Forks and heads, over the entries that passed their own position check.
@@ -1060,6 +1447,10 @@ class _Reducer {
       history: history,
       genesisDeviceKey: g.e.signer,
       nowMs: now,
+      paused: <PauseInfo>[for (final PauseInfo p in st.paused.values) p]..sort((PauseInfo a, PauseInfo b) => a.hashHex.compareTo(b.hashHex)),
+      endNotices: <EndNotice>[for (final EndNotice e in st.pendingEnds.values) e]..sort((EndNotice a, EndNotice b) => a.hashHex.compareTo(b.hashHex)),
+      limits: <String, List<int>>{for (final MapEntry<String, List<int>> e in st.limits.entries) e.key: List<int>.unmodifiable(e.value)},
+      standing: Map<String, int>.of(st.standing),
     );
   }
 }

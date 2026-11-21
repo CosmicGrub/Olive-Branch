@@ -8,11 +8,11 @@
 // `member.add` proposal, signs a yes or a no, lists the requests waiting for this grown-up and the ones this
 // grown-up sent, remembers "ask me later", and says all of it in adult words. Silence is never yes.
 //
-// WHAT THIS IS NOT. It is NOT wired into the guardian shell: the family ledger itself is not wired into pairing yet
-// (family_state.dart), so nothing in the running app creates a request. It does not do the in-person meet (W2: the
-// candidate's device record is an input here), it does not carry the new phone's own name, the new person's
-// acceptance happens on their phone (W2, not built), and the pause, end, limits-agreement, Standing OK and 72 hour
-// single-parent hold behaviours are reserved in the ledger and have no effect yet. The limits on asking (one
+// WHAT THIS IS NOT. It does not do the in-person meet (village_meet.dart does; the candidate's device record is an
+// input here), the new person's own yes is signed on their phone (village_link.dart) and read back here, and the
+// 72 hour single-parent hold is not built. Pause, end, the limits agreement and the Standing OK live in
+// village_people.dart; this file only refuses to start a welcome for a parent who is paused or has agreed not to. The
+// guardian app reaches this through village_welcome_flow.dart. The limits on asking (one
 // pending request, three in 30 days, the 7 day wait after a no) are checked on THIS phone before signing; another
 // phone running modified code could still sign more, and the reduce rule does not count them. The child sees none
 // of this: nothing in a child file imports this one (a test guards it).
@@ -434,7 +434,7 @@ class WelcomeRequest {
   final String rule, status;
   final List<ElectorStatus> electors;
 
-  /// The new person has said yes on their own phone (not built: this stays false until the meet is built).
+  /// The new person has said yes on their own phone (their signed vote for THIS request is in the record).
   final bool candidateYes;
 
   /// This grown-up is the one who asked.
@@ -701,6 +701,13 @@ class WelcomeService {
           isAsker: g == askerGid,
         ),
     ];
+    bool candidateYes = false;
+    final DeviceRecord? cand = DeviceRecord.fromValue(b['dev']);
+    if (cand != null) {
+      for (final LedgerVote v in votes) {
+        if (v.answer == 'yes' && bytesEqual(v.voter, cand.key) && v.atMs < exp && v.atMs >= e.issuedAtMs - kClockSkewMs) candidateYes = true;
+      }
+    }
     final String? mine = myGid == null ? null : answers[myGid];
     final bool isElector = myGid != null && electorate.contains(myGid) && myGid != askerGid;
     final bool settling = isElector && s.isSettling(_me.publicKey, now);
@@ -716,7 +723,7 @@ class WelcomeService {
       rule: pr['rule']! as String,
       electors: electors,
       status: status,
-      candidateYes: false,
+      candidateYes: candidateYes,
       mine: myGid != null && myGid == askerGid,
       needsMyAnswer: status == 'waiting' && isElector && mine == null && !settling,
       myAnswer: mine,
@@ -774,6 +781,12 @@ class WelcomeService {
     }
     if (me.settlingAt(now)) {
       throw const WelcomeRefused('settling', 'This phone is still settling in. You can welcome someone once that ends.');
+    }
+    if (s.isPaused(me.gidHex ?? '')) {
+      throw const WelcomeRefused('paused', 'Your access is paused, so you cannot welcome anyone for now. Another parent can resume it.');
+    }
+    if (s.limitsOf(me.gidHex ?? '').contains(Capability.startWelcome.number)) {
+      throw const WelcomeRefused('not-allowed', 'You agreed that welcoming people is switched off for you. You can ask the other parents to change that.');
     }
     final LedgerMember? mm = s.members.where((LedgerMember m) => m.gidHex == me.gidHex).firstOrNull;
     if (mm != null && mm.profile != null && !mm.profile!.has(Capability.startWelcome)) {
