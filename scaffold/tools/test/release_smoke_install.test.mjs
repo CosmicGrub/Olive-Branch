@@ -33,6 +33,7 @@ S="${toPosix(state)}"
 echo "adb $*" >> "${toPosix(callLog)}"
 case "$1" in
   wait-for-device|logcat) exit 0 ;;
+  get-serialno) echo "\${FAKE_SERIAL-emulator-5554}"; exit 0 ;;
   uninstall)
     if [ -e "$S/installed" ]; then rm -f "$S/installed"; echo "Success"; exit 0; fi
     echo "Failure [DELETE_FAILED_INTERNAL_ERROR]"; exit 1 ;;
@@ -118,6 +119,14 @@ const firstIndex = (calls, re) => calls.findIndex((c) => re.test(c));
   ok(/failed again after pm uninstall \/ pm clear/.test(s.r.stdout), 'with a message that says the retry was made');
   ok(s.calls.filter((c) => /^adb install/.test(c)).length === 2, 'and only one retry, never a loop');
   ok(/final uninstall:/.test(s.install), 'the final uninstall still ran');
+}
+
+// ---- C2 · a physical device is refused, untouched -------------------------------------------------------------------
+for (const serial of ['R5CT1234ABC', '192.0.2.10:5555', '']) {
+  const s = scenario({ env: { FAKE_SERIAL: serial } });
+  ok(s.r.status === 2, `target '${serial}' is refused with exit 2 (exit ${s.r.status})`);
+  ok(/REFUSED/.test(s.r.stderr), `target '${serial}': says why`);
+  ok(!/uninstall|pm clear|^adb install/m.test(s.calls.join('\n')), `target '${serial}': nothing was uninstalled, cleared or installed`);
 }
 
 // ---- D · the source -----------------------------------------------------------------------------------------------

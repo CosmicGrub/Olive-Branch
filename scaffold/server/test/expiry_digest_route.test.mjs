@@ -85,6 +85,14 @@ const keysOf = (v, out = new Set()) => {
   else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); keysOf(x, out); }
   return out;
 };
+// Every string value anywhere in the body, so a leak under ANY key (detail, debug, message) is caught, without a
+// substring search over serialised JSON (which the generated UUIDs defeat).
+const stringsOf = (v, out = []) => {
+  if (typeof v === 'string') out.push(v);
+  else if (Array.isArray(v)) v.forEach((x) => stringsOf(x, out));
+  else if (v && typeof v === 'object') Object.values(v).forEach((x) => stringsOf(x, out));
+  return out;
+};
 const artifactIdsOf = (body) => (body?.digests ?? []).flatMap((d) => (d.items ?? []).map((i) => i.artifactId));
 
 const SECRET = Buffer.from('e'.repeat(32), 'utf8');
@@ -120,7 +128,8 @@ const get = (childId, t) => api.handle('GET', `/v1/children/${childId}/expiry-di
   check('D child', 'a child session is refused', r.status, 403);
   check('D child', 'with the named reason', r.body.error, 'not_a_child_surface');
   check('D child', 'and nothing of the digest leaks into the refusal',
-    r.body.digests === undefined && artifactIdsOf(r.body).length === 0, true);
+    r.body.digests === undefined && artifactIdsOf(r.body).length === 0
+      && !stringsOf(r.body).some((x) => ['a-0', 'a-1', 'a-2', 'call_clip', 'screen_frame', 'session_media'].some((k) => x === k || x.includes(iso(t0 + 3 * day)))), true);
 }
 {
   const r = await get(CHILD, strangerTok);

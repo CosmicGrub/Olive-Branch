@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Install a RELEASE APK on the already-booted emulator, launch MainActivity, watch it for a fixed window and
 # save the evidence. Run inside reactivecircus/android-emulator-runner (.github/workflows/release-smoke.yml);
-# it can also be run by hand against any adb device:  bash tools/release-smoke.sh <apk> <outdir> [seconds]
+# it can also be run by hand against an emulator:  bash tools/release-smoke.sh <apk> <outdir> [seconds]
 #
 # Evidence written to <outdir>: logcat.txt, alive.txt (one "<second> <pid>" per second; empty pid = process gone),
 # am-start.txt, activities.txt, screenshot.png. The verdict is tools/release-smoke-eval.mjs (unit-tested).
-# Never uninstalls anything from a real device: it is meant for a throwaway emulator.
+# EMULATOR ONLY. It uninstalls the app (before, on a signature clash, and at exit) and runs pm clear, which destroys the
+# app's data, so it refuses to run unless adb's target is an emulator (serial emulator-NNNN). Exit 2 otherwise.
 #
 # Install (ISS-025): the result of every uninstall is LOGGED (install.txt is the single record, also echoed), because
 # it used to be thrown away and a failed run said only "adb install failed". When the install is refused with
@@ -20,6 +21,12 @@ mkdir -p "$OUT"
 : > "$OUT/alive.txt"
 
 adb wait-for-device
+# Guard (before the EXIT trap exists, so a refusal touches nothing): never act on a physical device.
+SERIAL="$(adb get-serialno 2>/dev/null | tr -d '\r' | head -n1)"
+case "$SERIAL" in
+  emulator-*) ;;
+  *) echo "REFUSED  target '${SERIAL:-<none>}' is not an emulator (serial must start with emulator-). This script uninstalls the app and wipes its data; run it only against a throwaway emulator." >&2; exit 2 ;;
+esac
 adb logcat -G 16M >/dev/null 2>&1 || true
 # Whatever happens next, leave the emulator without the app. Logged, never silent, never fatal.
 final_uninstall() {
