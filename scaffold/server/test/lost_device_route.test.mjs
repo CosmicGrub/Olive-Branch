@@ -376,8 +376,9 @@ let inc2;
     (await call('GET', `/v1/children/${CHILD_A}/inbox`, t2.tok)).body?.error, 'device_paused');
   check('D tablet', '...a stranger grown-up cannot touch it', (await mark(stranger, t2.deviceId, '7315')).status, 404);
   const cf = await confirm(M2, t2.deviceId, r.body.incidentId);
-  check('D tablet', 'any grown-up of the family may make a TABLET final (it holds no one\'s PIN) -> 200 revoked', `${cf.status} ${cf.body?.state}`, '200 revoked');
-  check('D tablet', '...the tablet\'s credential is dead', (await call('POST', '/v1/auth/session/refresh', null, { deviceId: t2.deviceId, deviceCredential: t2.cred })).body?.error, 'device_revoked');
+  // With two grown-ups no one cuts a child's tablet off early alone: the pause stands (either may undo it) and the 72 hours run.
+  check('D tablet', 'with two grown-ups, one cannot make a TABLET final early -> 403', cf.status, 403);
+  check('D tablet', '...the pause stands: the tablet is paused, not cut off', (await call('POST', '/v1/auth/session/refresh', null, { deviceId: t2.deviceId, deviceCredential: t2.cred })).body?.error, 'device_paused');
   const t3 = await pairTablet(M2, CHILD_A);
   const m3 = await mark(D1, t3.deviceId, '2468');
   const f3 = await found(M2, t3.deviceId, m3.body.incidentId);

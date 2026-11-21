@@ -6627,10 +6627,6 @@ export function dbPort(pool: pg.Pool): DbPort {
 export const RECOVERY_WAIT_SECOND_PARENT_MS = 48 * 3_600_000;
 /** The waiting period with no other grown-up (SD-2). */
 export const RECOVERY_WAIT_SOLE_PARENT_MS = 72 * 3_600_000;
-/** The printed sheet used while another grown-up still has a working phone: they get a notice and a longer window to
- *  stop it, so a parent whose co-parent cannot or will not help still has a way back, and a stranger with the sheet
- *  still cannot get past them quietly. */
-export const RECOVERY_WAIT_SHEET_WITH_PARENT_MS = 7 * 24 * 3_600_000;
 /** Wrong owner-PIN proofs, across ALL requests of one account in a day, before a helping parent's finish is refused
  *  until the day has passed (the account's own sheet still works). */
 export const RECOVERY_PROOF_MAX_WRONG_PER_DAY = 10;
@@ -6973,7 +6969,7 @@ export async function helperAnswer(
 export type StartRecoveryError =
   | 'not_family'             // the other grown-up is not a parent of this family (or no such account): ONE answer
   | 'invalid_sheet'          // the key matches no live sheet
-  | 'ask_other_grownup'      // kept for older callers; no longer returned (a working second parent gets a notice and a longer wait)
+  | 'ask_other_grownup'      // the sheet is right, but another grown-up with a working phone must help instead
   | 'too_many_open' | 'too_many_recent';
 
 async function recoveryLoadCaps(q: Query, userId: string, now: Date): Promise<StartRecoveryError | null> {
@@ -7032,7 +7028,7 @@ export async function startRecoveryForGrownUp(
 export async function startRecoveryWithSheet(
   pool: pg.Pool, input: { key: string; deviceLabel?: string; now?: Date },
 ): Promise<{ ok: true; requestId: string; code: string; readyAt: string; expiresAt: string;
-             helperRequired: boolean; accountName: string; otherGrownupsNotified: boolean }
+             helperRequired: boolean; accountName: string }
           | { ok: false; reason: StartRecoveryError }> {
   const now = input.now ?? new Date();
   const norm = normaliseRecoveryCode('sheet', input.key);
@@ -7051,14 +7047,16 @@ export async function startRecoveryWithSheet(
       `SELECT s.id, u.display_name FROM recovery_sheet s JOIN app_user u ON u.id = s.user_id AND u.deactivated_at IS NULL
         WHERE s.key_hash = $1 AND s.retired_at IS NULL FOR UPDATE OF s`, [sheetDigest]);
     if (!live.length) return { ok: false, reason: 'invalid_sheet' } as const;
-    // Another grown-up with a working phone: the sheet still works, but the wait is longer and that grown-up's
-    // phones show a notice they can stop it from. A co-parent who cannot or will not help cannot lock anyone out.
-    const withParent = (await otherParentsOf(q, userId, now)).some((p) => p.hasLivePhone);
+    // Another grown-up with a working phone (not paused, seen within LIVE_PHONE_SEEN_WITHIN_MS): the safe way back is
+    // THEIR yes, not a sheet alone (design rule R-2). A phone in a drawer does not hold the owner out.
+    if ((await otherParentsOf(q, userId, now)).some((p) => p.hasLivePhone)) {
+      return { ok: false, reason: 'ask_other_grownup' } as const;
+    }
     const cap = await recoveryLoadCaps(q, userId, now);
     if (cap) return { ok: false, reason: cap } as const;
     const helper = await q(
       `SELECT id FROM recovery_helper WHERE user_id = $1 AND accepted_at IS NOT NULL AND revoked_at IS NULL`, [userId]);
-    const ready = new Date(now.getTime() + (withParent ? RECOVERY_WAIT_SHEET_WITH_PARENT_MS : RECOVERY_WAIT_SOLE_PARENT_MS));
+    const ready = new Date(now.getTime() + RECOVERY_WAIT_SOLE_PARENT_MS);
     const rows = await q(
       `INSERT INTO recovery_request
          (user_id, mode, started_by_kind, secret_hash, device_label, created_at, expires_at, ready_at,
@@ -7069,8 +7067,7 @@ export async function startRecoveryWithSheet(
     await insertSecurityEvent(q, userId, 'recovery_started', { variant: 'sheet' });
     return { ok: true, requestId: rows[0].id, code, readyAt: ready.toISOString(),
              expiresAt: new Date(now.getTime() + RECOVERY_REQUEST_TTL_MS).toISOString(),
-             helperRequired: helper.length > 0, accountName: live[0].display_name,
-             otherGrownupsNotified: withParent } as const;
+             helperRequired: helper.length > 0, accountName: live[0].display_name } as const;
   });
 }
 

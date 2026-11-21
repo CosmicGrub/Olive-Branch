@@ -1044,8 +1044,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: START_STATUS[r.reason] ?? 403, body: { error: r.reason } };
       }
       return { status: 201, body: { code: r.code, readyAt: r.readyAt, expiresAt: r.expiresAt,
-        helperRequired: r.helperRequired, accountName: r.accountName,
-        otherGrownupsNotified: r.otherGrownupsNotified === true } };
+        helperRequired: r.helperRequired, accountName: r.accountName } };
     },
   });
 
