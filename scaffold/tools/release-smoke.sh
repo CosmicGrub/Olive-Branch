@@ -15,6 +15,9 @@ mkdir -p "$OUT"
 
 adb wait-for-device
 adb logcat -G 16M >/dev/null 2>&1 || true
+# A cached AVD can carry the app from an earlier run signed with a different debug key (INSTALL_FAILED_UPDATE_INCOMPATIBLE when
+# the cached snapshot is stale and the emulator cold-boots from the saved userdata). A smoke test wants a fresh install.
+adb uninstall "$PKG" >/dev/null 2>&1 || true
 adb install -r "$APK" > "$OUT/install.txt" 2>&1 || { cat "$OUT/install.txt"; echo "FAIL  adb install failed"; exit 1; }
 adb logcat -b all -c
 adb shell am start -W -n "$PKG/.MainActivity" > "$OUT/am-start.txt" 2>&1 || true
