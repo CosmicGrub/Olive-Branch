@@ -26,81 +26,15 @@ import 'dart:typed_data';
 
 import 'backup_classes.dart';
 import 'backup_crypto.dart';
+import 'backup_header.dart';
 import 'backup_sink.dart';
 import 'backup_state.dart';
-import 'device_keys.dart' show DeviceKey, b64, unb64;
+import 'device_keys.dart' show DeviceKey;
 import 'local_services.dart';
 import 'local_store.dart';
 
 const int kBackupChunkBytes = 256 * 1024;
 const int kKeepGenerations = 3;
-
-/// The small signed, plain part of one backup: everything needed to find the sealed manifest and the chunks, and
-/// nothing that says what is inside.
-class BackupHeader {
-  BackupHeader({
-    required this.kind,
-    required this.setId,
-    required this.seq,
-    required this.wrap,
-    required this.mbox,
-    required this.chunks,
-    required this.writer,
-    required this.sig,
-  });
-  final BackupKind kind;
-  final String setId;
-  final int seq;
-  final Uint8List wrap, mbox, writer, sig;
-  final List<String> chunks;
-
-  /// `<10-digit seq>-<8 hex of the writing phone's public key>`: the manifest's name on every destination.
-  String get name => '${seq.toString().padLeft(10, '0')}-${writerTag(writer)}';
-
-  Uint8List toBytes() => Uint8List.fromList(utf8.encode(jsonEncode(<String, Object?>{
-        kBackupFormat: kBackupFormatVersion,
-        'kind': kind.name,
-        'set': setId,
-        'seq': seq,
-        'wrap': b64(wrap),
-        'mbox': b64(mbox),
-        'chunks': chunks,
-        'writer': b64(writer),
-        'sig': b64(sig),
-      })));
-
-  /// Null for anything that is not a well-formed header; never throws.
-  static BackupHeader? parse(Uint8List bytes) {
-    try {
-      final Object? j = jsonDecode(utf8.decode(bytes));
-      if (j is! Map || j[kBackupFormat] != kBackupFormatVersion) return null;
-      final Object? kind = j['kind'], set = j['set'], seq = j['seq'], wrap = j['wrap'], mbox = j['mbox'];
-      final Object? chunks = j['chunks'], writer = j['writer'], sig = j['sig'];
-      if (kind is! String || set is! String || seq is! int || seq < 1 || wrap is! String || mbox is! String) return null;
-      if (chunks is! List || writer is! String || sig is! String || !isSetId(set)) return null;
-      final BackupKind? k = BackupKind.values.where((BackupKind v) => v.name == kind).firstOrNull;
-      if (k == null) return null;
-      final List<String> ids = <String>[];
-      for (final Object? c in chunks) {
-        if (c is! String || !isChunkId(c)) return null;
-        ids.add(c);
-      }
-      final Uint8List w = unb64(writer), s = unb64(sig);
-      if (w.length != 32 || s.length != 64) return null;
-      return BackupHeader(
-          kind: k, setId: set, seq: seq, wrap: unb64(wrap), mbox: unb64(mbox), chunks: ids, writer: w, sig: s);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<bool> signatureOk() => DeviceKey.verify(
-      writer,
-      headerSigMessage(kind: kind, setId: setId, seq: seq, wrap: wrap, mbox: mbox, chunks: chunks, writer: writer),
-      sig);
-}
-
-String writerTag(List<int> writerPublicKey) => hexString(writerPublicKey.sublist(0, 4));
 
 /// One area as it was read.
 class AreaDoc {
@@ -241,7 +175,7 @@ class BackupEngine {
     final BackupHeader header = BackupHeader.parse(staged.header)!;
     final List<SinkReport> reports = <SinkReport>[];
     for (final BackupSink sink in sinks) {
-      reports.add(await _push(sink, staged, header));
+      reports.add(await _pushTo(sink, staged, header, keepGenerations));
     }
     final int bytes = staged.chunks.values.fold<int>(0, (int a, Uint8List c) => a + c.length);
     for (final SinkReport r in reports) {
@@ -265,10 +199,8 @@ class BackupEngine {
     int top = await state.lastSeq(kind);
     for (final BackupSink s in sinks) {
       try {
-        for (final String n in await s.listManifests(setId)) {
-          final int? q = int.tryParse(n.substring(0, 10));
-          if (q != null && q > top) top = q;
-        }
+        final int q = await s.highestSeq(setId);
+        if (q > top) top = q;
       } catch (_) {
         // an unreachable destination just does not raise the number; its own numbering is checked when it is reached
       }
@@ -322,83 +254,25 @@ class BackupEngine {
     };
     final Uint8List mbox = await sealUnder(dk, utf8.encode(jsonEncode(manifest)), manifestAad(setId, seq));
     final Uint8List wpk = writer.publicKey;
+    final Uint8List cert = await state.writerCert(kind, wpk) ?? (throw BackupNotSetUp(kind));
     final Uint8List sig = await writer.sign(headerSigMessage(
-        kind: kind, setId: setId, seq: seq, wrap: wrap, mbox: mbox, chunks: order, writer: wpk));
-    final BackupHeader header =
-        BackupHeader(kind: kind, setId: setId, seq: seq, wrap: wrap, mbox: mbox, chunks: order, writer: wpk, sig: sig);
+        kind: kind, setId: setId, seq: seq, wrap: wrap, mbox: mbox, chunks: order, writer: wpk, cert: cert));
+    final BackupHeader header = BackupHeader(
+        kind: kind, setId: setId, seq: seq, wrap: wrap, mbox: mbox, chunks: order, writer: wpk, cert: cert, sig: sig);
     return StagedBackup(
         kind: kind, rootHash: root, setId: setId, seq: seq, header: header.toBytes(), chunkIds: order, chunks: chunks);
   }
+}
 
-  Future<SinkReport> _push(BackupSink sink, StagedBackup s, BackupHeader header) async {
-    int uploaded = 0, skipped = 0;
-    try {
-      for (final String id in s.chunkIds) {
-        if (await sink.hasChunk(s.setId, id)) {
-          skipped++;
-          continue;
-        }
-        await sink.putChunk(s.setId, id, s.chunks[id]!);
-        uploaded++;
-      }
-      // The commit. Everything above is invisible to a restore until this lands.
-      await sink.putManifest(s.setId, header.name, s.header);
-      await _verify(sink, s, header);
-      try {
-        await _tidy(sink, s.setId, header);
-      } catch (_) {
-        // Tidying is a courtesy; a failure leaves an extra old backup, never a missing new one.
-      }
-      return SinkReport(label: sink.label, kindWord: sink.kindWord, ok: true, uploaded: uploaded, skipped: skipped);
-    } on BackupSinkException catch (e) {
-      return SinkReport(label: sink.label, kindWord: sink.kindWord, ok: false, code: e.code, uploaded: uploaded, skipped: skipped);
-    }
-  }
-
-  Future<void> _verify(BackupSink sink, StagedBackup s, BackupHeader header) async {
-    final Uint8List? back = await sink.getManifest(s.setId, header.name);
-    if (back == null || !_same(back, s.header)) throw const BackupSinkException('damaged', 'manifest');
-    for (final String id in s.chunkIds) {
-      if (sink.kindWord == 'server') {
-        if (!await sink.hasChunk(s.setId, id)) throw const BackupSinkException('damaged', 'chunk');
-      } else {
-        final Uint8List? c = await sink.getChunk(s.setId, id);
-        if (c == null || await sha256HexOf(c) != id) throw const BackupSinkException('damaged', 'chunk');
-      }
-    }
-  }
-
-  static bool _same(Uint8List a, Uint8List b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
-  /// Removes this phone's backups beyond the newest [keepGenerations], and the chunks no remaining backup uses.
-  Future<void> _tidy(BackupSink sink, String setId, BackupHeader newest) async {
-    final String mine = writerTag(newest.writer);
-    final List<String> all = await sink.listManifests(setId);
-    final List<String> ours = <String>[for (final String n in all) if (n.endsWith('-$mine')) n]..sort();
-    if (ours.length <= keepGenerations) return;
-    final List<String> drop = ours.sublist(0, ours.length - keepGenerations);
-    final Set<String> keepIds = <String>{};
-    for (final String n in all) {
-      if (drop.contains(n)) continue;
-      final Uint8List? b = await sink.getManifest(setId, n);
-      final BackupHeader? h = b == null ? null : BackupHeader.parse(b);
-      if (h != null) keepIds.addAll(h.chunks);
-    }
-    for (final String n in drop) {
-      final Uint8List? b = await sink.getManifest(setId, n);
-      final BackupHeader? h = b == null ? null : BackupHeader.parse(b);
-      await sink.deleteManifest(setId, n);
-      if (h != null) {
-        for (final String id in h.chunks) {
-          if (!keepIds.contains(id)) await sink.deleteChunk(setId, id);
-        }
-      }
-    }
+Future<SinkReport> _pushTo(BackupSink sink, StagedBackup s, BackupHeader header, int keep) async {
+  final SendCounts counts = SendCounts();
+  try {
+    await sink.store(s, header, counts, keep: keep);
+    return SinkReport(
+        label: sink.label, kindWord: sink.kindWord, ok: true, uploaded: counts.uploaded, skipped: counts.skipped);
+  } on BackupSinkException catch (e) {
+    return SinkReport(
+        label: sink.label, kindWord: sink.kindWord, ok: false, code: e.code,
+        uploaded: counts.uploaded, skipped: counts.skipped);
   }
 }

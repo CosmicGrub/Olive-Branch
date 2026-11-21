@@ -1,44 +1,32 @@
-// OLIVE BRANCH — where a backup is kept: a folder (a file the family owns), the family's own server, or memory for
-// tests. UNVERIFIED on a device; pure Dart, runs headless in CI. See docs/planning/BACKUP-RESTORE-CLIENT.md.
+// OLIVE BRANCH — where a backup is kept: a folder (a file the family owns), the family's own server
+// (backup_server.dart), or memory for tests. UNVERIFIED on a device; pure Dart, runs headless in CI.
+// See docs/planning/BACKUP-RESTORE-CLIENT.md.
 //
-// A destination holds only SEALED things and never learns what is in them: opaque chunks named by a hash of their own
-// bytes, and one small signed header per backup (a "manifest"). The order a backup is written in is what makes a
-// kill at any moment harmless: every chunk first, the manifest LAST. A manifest is the commit; until it exists the
-// previous backup is still the newest one, and a chunk with no manifest is just waste that the next run reuses.
+// A destination holds only SEALED things and never learns what is in them. A folder keeps opaque chunks named by a hash
+// of their own bytes and one small signed header per backup (a "manifest"). The order a backup is written in is what
+// makes a kill at any moment harmless: every chunk first, the manifest LAST. A manifest is the commit; until it exists
+// the previous backup is still the newest one, and a chunk with no manifest is just waste that the next run reuses.
 //
 //   folder  `<root>/<set>/chunks/<id>.chunk` and `<root>/<set>/manifests/<name>.manifest`; each file is written to a
 //           `.tmp`, flushed and renamed, so a half-written file is never read as a whole one.
-//   server  the contract in docs/planning/BACKUP-RESTORE-CLIENT.md (`/v1/backup/<set>/...`). The SERVER HALF IS NOT
-//           BUILT; this client speaks the contract and the tests run it against a stand-in.
-//
-// The server destination is compiled out of a release build ([kBackupInternetEnabled]) until the outside review of
-// the sealing has reported: nothing that crosses the internet ships before then. A folder never needs it.
+//   server  one sealed file per backup, sent in pieces over the server's own routes (backup_server.dart).
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
+import 'backup_crypto.dart' show sha256HexOf;
+import 'backup_header.dart';
+import 'backup_names.dart';
+import 'backup_state.dart' show StagedBackup;
 
-/// False in a release build unless it was made with `--dart-define=OLIVE_BACKUP_INTERNET_REVIEWED=true`. A debug or
-/// preview build may use the server destination (and says "not yet reviewed" on the adult screen).
-const bool kBackupInternetEnabled =
-    !bool.fromEnvironment('dart.vm.product') || bool.fromEnvironment('OLIVE_BACKUP_INTERNET_REVIEWED');
-
-final RegExp _setRe = RegExp(r'^[0-9a-f]{32}$');
-final RegExp _chunkRe = RegExp(r'^[0-9a-f]{64}$');
-final RegExp _manifestRe = RegExp(r'^[0-9]{10}-[0-9a-f]{8}$');
-
-bool isSetId(String s) => _setRe.hasMatch(s);
-bool isChunkId(String s) => _chunkRe.hasMatch(s);
-bool isManifestName(String s) => _manifestRe.hasMatch(s);
+export 'backup_names.dart';
 
 /// Why a destination refused or failed; [code] is for logic, never shown as is.
 class BackupSinkException implements Exception {
   const BackupSinkException(this.code, [this.detail = '']);
 
   /// 'unreachable' (could not be asked, try again), 'refused' (asked and said no), 'full', 'bad_name',
-  /// 'not_enabled' (the internet destination is compiled out), 'damaged'.
+  /// 'not_enabled' (the internet destination is compiled out), 'damaged', 'signed_out', 'no_vault', 'paused'.
   final String code;
   final String detail;
 
@@ -49,23 +37,31 @@ class BackupSinkException implements Exception {
   String toString() => 'BackupSinkException($code)';
 }
 
-abstract class BackupSink {
+/// Read-only: what a restore needs from wherever a backup is kept.
+abstract class BackupSource {
+  Future<List<String>> listManifests(String set);
+  Future<Uint8List?> getManifest(String set, String name);
+  Future<Uint8List?> getChunk(String set, String id);
+}
+
+/// How much of a backup a destination already had, and how much it was sent this run.
+class SendCounts {
+  int uploaded = 0, skipped = 0;
+}
+
+abstract class BackupSink implements BackupSource {
   /// What a grown-up calls it: "a folder on this phone", "your family's server".
   String get label;
 
   /// Stable word for the status record: 'folder' | 'server' | 'memory'.
   String get kindWord;
 
-  Future<bool> hasChunk(String set, String id);
-  Future<void> putChunk(String set, String id, Uint8List bytes);
-  Future<Uint8List?> getChunk(String set, String id);
-  Future<void> deleteChunk(String set, String id);
+  /// The highest backup number this destination already holds for [set] (0 when none or when it cannot be asked).
+  Future<int> highestSeq(String set);
 
-  /// The commit. Written last.
-  Future<void> putManifest(String set, String name, Uint8List bytes);
-  Future<List<String>> listManifests(String set);
-  Future<Uint8List?> getManifest(String set, String name);
-  Future<void> deleteManifest(String set, String name);
+  /// Sends [staged] and makes it count, then checks it is really there. Throws [BackupSinkException] on any problem.
+  /// A kill at any point leaves the previous backup the newest. [keep] is how many of this phone's own backups stay.
+  Future<void> store(StagedBackup staged, BackupHeader header, SendCounts counts, {int keep = 3});
 }
 
 void _check(String set, {String? chunk, String? manifest}) {
@@ -74,8 +70,96 @@ void _check(String set, {String? chunk, String? manifest}) {
   }
 }
 
+/// A destination that keeps chunks and manifests as separate named things (a folder, memory).
+abstract class ChunkedBackupSink implements BackupSink {
+  Future<bool> hasChunk(String set, String id);
+  Future<void> putChunk(String set, String id, Uint8List bytes);
+  @override
+  Future<Uint8List?> getChunk(String set, String id);
+  Future<void> deleteChunk(String set, String id);
+  Future<void> putManifest(String set, String name, Uint8List bytes);
+  Future<void> deleteManifest(String set, String name);
+
+  @override
+  Future<int> highestSeq(String set) async {
+    int top = 0;
+    try {
+      for (final String n in await listManifests(set)) {
+        final int? q = int.tryParse(n.substring(0, 10));
+        if (q != null && q > top) top = q;
+      }
+    } on BackupSinkException {
+      // an unreachable destination just does not raise the number
+    }
+    return top;
+  }
+
+  @override
+  Future<void> store(StagedBackup s, BackupHeader header, SendCounts counts, {int keep = 3}) async {
+    for (final String id in s.chunkIds) {
+      if (await hasChunk(s.setId, id)) {
+        counts.skipped++;
+        continue;
+      }
+      await putChunk(s.setId, id, s.chunks[id]!);
+      counts.uploaded++;
+    }
+    // The commit. Everything above is invisible to a restore until this lands.
+    await putManifest(s.setId, header.name, s.header);
+    await _verify(s, header);
+    try {
+      await _tidy(s.setId, header, keep);
+    } catch (_) {
+      // Tidying is a courtesy; a failure leaves an extra old backup, never a missing new one.
+    }
+  }
+
+  Future<void> _verify(StagedBackup s, BackupHeader header) async {
+    final Uint8List? back = await getManifest(s.setId, header.name);
+    if (back == null || !_same(back, s.header)) throw const BackupSinkException('damaged', 'manifest');
+    for (final String id in s.chunkIds) {
+      final Uint8List? c = await getChunk(s.setId, id);
+      if (c == null || await sha256HexOf(c) != id) throw const BackupSinkException('damaged', 'chunk');
+    }
+  }
+
+  static bool _same(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Removes this phone's backups beyond the newest [keep], and the chunks no remaining backup uses.
+  Future<void> _tidy(String setId, BackupHeader newest, int keep) async {
+    final String mine = writerTag(newest.writer);
+    final List<String> all = await listManifests(setId);
+    final List<String> ours = <String>[for (final String n in all) if (n.endsWith('-$mine')) n]..sort();
+    if (ours.length <= keep) return;
+    final List<String> drop = ours.sublist(0, ours.length - keep);
+    final Set<String> keepIds = <String>{};
+    for (final String n in all) {
+      if (drop.contains(n)) continue;
+      final Uint8List? b = await getManifest(setId, n);
+      final BackupHeader? h = b == null ? null : BackupHeader.parse(b);
+      if (h != null) keepIds.addAll(h.chunks);
+    }
+    for (final String n in drop) {
+      final Uint8List? b = await getManifest(setId, n);
+      final BackupHeader? h = b == null ? null : BackupHeader.parse(b);
+      await deleteManifest(setId, n);
+      if (h != null) {
+        for (final String id in h.chunks) {
+          if (!keepIds.contains(id)) await deleteChunk(setId, id);
+        }
+      }
+    }
+  }
+}
+
 /// Everything in memory. For tests, and the stand-in for a destination.
-class MemoryBackupSink implements BackupSink {
+class MemoryBackupSink extends ChunkedBackupSink {
   MemoryBackupSink({this.label = 'memory'});
   @override
   final String label;
@@ -151,7 +235,7 @@ class MemoryBackupSink implements BackupSink {
 }
 
 /// A folder. [root] is wherever the family keeps backups (a folder they copy to a drive, a card, another computer).
-class DirectoryBackupSink implements BackupSink {
+class DirectoryBackupSink extends ChunkedBackupSink {
   DirectoryBackupSink(this.root, {this.label = 'a folder on this phone'});
   final Directory root;
   @override
@@ -272,145 +356,4 @@ class DirectoryBackupSink implements BackupSink {
         }
         return out..sort();
       });
-}
-
-/// The family's server, over the contract in docs/planning/BACKUP-RESTORE-CLIENT.md. [token] gives the bearer for the
-/// signed-in account (production passes the session's current token). Transient failures (no answer, 5xx, 429) are
-/// retried [retries] times with a doubling pause, then raised as 'unreachable' so the run can carry on later; a 4xx is
-/// 'refused' and never retried.
-class ServerBackupSink implements BackupSink {
-  ServerBackupSink({
-    required this.baseUrl,
-    required this.client,
-    required this.token,
-    this.label = "your family's server",
-    this.retries = 2,
-    this.pause = const Duration(milliseconds: 200),
-  }) {
-    if (!kBackupInternetEnabled) throw const BackupSinkException('not_enabled');
-  }
-
-  final String baseUrl;
-  final http.Client client;
-  final Future<String> Function() token;
-  @override
-  final String label;
-  @override
-  String get kindWord => 'server';
-  final int retries;
-  final Duration pause;
-
-  Uri _u(String path) => Uri.parse('${baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl}$path');
-
-  Future<http.Response> _send(String method, String path, {Uint8List? body, String? contentType}) async {
-    Object? last;
-    for (int attempt = 0; attempt <= retries; attempt++) {
-      try {
-        final http.Request req = http.Request(method, _u(path));
-        req.headers['Authorization'] = 'Bearer ${await token()}';
-        if (contentType != null) req.headers['Content-Type'] = contentType;
-        if (body != null) req.bodyBytes = body;
-        final http.Response res = await http.Response.fromStream(await client.send(req));
-        if (res.statusCode == 429 || res.statusCode >= 500) {
-          last = res.statusCode;
-        } else {
-          return res;
-        }
-      } on BackupSinkException {
-        rethrow;
-      } catch (e) {
-        last = e;
-      }
-      if (attempt < retries) await Future<void>.delayed(pause * (1 << attempt));
-    }
-    throw BackupSinkException('unreachable', '$last');
-  }
-
-  Never _fail(http.Response r) {
-    String err = '';
-    try {
-      final Object? j = jsonDecode(r.body);
-      if (j is Map && j['error'] is String) err = j['error'] as String;
-    } catch (_) {}
-    if (r.statusCode == 507 || err == 'storage_full') throw const BackupSinkException('full');
-    throw BackupSinkException('refused', '${r.statusCode}');
-  }
-
-  @override
-  Future<bool> hasChunk(String set, String id) async {
-    _check(set, chunk: id);
-    final http.Response r = await _send('HEAD', '/v1/backup/$set/chunks/$id');
-    if (r.statusCode == 200) return true;
-    if (r.statusCode == 404) return false;
-    _fail(r);
-  }
-
-  @override
-  Future<void> putChunk(String set, String id, Uint8List bytes) async {
-    _check(set, chunk: id);
-    final http.Response r =
-        await _send('PUT', '/v1/backup/$set/chunks/$id', body: bytes, contentType: 'application/octet-stream');
-    if (r.statusCode != 200 && r.statusCode != 201 && r.statusCode != 204) _fail(r);
-  }
-
-  @override
-  Future<Uint8List?> getChunk(String set, String id) async {
-    _check(set, chunk: id);
-    final http.Response r = await _send('GET', '/v1/backup/$set/chunks/$id');
-    if (r.statusCode == 200) return r.bodyBytes;
-    if (r.statusCode == 404) return null;
-    _fail(r);
-  }
-
-  @override
-  Future<void> deleteChunk(String set, String id) async {
-    _check(set, chunk: id);
-    final http.Response r = await _send('DELETE', '/v1/backup/$set/chunks/$id');
-    if (r.statusCode != 200 && r.statusCode != 204 && r.statusCode != 404) _fail(r);
-  }
-
-  @override
-  Future<void> putManifest(String set, String name, Uint8List bytes) async {
-    _check(set, manifest: name);
-    final http.Response r = await _send('PUT', '/v1/backup/$set/manifests/$name',
-        body: bytes, contentType: 'application/octet-stream');
-    if (r.statusCode != 200 && r.statusCode != 201 && r.statusCode != 204) _fail(r);
-  }
-
-  @override
-  Future<List<String>> listManifests(String set) async {
-    _check(set);
-    final http.Response r = await _send('GET', '/v1/backup/$set/manifests');
-    if (r.statusCode == 404) return <String>[];
-    if (r.statusCode != 200) _fail(r);
-    try {
-      final Object? j = jsonDecode(r.body);
-      final Object? names = j is Map ? j['manifests'] : null;
-      if (names is! List) throw const BackupSinkException('damaged');
-      return <String>[
-        for (final Object? n in names)
-          if (n is String && isManifestName(n)) n,
-      ]..sort();
-    } on BackupSinkException {
-      rethrow;
-    } catch (_) {
-      throw const BackupSinkException('damaged');
-    }
-  }
-
-  @override
-  Future<Uint8List?> getManifest(String set, String name) async {
-    _check(set, manifest: name);
-    final http.Response r = await _send('GET', '/v1/backup/$set/manifests/$name');
-    if (r.statusCode == 200) return r.bodyBytes;
-    if (r.statusCode == 404) return null;
-    _fail(r);
-  }
-
-  @override
-  Future<void> deleteManifest(String set, String name) async {
-    _check(set, manifest: name);
-    final http.Response r = await _send('DELETE', '/v1/backup/$set/manifests/$name');
-    if (r.statusCode != 200 && r.statusCode != 204 && r.statusCode != 404) _fail(r);
-  }
 }
