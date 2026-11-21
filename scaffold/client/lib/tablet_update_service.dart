@@ -207,6 +207,7 @@ class TabletUpdateService extends ChangeNotifier {
           await _deleteIfExists(File('${dir.path}${Platform.pathSeparator}${s.fileName}'));
           await store.clearStaged();
           await store.saveLastResult(null);
+          _result = null;
           s = null;
         } else if (s.stage == StageState.installing && _handedOverAt != null) {
           // The installer is on screen right now; the answer is not in yet.
@@ -224,8 +225,11 @@ class TabletUpdateService extends ChangeNotifier {
       }
       _staged = s;
       _whatsNew = await store.loadWhatsNew();
+      // A result already in memory (something that just went wrong in this run) is not overwritten by an older one.
       final String? last = await store.loadLastResult();
-      _result = last == null ? null : TabletUpdateCode.values.where((TabletUpdateCode c) => c.name == last).firstOrNull;
+      if (_result == null && last != null) {
+        _result = TabletUpdateCode.values.where((TabletUpdateCode c) => c.name == last).firstOrNull;
+      }
       _own = await engine.ownOffer();
     } catch (_) {
       // Reading is best effort: a failure here shows nothing rather than something wrong.

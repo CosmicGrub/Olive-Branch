@@ -70,6 +70,7 @@ class TabletUpdateSender extends ChangeNotifier {
   int _bad = 0;
   bool _serving = false;
   bool _ended = false;
+  bool _engaged = false;
   NeedMsg? _pending;
 
   void _set(SenderPhase p) {
@@ -99,7 +100,8 @@ class TabletUpdateSender extends ChangeNotifier {
     _set(SenderPhase.offering);
     _armIdle();
     _offerTimer = Timer.periodic(offerEvery, (_) {
-      if (_phase == SenderPhase.offering) unawaited(_offer());
+      // Once the tablet has asked for anything it knows about the offer; only a lost link makes the phone say it again.
+      if (_phase == SenderPhase.offering && !_engaged) unawaited(_offer());
     });
     await _offer();
   }
@@ -128,6 +130,7 @@ class TabletUpdateSender extends ChangeNotifier {
     }
     switch (m) {
       case NeedMsg():
+        _engaged = true;
         _armIdle();
         _pending = m;
         if (!_serving) unawaited(_serve());

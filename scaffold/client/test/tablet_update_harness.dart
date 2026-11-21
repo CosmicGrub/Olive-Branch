@@ -4,12 +4,14 @@
 // updater's own verification instead; what is tested here is the tablet path's use of the port, byte for byte.
 //
 // Documentation-range data only: no real key, address or name. The signing key is a fixed test seed.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:olive_client/play_transport.dart';
 import 'package:olive_client/tablet_update_hash.dart';
 import 'package:olive_client/tablet_update_port.dart';
 
@@ -68,12 +70,23 @@ Future<Fixture> makeFixture({
   String abi = 'arm64-v8a',
   List<String> notes = const <String>['Calmer pairing.', 'Fixes a crash when the tablet sleeps.'],
   Map<String, Object?> Function(Map<String, Object?>)? tamper,
-  List<int>? lieChunkSizes,
+
+  /// The signed whole-file hash is wrong although every chunk hash is right (a notice that lies about the whole).
+  bool wrongWholeSha = false,
+
+  /// Sign a notice that DECLARES this size (with a matching, made-up chunk list) without building such a file.
+  int? declaredSize,
 }) async {
   final Uint8List apk = apkOverride ?? makeApkBytes(size: size, versionCode: versionCode, signer: apkSigner);
   final List<String> chunks = <String>[];
   for (int o = 0; o < apk.length; o += chunkSize) {
     chunks.add(await sha256HexOf(apk.sublist(o, min(o + chunkSize, apk.length))));
+  }
+  final int declared = declaredSize ?? apk.length;
+  if (declaredSize != null) {
+    chunks
+      ..clear()
+      ..addAll(List<String>.filled((declared + chunkSize - 1) ~/ chunkSize, 'c' * 64));
   }
   final Map<String, Object?> m = <String, Object?>{
     'schema': 1,
@@ -90,8 +103,8 @@ Future<Fixture> makeFixture({
     'apks': <Object?>[
       <String, Object?>{
         'abi': abi,
-        'size': apk.length,
-        'sha256': await sha256HexOf(apk),
+        'size': declared,
+        'sha256': wrongWholeSha || declaredSize != null ? 'd' * 64 : await sha256HexOf(apk),
         'chunkSize': chunkSize,
         'chunks': chunks,
         'signerSha256': pinnedSigner.isEmpty ? kTestSigner : pinnedSigner,
@@ -246,4 +259,47 @@ Future<HeldUpdate> heldFrom(Fixture f, ReferenceEngine phoneEngine, Directory di
   final File file = File('${dir.path}${Platform.pathSeparator}held.apk');
   await file.writeAsBytes(f.apk);
   return HeldUpdate(update: u, apk: file);
+}
+
+/// A transport a test fully controls: it records what this end sends and lets the test inject what "arrives", from any
+/// seat it likes. Used for hostile peers (the real twin only ever delivers what the real other end sent).
+class ScriptedTransport implements PlayTransport {
+  ScriptedTransport({this.mySeatId = 'b', this.peerSeatId = 'a'});
+  final String mySeatId, peerSeatId;
+  final StreamController<PlayInbound> _in = StreamController<PlayInbound>.broadcast(sync: true);
+  final StreamController<PeerPresence> _pres = StreamController<PeerPresence>.broadcast(sync: true);
+  PeerPresence presenceNow = PeerPresence.present;
+  final List<Map<String, dynamic>> sent = <Map<String, dynamic>>[];
+  bool accept = true;
+
+  @override
+  String get mySeat => mySeatId;
+  @override
+  String get peerSeat => peerSeatId;
+  @override
+  Stream<PlayInbound> get incoming => _in.stream;
+  @override
+  Stream<PeerPresence> get presence => _pres.stream;
+  @override
+  PeerPresence get currentPresence => presenceNow;
+  @override
+  Future<bool> send(Map<String, dynamic> wire) async {
+    if (!accept) return false;
+    sent.add(jsonDecode(jsonEncode(wire)) as Map<String, dynamic>);
+    return true;
+  }
+
+  void inject(Object? raw, {String? from}) => _in.add(PlayInbound(raw, from ?? peerSeatId));
+
+  /// Every `need` this end has sent, as (object, offset, length).
+  List<(String, int, int)> get needs => <(String, int, int)>[
+        for (final Map<String, dynamic> m in sent)
+          if (m['k'] == 'need') (m['o'] as String, m['off'] as int, m['len'] as int)
+      ];
+
+  @override
+  void dispose() {
+    unawaited(_in.close());
+    unawaited(_pres.close());
+  }
 }
