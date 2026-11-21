@@ -6067,7 +6067,7 @@ phone"), the list was read and is empty (without a live family: "<Ivy>'s tablet 
 stays on this phone."; with one, only when the server also lists no tablet), or the list cannot be read (the store is down, an
 entry is damaged, or it has not been read yet): **then the home says nothing about her tablet**, because a guess here is a
 claim about her device. With a live family and no word either way it keeps the day line ("You are offline..." or "It is <part
-of her day> for <Ivy>"). **Settings is one tap from the home:** a gear on the home's app bar opens it, behind the same PIN as
+of her day> for <Ivy>"). **Settings is one tap from the home:** a gear at the top of the home (in the page, not an app bar, which would take 56 dp off the height the Fold cover layout is read from) opens it, behind the same PIN as
 the More hub's Settings row, which is now the first row of More instead of the last (ISS-063). It is reached from More. The bottom tab bar
 proposed in the overhaul (Today, Messages, Together, Family, Settings) is
 **not** built: re-plumbing the guardian shell around one would touch every

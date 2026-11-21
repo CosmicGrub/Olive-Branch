@@ -164,20 +164,6 @@ class GuardianHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    // Settings is one tap from here (ISS-063): a gear on the app bar, behind the same PIN the More hub's Settings row
-    // asks for. The title is plain ("Home"), never her name or a status.
-    appBar: AppBar(
-      title: const Text('Home'),
-      actions: <Widget>[
-        IconButton(
-          key: const Key('guardianHomeSettings'),
-          icon: const Icon(Icons.settings_outlined),
-          tooltip: 'Settings',
-          onPressed: () => _moreScreenFor(context, childName: childName, baseUrl: baseUrl, guardianId: guardianId,
-              childId: childId, availabilityHttpClient: availabilityHttpClient).openSettings(context),
-        ),
-      ],
-    ),
     // LayoutBuilder sits ABOVE the scrollable, the same structural position
     // child_home.dart's own LayoutBuilder already establishes (that file's
     // own comment: "inside it, `constraints` are the Scaffold body's real
@@ -194,7 +180,17 @@ class GuardianHome extends StatelessWidget {
       // 1 principle for this screen), so it is built once and reused, not
       // duplicated.
       final Widget ribbonBlock = Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        // Settings is one tap from here (ISS-063): a gear, behind the same PIN the More hub's Settings row asks for. It sits
+        // in the page, not in an app bar: an app bar would take 56 dp off the height the Fold cover posture is read from.
+        Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(right: 4),
+          child: IconButton(
+            key: const Key('guardianHomeSettings'),
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _moreScreenFor(context, childName: childName, baseUrl: baseUrl, guardianId: guardianId,
+                childId: childId, availabilityHttpClient: availabilityHttpClient).openSettings(context)))),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // A Wrap, not a Row: at 2.0x text on the 344 dp cover screen her name, the
             // clock and the zone no longer fit on one line, and a Row overflowed. The
