@@ -17,6 +17,7 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [EXTERNAL-CRYPTO-REVIEW-BRIEF.md](EXTERNAL-CRYPTO-REVIEW-BRIEF.md) | The brief for an outside cryptographer to review the pairing key exchange. Predates PRs #196 and #197; refresh before sending. |
 | [TWO-DEVICE-PAIRING-TEST-PLAN.md](TWO-DEVICE-PAIRING-TEST-PLAN.md) | The run sheet for the first real two-device pairing test. Its discovery step predates PR #196; update before running. |
 | [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design; the first slice (emergency card, copy-and-paste update) is built but not reachable from any menu: how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
+| [ONBOARDING-SCRIPT.md](ONBOARDING-SCRIPT.md) | The guided first run as one script: the grown-up half and her tablet half, screen by screen, with the exact words, icon labels, controls, saving, resume, accessibility, tone checks, and the three-step procedure for adding to it later. |
 
 Related documents elsewhere in the repo:
 
