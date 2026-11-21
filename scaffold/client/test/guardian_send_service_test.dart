@@ -493,7 +493,7 @@ void main() {
 
     test('a server that cannot be reached throws, so the screen can say so', () async {
       api.onSent = () => throw const _NoNetwork();
-      expect(svc.fetchSent(), throwsA(isA<_NoNetwork>()));
+      await expectLater(svc.fetchSent(), throwsA(isA<_NoNetwork>()));
       expect(api.closed, greaterThan(0));
     });
 

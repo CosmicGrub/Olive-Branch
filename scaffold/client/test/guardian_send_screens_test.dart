@@ -50,16 +50,27 @@ class Harness {
       pickTime: pickTime ?? (BuildContext c, TimeOfDay t) async => const TimeOfDay(hour: 19, minute: 0)));
 }
 
-Future<void> settle(WidgetTester t) async {
-  for (int i = 0; i < 10; i++) {
+/// The sealed on-device store does real asynchronous crypto, which only completes outside the fake clock, so each
+/// pump is preceded by a short real wait (a bare pump leaves a save or a read half done). [until] ends the wait early
+/// once a send has visibly finished; without it a fixed, short settle is used.
+Future<void> settle(WidgetTester t, {bool Function()? until}) async {
+  final int rounds = until == null ? 10 : 150;
+  for (int i = 0; i < rounds; i++) {
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
     await t.pump(const Duration(milliseconds: 50));
+    if (until != null && until()) break;
   }
 }
+
+/// Runs service work (a real sealed-store read or write) outside the fake clock.
+Future<T> real<T>(WidgetTester t, Future<T> Function() f) async => (await t.runAsync<T>(f)) as T;
 
 Future<void> tapKey(WidgetTester t, String key) async {
   await t.ensureVisible(find.byKey(Key(key)));
   await t.tap(find.byKey(Key(key)));
-  await settle(t);
+  // A send or a retry writes and reads the sealed store several times: wait for its result line, not a fixed time.
+  final bool sends = key == 'composeSend';
+  await settle(t, until: sends ? () => find.byKey(const Key('composeResult')).evaluate().isNotEmpty : null);
 }
 
 Future<void> end(WidgetTester t) async {
@@ -202,12 +213,12 @@ void main() {
     testWidgets('a stale right-away on the sent screen says it waited too long and offers Right away again', (t) async {
       final Harness h = Harness();
       h.api.onUpload = (int n) => throw StateError('offline');
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.now());
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.now()));
       h.api.onUpload = null;
       h.clock.ms += kStaleNowAfter.inMilliseconds + 5000;
       await t.pumpWidget(h.sent());
       await settle(t);
-      final QueuedSend q = (await h.service.queued()).single;
+      final QueuedSend q = (await real(t, () => h.service.queued())).single;
       expect(q.phase, SendPhase.needsAttention);
       expect(t.widget<Text>(find.byKey(Key('queuedStatus_${q.id}'))).data, staleNowWords);
       await tapKey(t, 'queuedChange_${q.id}');
@@ -228,7 +239,7 @@ void main() {
       expect(find.textContaining('socket'), findsNothing, reason: 'no raw error text');
       expect(find.textContaining('StateError'), findsNothing);
       expect(find.byKey(const Key('composeWaitingNote')), findsOneWidget);
-      expect((await h.service.queued()).length, 1);
+      expect((await real(t, () => h.service.queued())).length, 1);
 
       await tapKey(t, 'composeOpenSentLink');
       expect(find.textContaining('Waiting on this phone'), findsOneWidget);
@@ -245,7 +256,7 @@ void main() {
       await tapKey(t, 'composeSend');
       expect(find.textContaining('Set her day first'), findsOneWidget);
       expect(find.textContaining('daypart_undefined'), findsNothing);
-      expect((await h.service.queued()).single.phase, SendPhase.needsAttention);
+      expect((await real(t, () => h.service.queued())).single.phase, SendPhase.needsAttention);
       await end(t);
     });
 
@@ -385,7 +396,7 @@ void main() {
     testWidgets('server unreachable: says so, never shows a stale list as current, and still shows what waits on this phone', (t) async {
       final Harness h = Harness();
       h.api.onUpload = (int n) => throw StateError('x');
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
       h.api.onSent = () => throw StateError('offline');
       await t.pumpWidget(h.sent());
       await settle(t);
@@ -398,10 +409,10 @@ void main() {
     testWidgets('a waiting message: Try again sends it once the network is back, and it leaves the list', (t) async {
       final Harness h = Harness();
       h.api.onUpload = (int n) => throw StateError('x');
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
       await t.pumpWidget(h.sent());
       await settle(t);
-      final QueuedSend q = (await h.service.queued()).single;
+      final QueuedSend q = (await real(t, () => h.service.queued())).single;
       expect(find.byKey(Key('queued_${q.id}')), findsOneWidget);
       h.api.onUpload = null;
       await tapKey(t, 'queuedRetry_${q.id}');
@@ -414,10 +425,10 @@ void main() {
       final Harness h = Harness();
       h.api.onSend = (int n, Map<String, Object?> b) =>
           b['daypart'] == 'bedtime' ? throw answer(400, 'daypart_undefined') : <String, dynamic>{'id': 'intent-00009'};
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
       await t.pumpWidget(h.sent());
       await settle(t);
-      final QueuedSend q = (await h.service.queued()).single;
+      final QueuedSend q = (await real(t, () => h.service.queued())).single;
       expect(t.widget<Text>(find.byKey(Key('queuedStatus_${q.id}'))).data, contains('Set her day first'));
       await tapKey(t, 'queuedChange_${q.id}');
       await tapKey(t, 'changeTo_free');
@@ -429,28 +440,28 @@ void main() {
     testWidgets('Throw away asks first; Keep it keeps, Throw it away removes only that message', (t) async {
       final Harness h = Harness();
       h.api.onUpload = (int n) => throw StateError('x');
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
       await t.pumpWidget(h.sent());
       await settle(t);
-      final QueuedSend q = (await h.service.queued()).single;
+      final QueuedSend q = (await real(t, () => h.service.queued())).single;
       await tapKey(t, 'queuedDiscard_${q.id}');
       expect(find.text('Throw this message away?'), findsOneWidget);
       await tapKey(t, 'discardNo');
-      expect((await h.service.queued()).length, 1);
+      expect((await real(t, () => h.service.queued())).length, 1);
       await tapKey(t, 'queuedDiscard_${q.id}');
       await tapKey(t, 'discardYes');
-      expect(await h.service.queued(), isEmpty);
+      expect(await real(t, () => h.service.queued()), isEmpty);
       await end(t);
     });
 
     testWidgets('opening the screen retries what is due, by itself', (t) async {
       final Harness h = Harness();
       h.api.onUpload = (int n) => n == 1 ? throw StateError('x') : null;
-      await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+      await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
       h.clock.ms += 10 * 60 * 1000;
       await t.pumpWidget(h.sent());
       await settle(t);
-      expect(await h.service.queued(), isEmpty);
+      expect(await real(t, () => h.service.queued()), isEmpty);
       expect(h.api.sends.length, 1);
       await end(t);
     });
@@ -461,7 +472,7 @@ void main() {
         t.view.devicePixelRatio = 1;
         final Harness h = Harness();
         h.api.onUpload = (int n) => throw StateError('x');
-        await h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime'));
+        await real(t, () => h.service.compose(bytes: kBytes, durationMs: 100, delivery: const DeliveryChoice.atDayPart('bedtime')));
         h.api.onSent = () => <String, dynamic>{
               'messages': <Object?>[<String, Object?>{'id': 'open-0001', 'state': 'opened', 'receipt': <String, Object?>{'phrase': 'Watched at 7:42 PM her time — at bedtime.'}}],
             };

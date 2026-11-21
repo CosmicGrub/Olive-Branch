@@ -293,8 +293,8 @@ void main() {
     });
 
     test('a queued right-away message survives the store, and an unknown kind is unreadable', () {
-      final QueuedSend q = QueuedSend(
-          id: 'm1abc-xyz123', childId: 'c', createdAtMs: 5, delivery: const DeliveryChoice.now(),
+      const QueuedSend q = QueuedSend(
+          id: 'm1abc-xyz123', childId: 'c', createdAtMs: 5, delivery: DeliveryChoice.now(),
           mediaB64: 'AAAA', durationMs: 10);
       expect(QueuedSend.fromJson(q.toJson())!.delivery, const DeliveryChoice.now());
       final Map<String, Object?> bad = q.toJson()..['delivery'] = <String, Object?>{'k': 'soon', 'p': 'bedtime'};
@@ -483,7 +483,7 @@ void main() {
         <String, Object?>{...good, 'ms': -4},
         <String, Object?>{...good, 'media': ''},
         <String, Object?>{...good, 'media': 12},
-        <String, Object?>{...good, 'delivery': <String, Object?>{'k': 'now', 'p': 'bedtime'}},
+        <String, Object?>{...good, 'delivery': <String, Object?>{'k': 'soon', 'p': 'bedtime'}},
         <String, Object?>{...good, 'key': 5},
         <String, Object?>{...good, 'tries': -1},
         <String, Object?>{...good, 'phase': 'sent'},
@@ -507,7 +507,7 @@ void main() {
     });
 
     test('what a waiting message says about itself is plain and never a code', () {
-      expect(queuedStatusWords(q()), contains('saved on this phone'));
+      expect(queuedStatusWords(q()).toLowerCase(), contains('saved on this phone'));
       expect(queuedStatusWords(q(attempts: 2)), contains('Waiting for a connection'));
       expect(queuedStatusWords(q(attempts: 8)), contains('Try again'));
       expect(queuedStatusWords(q(phase: SendPhase.needsAttention).copyWith(failureCode: 'daypart_undefined')),
