@@ -362,6 +362,8 @@ class LocalServices {
     required this.childId,
     this.guardianId = 'local-guardian',
     this.isLive = false,
+    // A private field behind a debug-only getter, so a named parameter cannot initialise it directly.
+    // ignore: prefer_initializing_formals
     bool demoSeeds = false,
     this.keyring,
   }) : _demoSeeds = demoSeeds {

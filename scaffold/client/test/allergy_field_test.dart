@@ -39,7 +39,7 @@ MockClient server(List<String> allergies, {Map<String, Object?>? confirmed}) => 
         'pediatricianName': null, 'pediatricianPractice': null, 'pediatricianPhone': null,
         'insuranceProvider': null, 'insuranceMemberId': null,
         'guardians': <dynamic>[], 'medications': <dynamic>[], 'version': 1,
-        if (confirmed != null) 'allergyNoneConfirmed': confirmed,
+        'allergyNoneConfirmed': ?confirmed,
       }), 200);
     });
 

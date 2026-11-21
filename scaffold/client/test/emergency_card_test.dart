@@ -353,7 +353,7 @@ void main() {
       await t.tap(find.text('Try again'));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('allergyCard')), findsOneWidget);
-      expect(find.textContaining('None on file'), findsOneWidget);
+      expect(find.textContaining('Not recorded'), findsOneWidget, reason: 'an empty list with no confirmation is unknown, never "none"');
       expect(calls, 2);
     });
 

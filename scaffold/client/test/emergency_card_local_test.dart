@@ -59,7 +59,7 @@ void main() {
       const LocalEmergencyCard c = LocalEmergencyCard();
       expect(c.isEmpty, isTrue);
       expect(c.toJson().toString(), isNot(contains('Peanut')));
-      expect(c.spokenText(), 'No allergies written down.');
+      expect(c.spokenText(), startsWith('Allergies: not recorded.'), reason: 'an empty card is unknown, never "no allergies"');
     });
   });
 

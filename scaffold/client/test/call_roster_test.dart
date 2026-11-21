@@ -2,14 +2,12 @@
 // a second and a third person ADD to the roster (nobody overwrites anybody); every join and leave becomes one sentence
 // shown on screen and in a live region for the screen reader; the count that stays on screen includes everyone, observers
 // included; an unnamed person is "Someone", never an id; no path joins a person without being listed.
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/call_modes.dart';
 import 'package:olive_client/call_provider.dart';
-import 'package:olive_client/call_roster.dart';
 import 'package:olive_client/call_screen.dart';
 
 const CallParticipant dad = CallParticipant(id: 'p-dad', name: 'Dad');

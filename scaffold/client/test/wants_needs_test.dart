@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/local_services.dart';
 import 'package:olive_client/wants_needs.dart';
 
 void main() {
+  // The invented example items are preview content and OFF by default: these tests are about the seeded lists, so they ask.
+  setUp(() => LocalServices.install(LocalServices.memory(demoSeeds: true)));
+  tearDown(LocalServices.resetForTest);
+
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     const MaterialApp(home: WantsNeedsScreen()));
 
