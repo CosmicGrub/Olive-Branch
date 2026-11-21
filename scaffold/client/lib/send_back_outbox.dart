@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the recordings she sends back ("Send one back"), kept on the device until the server has them.
-// MASTERFILE section 7.19 and 5.22. Verified by client/test/send_back_outbox_test.dart and receipt_screen_test.dart.
+// MASTERFILE section 7.19 and 5.22. No longer UNVERIFIED: verified by client/test/send_back_outbox_test.dart and receipt_screen_test.dart.
 //
 // She records a short video for a grown-up. The recording is copied into the app's own storage the moment she
 // finishes, and one row for it (local path, length, and the storage key once the upload has happened) is written to
