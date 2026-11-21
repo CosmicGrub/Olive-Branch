@@ -61,6 +61,16 @@ Future<WindowHost> startLanWindowHost(AdultWindow w) async {
 
 enum _Stage { intro, waiting, scanning, approve, sending, done }
 
+/// Shown on the grown-up's phone when a tablet of another pairing version tried this window (ISS-065). The tablet
+/// itself shows only its one calm card.
+const String kVersionMismatchMessage =
+    'A tablet tried to connect, but it runs a different version of Olive. Update Olive on both devices, then try again.';
+
+/// The tablet was given its credential but this phone could not add it to its list (the stored list could not be read).
+/// Nothing stored is overwritten; the grown-up is told.
+const String kKidsNotSavedMessage =
+    'The tablet is paired, but this phone could not add it to its list just now. It may not show under "Her tablets" yet.';
+
 class ConnectChildScreen extends StatefulWidget {
   const ConnectChildScreen({
     super.key,
@@ -218,7 +228,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
       requireMatch: true,
       refuseKey: widget.trust?.isRefused,
       onPaired: (PairedKid k) {
-        unawaited(widget.kids.add(k));
+        unawaited(_recordKid(k));
         unawaited(_trustAdded(k));
       },
     );
@@ -251,6 +261,16 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     });
   }
 
+  /// Adds the tablet to this phone's list. A list that cannot be read is never written over (it could hold tablets
+  /// already recorded), so the grown-up is told plainly instead of the add failing out of sight.
+  Future<void> _recordKid(PairedKid k) async {
+    try {
+      await widget.kids.add(k);
+    } catch (_) {
+      if (mounted) setState(() => _message = kKidsNotSavedMessage);
+    }
+  }
+
   Future<void> _trustAdded(PairedKid k) async {
     final TrustBook? t = widget.trust;
     if (t == null) return;
@@ -267,6 +287,12 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   void _onWindow() {
     final AdultWindow? w = _window;
     if (w == null || !mounted) return;
+    // A tablet on another pairing version knocked: say so here, in plain words, on the grown-up's phone only.
+    if (w.versionMismatchSeen && w.state == WindowState.open) {
+      _message = kVersionMismatchMessage;
+    } else if (_message == kVersionMismatchMessage) {
+      _message = null;
+    }
     if (w.state == WindowState.closed || w.state == WindowState.declined) _recordFailures();
     if (w.state == WindowState.declined && w.matchRefused) {
       // The pictures did not match: nothing was issued. Adding stays off for a short while; a new code is one tap away.
@@ -295,7 +321,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   Widget build(BuildContext context) => SensitiveScreen(child: _buildSensitive(context));
 
   Widget _buildSensitive(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text("Connect a child's device")),
+        appBar: AppBar(title: Text("Pair ${widget.childName}'s tablet")),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),

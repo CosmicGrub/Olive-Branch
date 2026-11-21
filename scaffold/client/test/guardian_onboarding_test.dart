@@ -248,7 +248,7 @@ void main() {
       await t.pumpAndSettle();
       await savePin(t, '4821');
 
-      expect(find.text('Connect this device'), findsOneWidget);
+      expect(find.text('Join your family account'), findsOneWidget);
       expect(find.byKey(const Key('pairingGuardianLocalFirst')), findsOneWidget);
       expect(find.textContaining('optional'), findsWidgets);
       expect(find.byKey(const Key('pairingGuardianWhy')), findsNothing, reason: 'not the "connect first" copy');
@@ -321,7 +321,7 @@ void main() {
       await t.pumpAndSettle();
       await savePin(t, '4821');
       expect(finished.length, 1);
-      expect(find.text('Connect this device'), findsNothing);
+      expect(find.text('Join your family account'), findsNothing);
     });
   });
 }

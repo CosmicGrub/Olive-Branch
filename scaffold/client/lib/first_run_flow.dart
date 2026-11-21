@@ -154,6 +154,8 @@ class _FirstRunFlowState extends State<FirstRunFlow> {
         closingStep: true,
         onRedeemed: widget.onRedeemed,
         onNotNow: () => setState(() => _stage = FirstRunStage.connect),
+        // A picture for pairing on this wifi, scanned here by mistake: back to where that belongs, no network call.
+        onLocalPairingPicture: () => setState(() => _stage = FirstRunStage.connect),
       ),
     FirstRunStage.connect => PairingRedeemScreen(
         baseUrl: widget.baseUrl,
