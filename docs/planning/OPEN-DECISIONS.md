@@ -96,3 +96,12 @@ Built in the recovery-and-player PR (MASTERFILE 7.21). Nothing below blocks the 
 | 29 | Google Play 12-tester closed test (personal accounts) | Plan the first 5 to 10 families as the testers; an organisation account avoids the rule. |
 | 30 | Kids Category on Apple | Decide later after re-reading Guideline 1.3 and 5.1.4 on Apple's own pages. |
 | 50 | Health information about a child on the device: any store or regional rule that applies to the About Mia profile | Unverified; include in the store readiness audit and the counsel review. |
+
+## Backup and restore (client half)
+
+| # | Decision | Recommendation / status |
+|---|---|---|
+| BK-1 | How a parent brings back her pictures and memories after a lost tablet without being able to read her private areas | Built as a separate keepsake backup the tablet seals with its own sheet; the private areas are never in any backup. See BACKUP-RESTORE-CLIENT.md. Owner to confirm. |
+| BK-2 | Who keeps the tablet's own recovery sheet | Family's choice; the holder can open pictures and memories, never the private areas. |
+| BK-3 | A lost tablet with no keepsake backup loses her private areas | Accepted; no grown-up key opens them. The screens ask for a keepsake backup before a tablet is replaced. |
+| BK-4 | Server copy of the family backup | Off until a grown-up turns it on; the server holds bytes it cannot open. |

@@ -7,6 +7,7 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [ANDROID-ROADMAP.md](ANDROID-ROADMAP.md) | The Android-first roadmap: what has merged, what is in flight, what remains, the team lanes and the completion gate. |
 | [DECISIONS.md](DECISIONS.md) | Owner decisions already taken (the rules every contributor must follow). |
 | [OPEN-DECISIONS.md](OPEN-DECISIONS.md) | Decisions still open, each with a recommendation. |
+| [BACKUP-RESTORE-CLIENT.md](BACKUP-RESTORE-CLIENT.md) | Encrypted backup and restore, the phone and tablet half: what is built, not built, honest limits, owner decisions. |
 | [HOSTING-AND-CALLS.md](HOSTING-AND-CALLS.md) | Where the server runs and how calls work: options researched, the chosen direction, what was scrapped, store-distribution and multi-family readiness plans. |
 | [OPERATIONS-RUNBOOK.md](OPERATIONS-RUNBOOK.md) | How to resume work: CI rules and gotchas, the merge procedure, the device-push recipe, the Docker stack, memory limits. |
 | [GAP-REGISTER.md](GAP-REGISTER.md) | Every gap between the planned family features (persistent QR, village welcome, About Mia, care guides, family sync) and the shipped code and spec, classed blocking / spec amendment / build item / decision / assurance gate, with evidence, fix and owner. |
