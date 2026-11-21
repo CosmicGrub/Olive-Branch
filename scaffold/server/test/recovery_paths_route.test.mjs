@@ -569,8 +569,20 @@ let MOM_NEW;
   check(g, 'the table refuses a one-grown-up recovery that carries a second grown-up\'s yes (modes are not mixed)', await bad(
     `INSERT INTO recovery_request (user_id, mode, started_by_kind, secret_hash, created_at, expires_at, ready_at, approved_by, approved_at)
      VALUES ($1, 'sole_parent', 'sheet', $2, now(), now() + interval '5 days', now() + interval '72 hours', $3, now())`, [MOM.userId, 'c'.repeat(64), DAD.userId]), 'refused');
-  check(g, 'the table refuses a finished request that needed a helper and never had one', await bad(
-    `UPDATE recovery_request SET helper_required = true WHERE id = $1 AND completed_at IS NOT NULL`, [someReq.id]) === 'refused' || true, 'true');
+  // A finished one-grown-up recovery that named a helper must carry the helper's yes. The control row is identical but
+  // for that one fact, so the refusal is proved to be about the helper and not about some other column.
+  const finished = (helperRequired, hash) => bad(
+    `INSERT INTO recovery_request (user_id, mode, started_by_kind, secret_hash, created_at, expires_at, ready_at,
+        helper_required, completed_at, proof_used)
+     VALUES ($1, 'sole_parent', 'sheet', $2, now() - interval '100 hours', now() + interval '5 days',
+        now() - interval '20 hours', $3, now() - interval '1 hour', 'sheet_at_start')`, [EVE.userId, hash, helperRequired]);
+  check(g, 'control: a finished one-grown-up recovery with no helper named is accepted by the table', await finished(false, 'd'.repeat(64)), 'accepted');
+  check(g, 'the table refuses a finished request that needed a helper and never had one', await finished(true, '9'.repeat(64)), 'refused');
+  await admin.query(`DELETE FROM recovery_request WHERE secret_hash = $1`, ['d'.repeat(64)]);
+  check(g, 'the table refuses a finish that comes before the wait was over', await bad(
+    `INSERT INTO recovery_request (user_id, mode, started_by_kind, secret_hash, created_at, expires_at, ready_at, completed_at, proof_used)
+     VALUES ($1, 'sole_parent', 'sheet', $2, now() - interval '100 hours', now() + interval '5 days',
+        now() - interval '20 hours', now() - interval '30 hours', 'sheet_at_start')`, [EVE.userId, '8'.repeat(64)]), 'refused');
   check(g, 'a stored helper label may not be an email', await bad(
     `INSERT INTO recovery_helper (user_id, label, invite_hash, invite_expires_at) VALUES ($1, $2, $3, now() + interval '1 day')`, [EVE.userId, 'a' + String.fromCharCode(64) + 'b', 'f'.repeat(64)]), 'refused');
   check(g, 'the notice the other grown-up can read never carries a code, key or PIN', await (async () => {

@@ -3,8 +3,6 @@
 // Covers: "Forgot your PIN?" and the account page reaching it, one question per screen, the sheet shown once and typed back,
 // the waiting period said plainly, the notice and the one thing to do about it, the helper's one power, big text and narrow
 // screens, and that nothing on a screen is a code, a status or a stack of jargon.
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/auth_session.dart';

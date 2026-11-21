@@ -217,6 +217,8 @@ Future<T?> _guarded<T>(
 
 /// Asks for the grown-up's own PIN in a small box and returns it (null when they cancel). The PIN is not kept.
 Future<String?> _askPin(BuildContext context, {required String title, required String body, required String yes}) {
+  // Not disposed here: the dialog is still animating away when its future completes, and a disposed controller under
+  // a live text field throws. It holds no listener, so the garbage collector takes it.
   final TextEditingController c = TextEditingController();
   return showDialog<String>(
     context: context,
@@ -237,7 +239,7 @@ Future<String?> _askPin(BuildContext context, {required String title, required S
         ],
       ),
     ),
-  ).whenComplete(c.dispose);
+  );
 }
 
 // =====================================================================================================================

@@ -8,7 +8,6 @@
 // and Settings, Safety. Nothing here makes a request: the screens it opens do nothing until a grown-up presses a button.
 import 'package:flutter/material.dart';
 
-import 'device_identity.dart';
 import 'family_account_entry.dart' show buildFamilyAccountService;
 import 'family_account_service.dart';
 import 'recovery_paths_screens.dart';
@@ -38,14 +37,4 @@ void openRecoverySafety(BuildContext context, {required String baseUrl}) {
     service.dispose();
     account.dispose();
   });
-}
-
-/// Whether this phone holds a sign-in at all (to choose between "Lost your phone?" and "Lost phone safety").
-Future<bool> phoneHoldsSignIn() async {
-  try {
-    final DeviceIdentity? id = await DeviceIdentityStore().load();
-    return id != null && id.role == 'guardian';
-  } catch (_) {
-    return false;
-  }
 }
