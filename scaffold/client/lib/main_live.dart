@@ -270,12 +270,16 @@ Future<bool> _fetchHasOnboarded(String childId, String? token) async {
 /// scope is refused and demo seed content is off. If the platform storage
 /// cannot be opened at all, the app still runs on an in-memory store — nothing
 /// persists that run, which is the honest degraded mode, never a crash.
-Future<void> _openLocalStorage(String childId) async {
+///
+/// [childTablet] is true on the routes that open a child's own home: a grown-up's working records are then never
+/// written on this device (child_tablet_holdings.dart), so a lost tablet gives away her side only.
+Future<void> _openLocalStorage(String childId, {bool childTablet = false}) async {
   try {
-    await LocalServices.boot(childId: childId, isLive: true);
+    await LocalServices.boot(childId: childId, isLive: true, childTablet: childTablet);
   } catch (e) {
     debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
-    LocalServices.install(LocalServices.memory(childId: childId, isLive: true, demoSeeds: false));
+    LocalServices.install(
+        LocalServices.memory(childId: childId, isLive: true, demoSeeds: false, childTablet: childTablet));
   }
 }
 
@@ -314,8 +318,8 @@ Future<void> _bootWithOnboardingGate({
 }) async {
   // Installed first: _fetchHasOnboarded below goes through apiFor().
   AuthSession.use(session);
-  // On-device storage first: the onboarding answer below is remembered there.
-  await _openLocalStorage(childId);
+  // On-device storage first: the onboarding answer below is remembered there. This is a child's tablet.
+  await _openLocalStorage(childId, childTablet: true);
   final profile = ProfileCacheRepository(LocalServices.current.area('profile', ownerId: childId));
   // Pairing-last first run (owner request 2026-11-08): a device that answered
   // the welcome questions BEFORE it was connected left them in a local draft.
@@ -467,7 +471,7 @@ Future<void> _completeLocalPair(ChildPairing p) async {
 }
 
 Future<void> _bootLocalPaired(ChildPairing p) async {
-  await _openLocalStorage(p.cert.childId);
+  await _openLocalStorage(p.cert.childId, childTablet: true);
   final LocalPinService unlock = LocalPinService(
       LocalStoreLocalPinRepository(LocalServices.current.area('adultunlock')));
   final LocalStoreChildPairingRepository repo = _childPairingRepo() as LocalStoreChildPairingRepository;

@@ -31,6 +31,9 @@ import 'unlock_child_screen.dart';
 import 'device_keys.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_services.dart';
+import 'lost_device_logic.dart';
+import 'lost_device_screens.dart';
+import 'lost_device_words.dart';
 import 'pairing_picture.dart';
 import 'pairing_records.dart';
 import 'pairing_trust.dart';
@@ -883,6 +886,13 @@ class GuardianMoreScreen extends StatelessWidget {
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',
             onTap: () => local!.onConnect!(context)),
+        // A lost or stolen phone or tablet: shown where the build can reach the family's server (it is the server that cuts a
+        // device off). Grown-ups only; a child's tablet never builds this screen.
+        if (live)
+          SettingsRow(id: 'lostdevice', icon: Icons.phone_android_outlined, title: LostDeviceWords.screenTitle,
+            subtitle: LostDeviceWords.settingsSubtitle,
+            onTap: () => _open(context, PhonesAndTabletsScreen(
+              actions: ApiLostDeviceActions(() => apiFor(baseUrl!, userId: guardianId)), childName: childName))),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',

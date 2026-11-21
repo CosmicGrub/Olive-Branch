@@ -28,6 +28,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import 'child_tablet_holdings.dart';
 import 'device_identity.dart';
 import 'local_store.dart';
 import 'sha256.dart';
@@ -363,6 +364,7 @@ class LocalServices {
     this.isLive = false,
     this.demoSeeds = true,
     this.keyring,
+    this.childTablet = false,
   }) {
     scopeChild(childId); // fails fast on an illegal live scope
   }
@@ -375,6 +377,7 @@ class LocalServices {
     String guardianId = 'local-guardian',
     bool isLive = false,
     bool demoSeeds = true,
+    bool childTablet = false,
     MemoryStoreBackend? backend,
   }) =>
       LocalServices(
@@ -385,6 +388,7 @@ class LocalServices {
         guardianId: guardianId,
         isLive: isLive,
         demoSeeds: demoSeeds,
+        childTablet: childTablet,
       );
 
   final LocalStore store;
@@ -396,6 +400,10 @@ class LocalServices {
 
   /// True for a build wired to a real backend: no demo ids, no demo seeds.
   final bool isLive;
+
+  /// True on a CHILD'S TABLET: a grown-up's working records are then never written here (child_tablet_holdings.dart), so
+  /// a stolen tablet gives away her side only. False everywhere else.
+  final bool childTablet;
 
   /// Whether screens may show their invented example content (the preview
   /// build's sample list items and collections) when nothing is stored yet.
@@ -419,6 +427,7 @@ class LocalServices {
     required String childId,
     String guardianId = 'local-guardian',
     required bool isLive,
+    bool childTablet = false,
     SecureKeyValueStore secure = const FlutterSecureKeyValueStore(),
     Directory? rootOverride,
   }) async {
@@ -433,6 +442,7 @@ class LocalServices {
       isLive: isLive,
       demoSeeds: !isLive,
       keyring: keyring,
+      childTablet: childTablet,
     );
     install(s);
     return s;
@@ -463,7 +473,9 @@ class LocalServices {
         name: namespaceName(e, ownerId: ownerId),
         schema: e.schema,
         encrypted: e.encrypted,
-        maxBytes: e.maxBytes));
+        // A grown-up's working records are never written on a child's tablet: a zero limit refuses every write and
+        // gives back an empty area (child_tablet_holdings.dart).
+        maxBytes: childTablet && kGrownUpOnlyAreas.contains(area) ? 0 : e.maxBytes));
   }
 
   /// Everything this device holds for one child profile.

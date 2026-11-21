@@ -54,6 +54,8 @@ import 'local_guardian_home.dart';
 import 'local_pin.dart' show kLocalGuardianScope;
 import 'local_pin_screens.dart';
 import 'local_services.dart';
+import 'lost_device_boot.dart';
+import 'lost_device_screens.dart';
 import 'pairing_redeem_screen.dart';
 import 'theme.dart';
 import 'theme_data.dart';
@@ -143,6 +145,13 @@ Future<void> _openLocalStorage(String guardianId) async {
     debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
     LocalServices.install(LocalServices.memory(
         childId: 'guardian-device', guardianId: guardianId, isLive: true, demoSeeds: false));
+  }
+  // A lost phone that is switched off and on again is covered before it asks anybody, and an erase its owner ordered
+  // is heard here (lost_device_boot.dart). Grown-up phones only: the child's tablet never reaches this file.
+  try {
+    await startLostDeviceWatch(LocalServices.current);
+  } catch (e) {
+    debugPrint('[olive.lostDevice] could not start the lost-phone watch: $e');
   }
 }
 
@@ -280,6 +289,8 @@ class _PairingBootApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (pairing)',
     theme: buildThemeData(defaultAppTheme),
+    // A phone that was removed from the family says so here, once, with "Add this phone again" (lost_device_screens.dart).
+    builder: (BuildContext context, Widget? child) => DeviceStandingGuard(child: child!),
     home: PairingRedeemScreen(baseUrl: baseUrl, role: 'guardian', onRedeemed: _onRedeemed),
   );
 }
@@ -295,6 +306,7 @@ class _GuardianOnboardingApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (set up)',
     theme: buildThemeData(defaultAppTheme),
+    builder: (BuildContext context, Widget? child) => DeviceStandingGuard(child: child!),
     home: GuardianOnboardingFlow(
       role: role,
       services: services,
@@ -333,7 +345,7 @@ Widget _guardianApp({
             );
             // The guardian shell speaks the adult's voice in the ad-hoc play notices (play_notice.dart).
             final Widget voiced = PlayAudienceScope(audience: PlayAudience.adult, child: animated);
-            return local == null
+            final Widget shell = local == null
                 ? voiced
                 : GuardianLocalScope(
                     controller: local,
@@ -342,6 +354,8 @@ Widget _guardianApp({
                         controller: local.services.appLock,
                         // Share this screen with another grown-up (screen_share_ui.dart): the capture target.
                         child: ShareCaptureScope(service: local.services.shares, child: voiced)));
+            // Outermost: a phone a grown-up marked as lost, or removed from the family, is covered whatever else is up.
+            return DeviceStandingGuard(child: shell);
           },
           home: home,
         );

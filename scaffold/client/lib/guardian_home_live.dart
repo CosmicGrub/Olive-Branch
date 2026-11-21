@@ -64,6 +64,8 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'guardian_home.dart';
+import 'lost_device_logic.dart';
+import 'lost_device_screens.dart';
 
 enum _LoadState { loading, error, ready }
 
@@ -193,6 +195,17 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
               'from the server just now.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onTertiaryContainer))),
+          // A phone or tablet of the family marked as lost (screens L2 and L3): a quiet notice for grown-ups only.
+          LostDeviceNotice(
+            actions: ApiLostDeviceActions(() => apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient)),
+            childName: _childName,
+            onOpen: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (BuildContext _) => PhonesAndTabletsScreen(
+                actions: ApiLostDeviceActions(() => apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient)),
+                childName: _childName,
+              ),
+            )),
+          ),
           Expanded(child: GuardianHome(
             childName: _childName,
             childLocalTime: _childLocalTime,

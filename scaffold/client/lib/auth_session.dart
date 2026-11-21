@@ -227,6 +227,20 @@ class AuthSession {
       return t;
     }
     final error = body['error'] as String? ?? 'error';
+    // Erase on next contact (migration 0056): the family's server says this grown-up phone's owner ordered it to erase
+    // its own copy. Only a grown-up phone acts on it, and only after the server proved the credential and the 24 hour
+    // grace has run; a child's tablet ignores the word altogether (nothing is ever erased from a child's tablet).
+    if (res.statusCode == 401 && body['wipe'] == true && id.role == 'guardian' &&
+        (error == 'device_paused' || error == 'device_revoked')) {
+      final erase = DeviceStanding.onEraseOrdered;
+      if (erase != null) {
+        try {
+          await erase(id.deviceId, cred);
+        } catch (_) {
+          // the phone retries on its next start (lost_device_logic.dart); the cut-off below still applies
+        }
+      }
+    }
     if (res.statusCode == 401 && error == 'device_paused') {
       handlePaused();
       throw DevicePausedException();
@@ -289,6 +303,23 @@ class AuthSession {
       if (ownerPin == null) _ownerPin = null;
     }
     return DeviceStanding.value;
+  }
+
+  /// Tells the family's server this phone has erased its copy (POST /v1/auth/session/erased; no session, the device
+  /// credential is the proof). True when the server took it. Never throws.
+  Future<bool> sayErased(String deviceId, String deviceCredential) async {
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$baseUrl${OliveApi.sessionErasedPath}'),
+            headers: {'content-type': 'application/json'},
+            body: jsonEncode({'deviceId': deviceId, 'deviceCredential': deviceCredential}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Set when the last [checkBack] with a PIN was refused (wrong or locked); read and cleared by the screen.

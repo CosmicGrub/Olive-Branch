@@ -119,6 +119,10 @@ class LostDeviceWords {
         'not_paused' => 'That phone is not marked as lost any more. Refresh and look again.',
         'this_device' => 'You are holding that phone. Use another phone to mark it.',
         'not_found' => "That phone isn't one of your family's.",
+        'no_other_copy' => eraseNeedsAnotherPhone,
+        'not_a_grown_up_phone' => eraseNotForTablets,
+        'no_erase_ordered' => 'No erase was waiting. Refresh and look again.',
+        'already_erased' => 'That phone already erased its copy.',
         _ => "That didn't work. Check your connection and try again.",
       };
 
@@ -136,14 +140,45 @@ class LostDeviceWords {
   static const String pinWrong = "That PIN doesn't match. Try again.";
   static const String pinLocked = 'Too many wrong tries. Try again in 15 minutes.';
 
+  static const String addAgainButton = 'Add this phone again';
   static const String cutOffCoverTitle = 'This phone was removed from the family';
   static const String cutOffCoverBody =
-      'It no longer holds your family\'s records. They are safe with the family. To use it again, add it with a new code.';
+      'Nothing new will reach it. Your family\'s records are safe with the family. What was already on this phone stays '
+      'on it, behind its PIN, unless its owner chose to erase it. To use it again, add it with a new code.';
   static String cutOffUnsent(int n) => n <= 0
       ? ''
       : (n == 1
           ? 'One thing you wrote here had not been sent yet. It is kept safe and will be sent when you add this phone again.'
           : '$n things you wrote here had not been sent yet. They are kept safe and will be sent when you add this phone again.');
+
+  // ---- erase it when it next connects ----------------------------------------------------------------------
+  static String eraseTitle(String deviceName) => 'Erase $deviceName when it connects?';
+  static const List<String> eraseLines = <String>[
+    'The next time it connects, this phone will erase its own copy of your family\'s records.',
+    'Your records are not lost. They stay with the family, on your other phones and in the account.',
+    'It starts 24 hours after you order it. In that time any grown-up can call it off.',
+    'This cannot take back what someone already read. It also cannot find the phone or tell you where it is.',
+  ];
+  static const String eraseButton = 'Erase when it connects';
+  static const String eraseOnlyOwner = 'Only the owner of a phone can order this. Any grown-up can call it off.';
+  static const String eraseNeedsAnotherPhone =
+      'Another grown-up phone has to be in use first, so your records are kept somewhere. Add or fix one, then try again.';
+  static const String eraseNotForTablets = 'Nothing is ever erased from a child\'s tablet.';
+  static String eraseOrderedLine(String startsIn) =>
+      'It will erase its own copy the next time it connects, from $startsIn from now. Any grown-up can call this off until then.';
+  static const String eraseCancelButton = 'Call off the erase';
+  static const String eraseCancelDone = 'Done. The phone will not erase anything.';
+  static const String eraseOrderedDone = 'Done. It will erase its own copy when it next connects, after 24 hours.';
+  static const String erasedLine = 'It erased its own copy. Your records are safe with the family.';
+  static const String noticeEraseOrderedTitle = 'A lost phone will erase its own copy';
+  static const String noticeEraseOrderedLine =
+      'The owner chose this. It starts in 24 hours and any grown-up can call it off.';
+  static const String noticeErasedTitle = 'A lost phone erased its own copy';
+  static const String noticeErasedLine = 'Your records are safe with the family.';
+  static const String erasedCoverTitle = 'This phone erased its copy';
+  static const String erasedCoverBody =
+      'A grown-up in your family chose this because the phone was lost. Your records are safe with the family. To use '
+      'this phone again, add it with a new code.';
 
   /// Every sentence a grown-up can be shown by this file, for the words test.
   static List<String> everySentence() => <String>[
@@ -160,6 +195,12 @@ class LostDeviceWords {
         for (final String e in <String>['rate_limited', 'owner_only', 'already_revoked', 'too_late', 'stale_incident', 'not_paused', 'this_device', 'not_found', 'x'])
           refusal(e),
         pausedCoverTitle, pausedCoverBody, checkAgain, pausedStillPaused, pinCoverTitle, pinCoverBody, pinCoverButton,
-        pinCoverLater, pinWrong, pinLocked, cutOffCoverTitle, cutOffCoverBody, cutOffUnsent(1), cutOffUnsent(3),
+        pinCoverLater, pinWrong, pinLocked, addAgainButton, cutOffCoverTitle, cutOffCoverBody, cutOffUnsent(1), cutOffUnsent(3),
+        eraseTitle('Alex\'s phone'), ...eraseLines, eraseButton, eraseOnlyOwner, eraseNeedsAnotherPhone, eraseNotForTablets,
+        eraseOrderedLine('about a day'), eraseCancelButton, eraseCancelDone, eraseOrderedDone, erasedLine,
+        noticeEraseOrderedTitle, noticeEraseOrderedLine, noticeErasedTitle, noticeErasedLine, erasedCoverTitle,
+        erasedCoverBody,
+        for (final String e in <String>['no_other_copy', 'not_a_grown_up_phone', 'no_erase_ordered', 'already_erased'])
+          refusal(e),
       ];
 }

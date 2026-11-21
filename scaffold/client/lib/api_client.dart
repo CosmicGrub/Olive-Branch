@@ -1302,6 +1302,9 @@ class OliveApi {
   // --- a lost or stolen phone or tablet (migration 0056) ---------------------
   static const meDevicesPath = '/v1/me/devices';
 
+  /// The lost phone, which has no session, says it has erased its copy (device credential in the body).
+  static const sessionErasedPath = '/v1/auth/session/erased';
+
   /// `{devices: [...]}`: the phones and tablets this grown-up may see and act on, each with its standing
   /// (`active` | `paused` | `revoked`), who marked it, when the notice ends and what this grown-up may do
   /// (`canMarkLost`, `canFound`, `canConfirmLost`). Never a credential.
@@ -1319,6 +1322,16 @@ class OliveApi {
   /// "It is lost": ends the notice early and cuts the device off for good.
   Future<Map<String, dynamic>> confirmDeviceLost(String deviceId, String incidentId, String pin) =>
       _post('$meDevicesPath/$deviceId/confirm-lost', {'pin': pin, 'incidentId': incidentId});
+
+  /// "Erase it when it next connects": the OWNER of a grown-up's phone that is marked as lost orders it to erase the
+  /// app's copy of the family on itself. It starts 24 hours after the order and any grown-up can call it off. Never a
+  /// tablet (`not_a_grown_up_phone`); refused while the family has no other grown-up phone in use (`no_other_copy`).
+  Future<Map<String, dynamic>> orderDeviceErase(String deviceId, String incidentId, String pin) =>
+      _post('$meDevicesPath/$deviceId/erase', {'pin': pin, 'incidentId': incidentId});
+
+  /// Calls an erase order off before the phone hears it. Any grown-up of the family may.
+  Future<Map<String, dynamic>> cancelDeviceErase(String deviceId, String incidentId, String pin) =>
+      _post('$meDevicesPath/$deviceId/erase-cancel', {'pin': pin, 'incidentId': incidentId});
 
   /// The Parental Controls screen's one-shot entry gate -- POST
   /// [verifyControlsPinPath], server/routes.mjs's real handler. Throws
