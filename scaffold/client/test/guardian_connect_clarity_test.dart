@@ -191,7 +191,7 @@ void main() {
       expect(find.text("Ivy's tablets"), findsOneWidget);
 
       await ns.put('kids', <Object?>[_kidJson('a'), 'junk']);
-      await t.pumpWidget(MaterialApp(home: ConnectedDevicesScreen(kids: LocalStorePairedKidsRepository(ns), childName: 'Ivy')));
+      await t.pumpWidget(MaterialApp(home: ConnectedDevicesScreen(key: const ValueKey<int>(2), kids: LocalStorePairedKidsRepository(ns), childName: 'Ivy')));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('connectedSkipped')), findsOneWidget);
       expect(find.byKey(const Key('connectedName_a')), findsOneWidget);
@@ -309,7 +309,8 @@ void main() {
       await pumpScanner(t, counting(seen), closing: true);
       scan(t, localPicture);
       await t.pumpAndSettle();
-      expect(seen, isEmpty);
+      // The child's closing step only probes that the server answers (a GET); no code is ever sent.
+      expect(seen.where((http.Request r) => r.method != 'GET'), isEmpty);
       expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
       expect(find.byKey(const Key('pairingErrorMessage')), findsNothing);
     });
@@ -438,7 +439,7 @@ void main() {
       await _size(t, 390, h: 1400);
       await t.pumpWidget(scoped(const GuardianMoreScreen(childName: 'Ivy', childAge: 7)));
       await t.pumpAndSettle();
-      expect(find.text('Her tablet'), findsOneWidget);
+      expect(find.text('HER TABLET'), findsOneWidget, reason: 'the hub shows section titles in capitals');
       expect(find.text("Pair Ivy's tablet"), findsOneWidget);
       expect(find.text("Unlock Ivy's tablet"), findsOneWidget);
       expect(find.text("Ivy's tablets"), findsOneWidget);
@@ -448,7 +449,7 @@ void main() {
       final double pair = t.getTopLeft(find.byKey(const Key('morePairTablet'))).dy;
       final double unlock = t.getTopLeft(find.byKey(const Key('moreUnlockTablet'))).dy;
       final double list = t.getTopLeft(find.byKey(const Key('moreHerTablets'))).dy;
-      final double archive = t.getTopLeft(find.text('Archive')).dy;
+      final double archive = t.getTopLeft(find.text('ARCHIVE')).dy;
       expect(pair < unlock && unlock < list && list < archive, isTrue, reason: 'one group, above Archive');
     });
 
