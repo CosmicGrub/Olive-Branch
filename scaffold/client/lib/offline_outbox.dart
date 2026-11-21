@@ -115,7 +115,11 @@ List<OutboxItem> recordFailure(List<OutboxItem> outbox, String id, String error,
 bool insideBackoff(OutboxItem item, DateTime now, {int Function(int attempts)? backoff}) {
   final DateTime? failedAt = item.lastFailedAt;
   if (failedAt == null) return false;
-  return now.difference(failedAt).inMilliseconds < (backoff ?? backoffMs)(item.attempts);
+  final int sinceMs = now.difference(failedAt).inMilliseconds;
+  // A failure time in the future means the clock was wrong when it was written down (a wrong date, later put right, or
+  // changed by hand). It must never park the item until the clock catches up: treat it as outside any window.
+  if (sinceMs < 0) return false;
+  return sinceMs < (backoff ?? backoffMs)(item.attempts);
 }
 
 /// Milliseconds, 1:1 with offline.ts's own backoffMs — doubling per attempt,

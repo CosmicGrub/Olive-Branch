@@ -213,12 +213,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Sent!'), findsNothing);
-      // One calm line, never the status code or the server's word for it.
+      // The recording is on the device and stays there: a refusal is never a reason to lose it. She is told only
+      // the one calm kept-safe line, never the status code or the server's word for it.
       expect(find.textContaining('403'), findsNothing);
       expect(find.textContaining('not_authorized'), findsNothing);
-      expect(find.text(kSendBackTryAgainLine), findsOneWidget);
-      // Recoverable — a real retry affordance, not a dead end.
-      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('Kept safe'), findsOneWidget);
+      expect(find.text(kSendBackTryAgainLine), findsNothing);
     });
 
     testWidgets('cancelling the camera picker returns to idle, no request sent', (tester) async {
@@ -332,43 +332,36 @@ void main() {
     });
 
     testWidgets(
-        'a genuine server rejection is never mistaken for a connectivity '
-        'gap -- no queued-safe copy, no silent auto-retry, the same real '
-        'error as always', (tester) async {
-      // A rejection this early (the upload half, the FIRST of the two real
-      // calls _attemptSend now makes) never even reaches the send half —
-      // `attempts` stays at 1 for the whole test, same as when this test
-      // predates the upload step, because the same-403-for-any-request mock
-      // below never distinguishes which call it was.
+        'a server refusal keeps the recording and asks again later, silently (never deleted for a refusal)',
+        (tester) async {
       int attempts = 0;
       final MockClient mock = MockClient((http.Request req) async {
         attempts += 1;
         return http.Response(jsonEncode({'error': 'not_authorized'}), 403);
       });
+      final SendBackQueue q = _q();
 
       await tester.pumpWidget(wrap(ReceiptScreen(
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: q,
         retryBackoff: (_) => const Duration(milliseconds: 20),
       )));
 
       await tester.tap(find.text('Send one back'));
       await tester.pump();
 
-      expect(find.text('Kept safe'), findsNothing);
-      expect(find.text('It will go when you have internet again. It is safe.'),
-          findsNothing);
+      expect(find.text('Kept safe'), findsOneWidget);
       expect(find.textContaining('403'), findsNothing);
-      expect(find.text(kSendBackTryAgainLine), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
-
-      // No silent background retry for a genuine rejection -- waiting past
-      // where a connectivity retry would have fired must not call the
-      // server again on its own.
-      await tester.pump(const Duration(milliseconds: 30));
+      expect(find.text(kSendBackTryAgainLine), findsNothing);
       expect(attempts, 1);
+
+      // Waiting past the backoff asks again on its own: the recording was never given up on.
+      await tester.pump(const Duration(milliseconds: 30));
+      await tester.pump();
+      expect(attempts, greaterThan(1));
+      expect(find.text('Kept safe'), findsOneWidget);
     });
   });
 
@@ -378,7 +371,7 @@ void main() {
           for (final Text t in tester.widgetList<Text>(find.byType(Text))) t.data ?? t.textSpan?.toPlainText() ?? '',
         ];
 
-    void expectCalm(WidgetTester tester) {
+    void expectNoLeak(WidgetTester tester) {
       for (final String t in allText(tester)) {
         final String low = t.toLowerCase();
         for (final String bad in <String>[
@@ -388,6 +381,10 @@ void main() {
           expect(low.contains(bad), isFalse, reason: '"$t" must not carry "$bad"');
         }
       }
+    }
+
+    void expectCalm(WidgetTester tester) {
+      expectNoLeak(tester);
       expect(find.text(kSendBackTryAgainLine), findsOneWidget);
       expect(find.text('Try again'), findsOneWidget);
       expect(find.byIcon(Icons.cloud_off_outlined), findsOneWidget);
@@ -402,7 +399,8 @@ void main() {
         httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q())));
       await tester.tap(find.text('Send one back'));
       await tester.pumpAndSettle();
-      expectCalm(tester);
+      expectNoLeak(tester);
+      expect(find.text('Kept safe'), findsOneWidget);
     });
 
     testWidgets('a raw exception from the camera reaches no Text', (tester) async {

@@ -27,6 +27,15 @@ import 'offline_outbox.dart';
 /// The one line she is shown when a recording could not be kept or could not be sent. No status, no cause, no server.
 const String kSendBackTryAgainLine = "That didn't go. Let's try again.";
 
+/// How long a recording that could not go waits before it is tried again: the outbox's own doubling, but never more
+/// than half an hour, because a recording is never given up on (there is no last try) and a family that was offline
+/// for an evening must not then wait six hours after the signal is back.
+Duration sendBackBackoff(int attempts) {
+  const int capMs = 30 * 60000;
+  final int ms = backoffMs(attempts);
+  return Duration(milliseconds: ms < capMs ? ms : capMs);
+}
+
 /// Runtime self-check for [kSendBackTryAgainLine], on the exact string about to be drawn to her: none of the offline
 /// outbox's banned words, none of the global child-payload sweep's, and no digit.
 bool auditSendBackCopy(String line) {
@@ -221,12 +230,15 @@ class SendBackQueue {
     }
   }
 
-  /// Tries each waiting recording once, oldest first. One that failed less than its backoff ago is not tried and no
-  /// attempt is spent (the time is stored with the row, so a fresh start waits too); [ignoreBackoff] is for the caller
+  /// Tries each waiting recording once, oldest first. A recording is never given up on and never deleted for a server
+  /// answer other than "yes" (sent) or "that is already delivered": every other refusal or silence keeps the copy and
+  /// tries again later, because the only copy of what she made is on this device. One that failed less than its
+  /// backoff ago is not tried and no attempt is spent (the time is stored with the row, so a fresh start waits too); [ignoreBackoff] is for the caller
   /// that has itself just waited out the backoff. Stops at the first failure so a server that is down is not asked for
   /// everything. Never throws.
   Future<void> drain(SendBackTransport transport,
       {Duration Function(int attempts)? backoff, bool ignoreBackoff = false}) async {
+    final Duration Function(int attempts) wait = backoff ?? sendBackBackoff;
     try {
       await _lock.run(() async {
         List<OutboxItem> items = await _load();
@@ -235,11 +247,7 @@ class SendBackQueue {
           ..sort((OutboxItem a, OutboxItem b) => a.createdAt.compareTo(b.createdAt));
         bool changed = false;
         for (final OutboxItem item in due) {
-          if (item.attempts >= maxAttempts) continue;
-          if (!ignoreBackoff &&
-              insideBackoff(item, now, backoff: backoff == null ? null : (int a) => backoff(a).inMilliseconds)) {
-            continue;
-          }
+          if (!ignoreBackoff && insideBackoff(item, now, backoff: (int a) => wait(a).inMilliseconds)) continue;
           final Map<Object?, Object?> payload = item.payload! as Map<Object?, Object?>;
           final String path = payload['localPath']! as String;
           final Object? dm = payload['durationMs'];
@@ -277,11 +285,20 @@ class SendBackQueue {
           } on ApiException catch (e) {
             changed = true;
             debugPrint('[olive.sendBack] server answered ${e.statusCode} ${e.error}');
-            if (isFinalServerAnswer(e)) {
+            if (e.statusCode == 409 && e.error == 'storage_key_in_use') {
+              // That upload is already attached to a message: an earlier send got there and its answer was lost.
               items = sent(items, item.id);
-              _settled[item.id] = SendBackStatus.refused;
+              _settled[item.id] = SendBackStatus.sent;
               await _deleteQuietly(path);
               continue;
+            }
+            if (_keyNoLongerGood(e)) {
+              // The server no longer knows (or no longer accepts) the upload this row points at, for instance after
+              // a restore or a clean-up. The copy on this device is the truth: forget the key and upload it afresh.
+              items = <OutboxItem>[
+                for (final OutboxItem i in items)
+                  i.id == item.id ? i.withPayload(<Object?, Object?>{...payload}..remove('uploadedStorageKey')) : i,
+              ];
             }
             items = recordFailure(items, item.id, 'server', at: now.toUtc());
             break;
@@ -298,6 +315,11 @@ class SendBackQueue {
       debugPrint('[olive.sendBack] drain skipped: $e');
     }
   }
+
+  /// The server's way of saying "I do not have, or will not take, the upload you point at".
+  static bool _keyNoLongerGood(ApiException e) =>
+      (e.statusCode == 400 && (e.error == 'storage_key_unknown' || e.error == 'bad_storage_key')) ||
+      (e.statusCode == 403 && e.error == 'storage_key_not_yours');
 
   Future<void> _deleteQuietly(String path) async {
     try {

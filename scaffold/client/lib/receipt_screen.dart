@@ -200,8 +200,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         _fail('the server refused it, or it was gone');
       case SendBackStatus.waiting:
         setState(() => _state = _SendState.retrying);
-        final Duration wait = (widget.retryBackoff ??
-            (int attempts) => Duration(milliseconds: outbox.backoffMs(attempts)))(report.attempts);
+        final Duration wait = (widget.retryBackoff ?? sendBackBackoff)(report.attempts);
         _retryTimer?.cancel();
         _retryTimer = Timer(wait, () {
           if (!mounted) return;

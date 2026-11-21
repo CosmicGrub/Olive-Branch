@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and older: what the platform's automatic backup must NOT copy. Recordings she made and has not sent yet
+  (olive_outbox) and the encrypted on-device store (olive_store) stay on this device: a child's video never goes
+  to anyone's cloud backup, and a store restored without its key would be unreadable anyway.
+  Both live under the app's documents folder (app_flutter).
+-->
+<full-backup-content>
+    <exclude domain="root" path="app_flutter/olive_outbox"/>
+    <exclude domain="root" path="app_flutter/olive_store"/>
+</full-backup-content>

@@ -71,6 +71,13 @@ void main() {
       expect(insideBackoff(_item('b', attempts: 5), t), isFalse);
     });
 
+    test('a failure time in the future (the clock was wrong) is never inside a window', () {
+      final DateTime t = DateTime.utc(2026, 11, 21, 9);
+      final OutboxItem failed =
+          recordFailure(<OutboxItem>[_item('a')], 'a', 'network', at: t.add(const Duration(days: 900))).single;
+      expect(insideBackoff(failed, t), isFalse);
+    });
+
     test('withPayload keeps everything but the payload', () {
       final DateTime t = DateTime.utc(2026, 11, 21, 9);
       final OutboxItem i = recordFailure(<OutboxItem>[_item('a')], 'a', 'network', at: t).single.withPayload('x');

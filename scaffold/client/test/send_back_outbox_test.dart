@@ -155,13 +155,92 @@ void main() {
       expect((await queue.report(item.id)).status, SendBackStatus.sent);
     });
 
-    test('a 4xx answer is final: the row and copy go, and it is reported as refused, never as sent', () async {
+    test('a refusal never deletes the only copy: 400, 403, 404, 410, 413, 422 all keep it for a later try', () async {
+      for (final int code in <int>[400, 403, 404, 410, 413, 422]) {
+        final FakeOutboxDisk d = FakeOutboxDisk();
+        final FakeRecordings f = FakeRecordings();
+        final SendBackQueue q = queueOver(d, f, clock);
+        final OutboxItem item = await q.keep(_clip(), 900);
+        server.uploadFails = ApiException.fromStatus(code, 'media_quota_exceeded');
+        await q.drain(server.transport);
+        expect(d.rows, hasLength(1), reason: 'status $code');
+        expect(f.files, hasLength(1), reason: 'status $code');
+        expect((await q.report(item.id)).status, SendBackStatus.waiting, reason: 'status $code');
+      }
+    });
+
+    test('a full quota clears: the same copy goes once the server has room', () async {
       final OutboxItem item = await queue.keep(_clip(), 900);
-      server.uploadFails = ApiException.fromStatus(403, 'not_authorized');
+      server.uploadFails = ApiException.fromStatus(413, 'media_quota_exceeded');
+      await queue.drain(server.transport);
+      server.uploadFails = null;
+      clock.advance(const Duration(hours: 1));
       await queue.drain(server.transport);
       expect(disk.rows, isEmpty);
       expect(files.files, isEmpty);
-      expect((await queue.report(item.id)).status, SendBackStatus.refused);
+      expect((await queue.report(item.id)).status, SendBackStatus.sent);
+    });
+
+    test('storage_key_unknown after the key was stored: the key is dropped and the copy is uploaded afresh', () async {
+      await queue.keep(_clip(), 900);
+      server.sendFails = ApiException.fromStatus(400, 'storage_key_unknown');
+      await queue.drain(server.transport);
+      final Map<Object?, Object?> payload = (await disk.load()).single.payload! as Map<Object?, Object?>;
+      expect(payload.containsKey('uploadedStorageKey'), isFalse);
+      expect(files.files, hasLength(1));
+      server.sendFails = null;
+      server.calls.clear();
+      clock.advance(const Duration(hours: 1));
+      await queue.drain(server.transport);
+      expect(server.calls.first, startsWith('upload:'), reason: 'uploaded again, not sent with the dead key');
+      expect(disk.rows, isEmpty);
+      expect(files.files, isEmpty);
+    });
+
+    test('409 storage_key_in_use means an earlier send got there: counted as sent, copy removed', () async {
+      final OutboxItem item = await queue.keep(_clip(), 900);
+      server.sendFails = ApiException.fromStatus(409, 'storage_key_in_use');
+      await queue.drain(server.transport);
+      expect(disk.rows, isEmpty);
+      expect(files.files, isEmpty);
+      expect((await queue.report(item.id)).status, SendBackStatus.sent);
+    });
+
+    test('a recording is never stranded: a long outage does not use up tries, and it goes when the signal is back', () async {
+      final OutboxItem item = await queue.keep(_clip(), 900);
+      server.uploadFails = const SocketException('unreachable');
+      for (int i = 0; i < 40; i++) {
+        clock.advance(const Duration(hours: 1));
+        await queue.drain(server.transport);
+      }
+      expect((await disk.load()).single.attempts, 40);
+      expect((await queue.report(item.id)).status, SendBackStatus.waiting);
+      server.uploadFails = null;
+      server.calls.clear();
+      clock.advance(const Duration(minutes: 31));
+      await queue.drain(server.transport);
+      expect(server.calls, hasLength(2));
+      expect(disk.rows, isEmpty);
+    });
+
+    test('the wait between tries never passes half an hour', () {
+      for (int a = 0; a < 60; a++) {
+        expect(sendBackBackoff(a), lessThanOrEqualTo(const Duration(minutes: 30)));
+      }
+      expect(sendBackBackoff(0), const Duration(minutes: 1));
+    });
+
+    test('a failure time in the future (a wrong clock) does not park the recording', () async {
+      await queue.keep(_clip(), 900);
+      server.uploadFails = const SocketException('unreachable');
+      clock.t = DateTime.utc(2030, 1, 1);
+      await queue.drain(server.transport);
+      clock.t = DateTime.utc(2026, 11, 21, 12);
+      server.uploadFails = null;
+      server.calls.clear();
+      await queue.drain(server.transport);
+      expect(server.calls, hasLength(2));
+      expect(disk.rows, isEmpty);
     });
 
     test('a 5xx answer is not final: the recording stays for a later try', () async {
@@ -291,6 +370,23 @@ void main() {
       await store.delete(path);
       expect(await store.read(path), isNull);
       await store.delete(path);
+    });
+  });
+
+  group('Android backup', () {
+    test('the manifest keeps the unsent recordings and the on-device store out of the platform backup', () {
+      final String manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('android:dataExtractionRules="@xml/data_extraction_rules"'));
+      expect(manifest, contains('android:fullBackupContent="@xml/backup_rules"'));
+      for (final String f in <String>['backup_rules.xml', 'data_extraction_rules.xml']) {
+        final String xml = File('android/app/src/main/res/xml/$f').readAsStringSync();
+        expect(xml, contains(kRecordingsFolderName), reason: f);
+        expect(xml, contains('olive_store'), reason: f);
+        expect(RegExp(r'<exclude\s').allMatches(xml).length, greaterThanOrEqualTo(2), reason: f);
+      }
+      final String ext = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
+      expect(ext, contains('<cloud-backup'));
+      expect(ext, contains('<device-transfer'));
     });
   });
 }
