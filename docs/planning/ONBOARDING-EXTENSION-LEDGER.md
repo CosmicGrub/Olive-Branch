@@ -6,7 +6,7 @@ This ledger lists user-visible features that have merged to `main` since the onb
 
 ## The rule
 
-When **more than four** user-visible features are waiting in the table below, the onboarding must be extended before the next release is cut: each waiting feature gets an entry (template in the scope, section 15.4) in its proposed slot, `onboardingVersion` is raised, and the rows move to the "Done" table.
+When **more than four** user-visible features are waiting in the table below, the onboarding must be extended before the next release is cut: each waiting feature gets an entry (template in the scope, section 15.4; slots as in the script) in its proposed slot, `onboardingVersion` is raised, and the rows move to the "Done" table.
 
 A PR that adds a user-visible feature adds a row here in the same PR (or adds the onboarding entry itself). Fixes, refactors, tests, docs and server-only changes are not listed.
 
@@ -27,5 +27,5 @@ Count waiting: 0 of 4.
 ## How to fill a row
 
 - Side: adult, child or both.
-- Slot: one of `tour.core`, `tour.care`, `tour.together`, `tour.safety`, `tour.people`, `tour.settings`, `tour.tail` (adult) or `welcome.hello`, `welcome.tiles`, `welcome.tryit`, `welcome.extra`, `welcome.done` (child).
+- Slot: one of the slots in ONBOARDING-SCRIPT.md (usually `adult.tour.features` for a grown-up tour stop, or `child.extra` for a child icon label).
 - Status: `waiting`, `entry drafted`, or `deferred (reason)`.
