@@ -22,6 +22,9 @@
 import 'package:flutter/material.dart';
 
 import 'alerts_card.dart';
+import 'backup_engine.dart' show BackupRole;
+import 'backup_host.dart';
+import 'backup_screens.dart';
 
 class GuardianEscalationScreen extends StatelessWidget {
   const GuardianEscalationScreen({
@@ -29,6 +32,7 @@ class GuardianEscalationScreen extends StatelessWidget {
     required this.escalatedUntil,
     required this.onExitKiosk,
     this.childName = 'your child',
+    this.backupHostBuilder,
   });
 
   /// From `LockState.escalatedUntil` — when this scope naturally lapses.
@@ -37,6 +41,9 @@ class GuardianEscalationScreen extends StatelessWidget {
   final DateTime? escalatedUntil;
   final VoidCallback onExitKiosk;
   final String childName;
+
+  /// Test seam: builds the backup host. The real one reads this tablet's own store (backup_host.dart).
+  final Future<BackupHost> Function()? backupHostBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +77,18 @@ class GuardianEscalationScreen extends StatelessWidget {
               ?.copyWith(color: scheme.onSurfaceVariant)),
           // What the phone allows for rings and alerts (alerts_card.dart); draws nothing where there is no phone side.
           const AlertsCard(),
+          // Her home and keepsakes, backed up on this tablet. Only here, behind the PIN and the biometric.
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            key: const Key('keepsakeBackupButton'),
+            onPressed: () async {
+              final BackupHost host = await (backupHostBuilder ?? () => backupHostForApp(role: BackupRole.child))();
+              if (context.mounted) {
+                await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (BuildContext c) => BackupScreen(host: host)));
+              }
+            },
+            icon: const Icon(Icons.backup_outlined),
+            label: Text("Back up $childName's home and keepsakes")),
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),

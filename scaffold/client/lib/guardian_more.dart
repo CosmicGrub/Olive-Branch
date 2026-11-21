@@ -36,6 +36,9 @@ import 'pairing_records.dart';
 import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
 import 'api_client.dart';
+import 'backup_engine.dart' show BackupRole;
+import 'backup_host.dart';
+import 'backup_screens.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
 import 'busy_fork.dart';
@@ -663,6 +666,24 @@ class GuardianMoreScreen extends StatelessWidget {
   /// itself to: a network hiccup unregistering push must never get in the
   /// way of actually leaving the screen, and there is nothing further a
   /// guardian could do about a background bookkeeping call failing anyway.
+  /// Backup: set up the recovery sheet, choose where backups go, bring records back (backup_screens.dart). With a
+  /// signed-in session the family's server is offered as one place; without one it is a phone-only feature, and
+  /// that is the normal phone.
+  Future<void> _openBackup(BuildContext context) async {
+    final url = baseUrl, gid = guardianId;
+    OliveApi? api;
+    if (url != null && gid != null && AuthSession.current != null) {
+      try {
+        api = await apiFor(url, userId: gid, client: availabilityHttpClient);
+      } catch (_) {
+        api = null; // offline: the phone-only choices still work
+      }
+    }
+    final host = await backupHostForApp(
+        role: BackupRole.guardian, api: api, userId: gid, deviceId: AuthSession.current?.identity?.deviceId);
+    if (context.mounted) _open(context, BackupScreen(host: host));
+  }
+
   Future<void> _signOut(BuildContext context) async {
     final url = baseUrl, gid = guardianId;
     if (url != null && gid != null) {
@@ -883,6 +904,8 @@ class GuardianMoreScreen extends StatelessWidget {
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',
             onTap: () => local!.onConnect!(context)),
+        SettingsRow(id: 'backup', icon: Icons.backup_outlined, title: "Back up your family's records",
+          subtitle: 'Locked on this phone and kept where you choose', onTap: () => _openBackup(context)),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',

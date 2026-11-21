@@ -357,3 +357,9 @@ class DirectoryBackupSink extends ChunkedBackupSink {
         return out..sort();
       });
 }
+
+/// A folder as a place to read a backup from, or null when it is not a folder that exists.
+Future<BackupSource?> openBackupFolder(String path) async {
+  final Directory d = Directory(path);
+  return await d.exists() ? DirectoryBackupSink(d) : null;
+}

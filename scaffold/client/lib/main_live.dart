@@ -54,6 +54,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'font_licences.dart';
+import 'backup_engine.dart' show BackupRole;
+import 'backup_host.dart' show recoverBackupRestoreOnStart;
 import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -273,6 +275,8 @@ Future<bool> _fetchHasOnboarded(String childId, String? token) async {
 Future<void> _openLocalStorage(String childId) async {
   try {
     await LocalServices.boot(childId: childId, isLive: true);
+    // A restore that was cut off last time is undone (or tidied) before any screen reads the store.
+    await recoverBackupRestoreOnStart(LocalServices.current, role: BackupRole.child);
   } catch (e) {
     debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
     LocalServices.install(LocalServices.memory(childId: childId, isLive: true, demoSeeds: false));

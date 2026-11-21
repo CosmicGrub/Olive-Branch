@@ -82,6 +82,9 @@ class BackupService {
   /// The kind of backup this phone or tablet makes.
   BackupKind get kind => role == BackupRole.guardian ? BackupKind.family : BackupKind.keepsake;
 
+  /// The family's server client when one is signed in (for the restore screen), else null.
+  BackupServerApi? serverApiForScreens() => _serverApi?.call();
+
   /// Whether the family's server can be asked from here at all (a grown-up's phone with a signed-in session).
   bool get canUseServer => role == BackupRole.guardian && _serverApi?.call() != null;
 

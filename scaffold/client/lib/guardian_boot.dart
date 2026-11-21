@@ -36,6 +36,8 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'auth_session.dart';
+import 'backup_engine.dart' show BackupRole;
+import 'backup_host.dart' show recoverBackupRestoreOnStart;
 import 'device_identity.dart';
 import 'device_role.dart';
 import 'family_account_entry.dart';
@@ -139,6 +141,8 @@ Future<bool> Function() _liveCheckExistingPin({required String guardianId}) {
 Future<void> _openLocalStorage(String guardianId) async {
   try {
     await LocalServices.boot(childId: 'guardian-device', guardianId: guardianId, isLive: true);
+    // A restore that was cut off last time is undone (or tidied) before any screen reads the store.
+    await recoverBackupRestoreOnStart(LocalServices.current, role: BackupRole.guardian);
   } catch (e) {
     debugPrint('[olive.localStore] on-device storage unavailable, running in memory: $e');
     LocalServices.install(LocalServices.memory(
