@@ -200,7 +200,7 @@ Everything below runs on **your** machine. CI builds artifacts (next section) bu
    SHA-256 and a per-1-MiB chunk hash list, and writes `scaffold/out/update/X.Y.Z/`: the APK, `SHA256SUMS`,
    **`update-manifest.draft.json`** (not signed) and `NEXT-STEPS.txt`. It never reads a private key and uploads nothing. A prebuilt,
    already release-signed file can be packaged instead with `--apk arm64-v8a=<file>` (see "Using the CI build" below).
-4. **Read the draft.** The version, the notes, every address, the sizes. This is the last chance to catch a wrong word.
+4. **Read the draft.** The version, the notes, every address, the sizes. This is the last chance to catch a wrong word. `node tools/update/validate-manifest.mjs <draft>` checks it against the published format and the policy.
 5. **Sign the manifest, offline:**
 
    ```bash

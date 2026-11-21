@@ -15,6 +15,7 @@ import { run as genKey } from '../update/gen-update-key.mjs';
 import { run as signRun } from '../update/sign-update-manifest.mjs';
 import { run as packRun } from '../update/build-update-package.mjs';
 import { run as draftNotes, changelogTitle } from '../update/draft-release-notes.mjs';
+import { run as validateRun } from '../update/validate-manifest.mjs';
 import { OWN_REPO, keyPathProblem, loadUpdateKey } from '../update/key_lib.mjs';
 import * as L from '../update/manifest_lib.mjs';
 import { buildNumber, readVersions } from '../release_lib.mjs';
@@ -192,6 +193,33 @@ const goodPayload = (extra = {}) => ({ ...payload([apkEntryFake()], { issuedAt: 
   check(g, 'refuses a prebuilt file with duplicate entries (a zip trick)', (await go('dupzip', [], (a) => { const p = join(dir, 'dup.apk'); writeFileSync(p, zip([{ name: 'AndroidManifest.xml', data: Buffer.from('a') }, { name: 'classes.dex', data: Buffer.from('b') }, { name: 'classes.dex', data: Buffer.from('c') }])); a[a.indexOf('--apk') + 1] = `arm64-v8a=${p}`; return a; })).code, 1);
   check(g, 'refuses to continue without apksigner AND without --signer-sha256 (the certificate pin is mandatory)', (await go('nosigner', [], (a) => { const i = a.indexOf('--signer-sha256'); a.splice(i, 2); return a; })).code, 1);
   check(g, 'refuses a sequence below 1', (await go('seq', ['--sequence', '0'])).code, 1);
+}
+
+// ================================================================ the standalone validator
+{
+  const g = 'validate-manifest';
+  const dir = sub('validate');
+  const put = (name, text) => { const p = join(dir, name); writeFileSync(p, text); return p; };
+  const p0 = goodPayload();
+  const out = join(dir, 'signed.json');
+  signRun(['--draft', put('d.json', draftOf(p0)), '--key', keyPath, '--out', out], process.env, () => {});
+  const v = (args) => { const c = capture(); const code = validateRun(args, c.log); return { code, text: c.text() }; };
+  check(g, 'a good draft is valid', v([put('draft.json', draftOf(p0))]).code, 0);
+  check(g, 'a good signed file is valid in shape', v([out]).code, 0);
+  check(g, 'a signed file verifies under the right public key', [v([out, '--pubkeys', readFileSync(`${keyPath}.pub`, 'utf8').trim()]).code, /accept/.test(v([out, '--pubkeys', readFileSync(`${keyPath}.pub`, 'utf8').trim()]).text)], [0, true]);
+  check(g, 'a signed file is refused under another public key', v([out, '--pubkeys', L.trustEntry('1234567890abcdef', Buffer.alloc(32, 7))]).code, 1);
+  check(g, 'a rollback is refused when the installed versionCode is given', v([out, '--pubkeys', readFileSync(`${keyPath}.pub`, 'utf8').trim(), '--installed-version-code', '9999']).code, 1);
+  check(g, 'a wrong channel is refused', v([out, '--pubkeys', readFileSync(`${keyPath}.pub`, 'utf8').trim(), '--channel', 'beta']).code, 1);
+  const bad = clone(p0); delete bad.notes;
+  const r = v([put('bad.json', draftOf(bad))]);
+  check(g, 'a missing member is refused and named', [r.code, /notes/.test(r.text)], [1, true]);
+  check(g, 'a versionCode off the policy is refused', v([put('pol.json', draftOf({ ...p0, versionCode: 5201 }))]).code, 1);
+  check(g, 'a bare manifest (no wrapper) is not a draft', v([put('bare.json', JSON.stringify(p0))]).code, 1);
+  check(g, 'a tampered signed file fails under its own key', (() => { const t = JSON.parse(readFileSync(out, 'utf8')); t.manifest.versionCode += 1; return v([put('tam.json', JSON.stringify(t)), '--pubkeys', readFileSync(`${keyPath}.pub`, 'utf8').trim()]).code; })(), 1);
+  check(g, 'not JSON is refused', v([put('x.json', 'nope')]).code, 1);
+  check(g, 'a missing file is refused', v([join(dir, 'absent.json')]).code, 1);
+  check(g, 'no file is a usage error', v([]).code, 1);
+  check(g, 'an oversized file is refused unread', v([put('big.json', ' '.repeat(300 * 1024))]).code, 1);
 }
 
 rmSync(base, { recursive: true, force: true });
