@@ -52,13 +52,13 @@ List<CallParticipant> rosterWithout(List<CallParticipant> list, String id) =>
 
 /// The plain sentences for everything that changed between [before] and [after], joins first, then leaves.
 List<String> rosterAnnouncements(List<CallParticipant> before, List<CallParticipant> after) {
-  final Set<String> was = <String>{for (final CallParticipant p in before) p.id};
-  final Set<String> is_ = <String>{for (final CallParticipant p in after) p.id};
+  final Set<String> beforeIds = <String>{for (final CallParticipant p in before) p.id};
+  final Set<String> afterIds = <String>{for (final CallParticipant p in after) p.id};
   return <String>[
     for (final CallParticipant p in after)
-      if (!was.contains(p.id)) p.observer ? '${p.label} is watching' : '${p.label} joined',
+      if (!beforeIds.contains(p.id)) p.observer ? '${p.label} is watching' : '${p.label} joined',
     for (final CallParticipant p in before)
-      if (!is_.contains(p.id)) p.observer ? '${p.label} stopped watching' : '${p.label} left',
+      if (!afterIds.contains(p.id)) p.observer ? '${p.label} stopped watching' : '${p.label} left',
   ];
 }
 

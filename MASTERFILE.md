@@ -985,8 +985,8 @@ CREATE TABLE contact_ladder (
 | Step | Means |
 |---|---|
 | `none` | No contact. Edge exists for history and future advancement. |
-| `supervised` | Sessions recorded and reviewable by the advancing professional |
-| `monitored` | Not recorded; professional sees metadata and can join unannounced |
+| `supervised` | The step a professional advances. Recording is NOT built: no session is recorded or marked recorded until a notice surface exists (§7.22) |
+| `monitored` | Not recorded; professional sees metadata. Nobody joins a call unseen: every adult present, a professional included, is listed and announced to the others (§7.22) |
 | `time_limited` | Open content, capped duration and frequency |
 | `open` | Full guardian scope |
 
@@ -1079,10 +1079,14 @@ Five invariants, each one a real breach if dropped. Verified against the actual
 obligation*; a parent whose camera and microphone are live in the room is
 participating. This was a gap in the v0.4.0 wording, closed here.
 
-**§5.15 → recording mapping.** `supervised` sessions are recorded and reviewable
-by the professional who advanced the step. `monitored` is **not** recorded — they
-may join unannounced instead. `open` and `time_limited` are never recorded.
-`none` cannot create a session at all.
+**§5.15 → recording mapping.** No session is recorded today: there is no recording
+pipeline and no surface that tells the people in a call, so `recorded` is forced false
+for every step (`RECORDING_NOTICE_SURFACE_EXISTS`, §7.22). When that surface exists,
+`supervised` is the step that would be recorded and reviewable by the professional who
+advanced it, with the disclosure shown to everyone in the call. `monitored`, `open` and
+`time_limited` are never recorded. No step lets anyone join a call unseen: every adult
+who is present, a professional included, is listed, announced and counted. `none` cannot
+create a session at all.
 
 **§10.5 tension, resolved.** Recording is off by default and a child cannot
 consent — yet a court-ordered supervised visit *is* recorded. Resolution: such
@@ -2708,6 +2712,26 @@ POST   /v1/auth/recover                no session. Recovery code (operator-issue
 **Not built, said plainly.** (1) **Nothing here has run on a device.** The player is proved against a fake player and a fake file; the `video_player` plugin has not been compiled into an APK by this change (CI's Android job is the first build), no real video, voice note or picture has been played, and the recovery screens were proved headless against an in-memory server that checks every request against the real route table. (2) **The server has no "played through" state.** It records `opened` (first play); the sender's receipt phrase ("Watched at ...") and the child's receipt screen therefore speak at first play, not at the end. A separate `played_through_at` would need a migration (OPEN-DECISIONS 54). (3) **Recovery signs out every other phone and leaves passkeys alone**, gives the other grown-ups no waiting period and no push, only the history line; an account with no PIN cannot be recovered; a sole grown-up who loses their phone AND forgets the PIN still re-founds the family (OPEN-DECISIONS 52). (4) The operator finds the account by the sign-up note or the account id; an account made from an invite has no note, so the operator needs the id. (5) No QR or deep link for the recovery code: it is read out or pasted. (6) A decline ends an invite a squatter claimed (OPEN-DECISIONS 53).
 
 **Tests.** `server/test/account_recovery_route.test.mjs` (real Postgres through the real `Api` with strict ids, as `app_owner` and as `app_runtime`, wired in `tools/verify.sh`): the operator tool (ambiguous note, unknown account, no PIN, an email in a note, one live code, cancel), every malformed body, the global budget (and the real code waiting while blocked), the happy path in detail (new device, same account, old session and old credential and the account's second phone all cut off, the other grown-up sees one content-free event, the spent code, the PIN unchanged), expired, cancelled, superseded, wrong PIN (code survives, five burn it and lock the PIN, a new code waits for the lockout), another family's PIN, a code never touching another family, a closed account, six simultaneous redemptions, a code that is not a session or a credential or an allowance, and the table's own RLS and constraints. `identity_chain_route.test.mjs` now asserts the new claim rule (no-email account claims, different-email account refused, the squatter turned away). Client: `family_account_service_test.dart`, `family_account_screens_test.dart`, `family_account_contract_test.dart` (recovery against the real route table and reason list), `message_player_test.dart` (address vetting, the capped download, the screen with a fake player in every failure, big text and five widths, opened-on-first-play through the inbox, the preview build) and `inbox_screen_test.dart` (the live flow now goes through the player).
+
+### 7.22 Care and calls safety structure: demo content, the allergy field, PRN gaps, the dose rule, the call roster, recording and notifications — as shipped (client and session runtime; no migration)
+
+**Why.** A review of the health and call surfaces found places where the app said something it did not know, or let something happen out of sight. Each fix here is structure: what a screen may say when nothing was recorded, what a call must show, what a notification may carry. No medical or legal wording was written; the few fixed phrases (`Not recorded`, `None. Confirmed by <name> on <date>`) are listed for clinician and counsel sign-off before a store release (OPEN-DECISIONS).
+
+**Demo content is debug-only (ISS-092).** `LocalServices.demoSeeds` now defaults to false (the constructor and `LocalServices.memory`), and is false in any build that is not a debug build even if asked for (`demoSeeds` is `_demoSeeds && kDebugMode`). The invented medicines, the invented emergency card (names, phone numbers, an insurance member id) and the fixed stand-in grown-up code live in ONE file, `client/lib/demo_fixtures.dart`, each accessor `if (kDebugMode)`-guarded so the compiler drops the content from a release. `lib/main.dart` (the offline preview) installs demo seeds only in a debug build and refuses to run at all in a release build. A real build starts empty and says so: the meds screen lists no medicine (`No medicines are recorded here yet.`) and the emergency card says no card has been written. The strings are listed in `tools/demo-literals.json`; `tools/check-release-literals.mjs` opens the BUILT apk (every entry, `libapp.so` included, as UTF-8, UTF-16 and Latin-1) and exits non-zero on any of them; `release-smoke.yml` runs it on the real release build, and `tools/test/release_literals.test.mjs` (required `verify` job) proves the reader on synthetic apks and that no literal sits in `lib/` outside the fixtures file and the preview entry. `client/test/demo_fixtures_guard_test.dart` checks the defaults and the guard in source.
+
+**The allergy field has three states (ISS-094).** `client/lib/allergy_field.dart`: UNKNOWN (the default; shows `Not recorded`), CONFIRMED NONE (a named guardian and a date: `None. Confirmed by <name> on <date>`), and ENTRIES (the guardian's own words). The state is derived from the data, never stored, so it cannot contradict it: entries win over a confirmation, and a confirmation without a name and a real date counts as none at all. The same function words the emergency card, its read-aloud text, the local card's spoken text, hospital mode, the meds screen's shared record and the doctor sheet (which now always carries an allergy line, with or without a card, because leaving it out would read as "none"). The editor has one box, `No known allergies (I confirm this)`, unticked by default; ticking it stamps the guardian's name and today's date, keeps an existing confirmation as it was, is disabled while an allergy is typed, and is refused without a name (`none_needs_name`). The local card stores the confirmation as `allergyNone` only when present, so a card without one is byte for byte what it was. A server card's empty list now reads `Not recorded`; the client also reads an optional `allergyNoneConfirmed {by, on}` from the server card when a server sends one.
+
+**A PRN gap is never invented (ISS-095).** A null minimum gap stays null: the meds screen no longer substitutes four hours, no gap check runs, and a refusal that carries no gap quotes no number (`Too soon for another <medicine> dose.`). The on-device medicine list (`CareMedication.gapHours`) is now `int?` with no default: an as-needed medicine with no gap shows `No minimum gap is set` and never `Can be given`, the editor's gap field starts blank and says optional, and stored data with no valid gap reads back as none. A gap a guardian set is kept exactly and still held.
+
+**The care-guide dose rule (ISS-093).** `wordingViolations` (the fail-closed release gate, `care_guide_gate.dart`) now also refuses a guide whose parent-facing text has the SHAPE of a dose: a number or number word with a medicine unit (`5 mg`, `two tablets`, `half a teaspoon`, `2 puffs`), a per-weight amount (`/kg`, `per kg`, `per pound`), a dosing interval (`every 4 hours`, `q6h`, `4-6 hourly`) or a dosing frequency (`twice a day`, `three times daily`, `bid`), or a ceiling on doses. It needs no medicine list. It is deliberately a little eager (`a drop in temperature` fails and is reworded); times, counts and weights that are not doses (`24 hours`, `10 minutes`, `5 back blows`, `under 5 kg`) are not matched. The structure test scans every bundled guide and every draft for it, with positive and negative vectors in the gate test.
+
+**The call roster (ISS-099, ISS-100).** `CallViewState` holds a list of participants (`client/lib/call_roster.dart`), not one overwritten name; a second and a third person add to it. Every join and leave is one plain sentence (`Dad joined`, `Gran is watching`, `Mum left`), written on screen for about eight seconds and exposed as a live region for the screen reader, and a count line stays on screen counting everyone present, you and observers included (`3 people here, 1 watching`), described to a screen reader with the names. An unnamed person is `Someone`, never an id. The LiveKit adapter marks a participant who cannot publish as an observer and lists people already in the room when it connects; the Jitsi adapter adds and removes by participant id. The spec no longer says a professional may join unannounced or that an observer is invisible: no step of the ladder lets any adult join a call unseen. `session-runtime/src/rooms.ts` states the invariant (I6), types `hidden` as `false`, and a test mints every ladder step by observer tier by child or guardian and reads the real LiveKit token: no grant is ever hidden, and no source can produce `hidden: true` or an unannounced join.
+
+**No recording is claimed (ISS-106).** Nothing records, and there is no surface that tells the people in a call, so `recorded` is forced false (`RECORDING_NOTICE_SURFACE_EXISTS = false` in `rooms.ts`) and a supervised session is not marked recorded. The disclosure path stays in code and under test for the day the switch is flipped together with the notice surface and its consent step.
+
+**Notifications carry nothing health-related, and are private on a lock screen (ISS-107).** `tools/test/notification_payload_contract.test.mjs` reads both builders: for every push kind on both platforms the data keys are a closed list, no text or value has medicine, allergy, condition or dose vocabulary or shape, extra input fields are never copied out, the FCM and APNs wire bodies are clean, and an FCM message with visible text says `android.notification.visibility: PRIVATE` (new). On the phone, both notification channels and the call notification are `VISIBILITY_PRIVATE` (the knock still opens over the lock screen through its full-screen intent), every string the builder can show comes from `strings.xml` and is checked for health vocabulary, and the receiver reads only `kind` and `ref`.
+
+**Not built, said plainly.** (1) The server does not store the allergy confirmation: it is kept on the device's local card; a server-held card with an empty list reads `Not recorded` and the client reads the confirmation if a server ever sends it (a column and route change was left to avoid a migration number clash with the lanes in flight). (2) The release-literal check runs on the real apk only in the advisory `release-smoke` workflow; the required job proves the reader on synthetic archives. Nothing here built a release apk locally. (3) The roster has not run on a device or against a live LiveKit or Jitsi room; it is proved against the fake engine and the adapters' event handlers. (4) The Jitsi adapter cannot tell an observer from anyone else, so on Jitsi everyone is listed and counted but none is marked as watching. (5) Only the call screen implements the visible-presence rule today; a shared canvas or game session has no roster. (6) A server refusal text and the `Not recorded` / `None. Confirmed by ...` phrases are unreviewed wording. (7) The ring notification on a locked phone now shows the system's own "contents hidden" placeholder; this was not exercised on a device.
 
 ## §8 UI architecture
 
@@ -4702,8 +4726,11 @@ asked.** No feature may be gated on a second guardian existing.
 ### 17.3 Observer tier
 
 A reluctant parent may accept **read-only**: see drawings, see the calendar,
-watch a recorded message. No obligation, no visible participation, no
-notification to the other parent that they are observing.
+watch a recorded message. No obligation and no pressure to take part: reading what is
+already there sends no notification to the other parent. Being present in anything
+live is never silent: in a call an observer is listed, announced (`Gran is watching`)
+and counted like everyone else (§7.22). Today only the call screen implements that;
+the same rule is the design for any other live session.
 
 Two weeks of seeing your kid's drawings converts better than any pitch.
 

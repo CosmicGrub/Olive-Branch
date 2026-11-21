@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/form_factors.dart' as ff;
+import 'package:olive_client/local_services.dart';
 import 'package:olive_client/meds_care.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
@@ -22,6 +23,10 @@ Future<void> pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  // The invented demo medicines are debug-only preview content (demo_fixtures.dart) and OFF by default: the demo-path tests
+  // below ask for them. Live-wired tests fetch their own data and need none.
+  setUp(() => LocalServices.install(LocalServices.memory(demoSeeds: true)));
+
   group('care.ts medication port — pure logic', () {
     test('doseKey is keyed on the CHILD-local date', () {
       final DateTime childLocal = DateTime.utc(2026, 8, 4);

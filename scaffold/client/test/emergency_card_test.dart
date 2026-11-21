@@ -5,8 +5,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:olive_client/emergency_card.dart';
 import 'package:olive_client/form_factors.dart' as ff;
+import 'package:olive_client/local_services.dart';
 
 void main() {
+  // The invented demo card is debug-only preview content (demo_fixtures.dart) and OFF by default: these tests are about the
+  // demo card's layout, so they ask for it.
+  setUp(() => LocalServices.install(LocalServices.memory(demoSeeds: true)));
+
   // Tall surface so every section is actually laid out by the ListView's
   // sliver — a viewport too short leaves off-screen sections unbuilt, which
   // would make "not found" indistinguishable from "not rendered".
