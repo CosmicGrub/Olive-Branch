@@ -67,7 +67,33 @@ There is ONE implementation of this worker (`runDeliverSweep` in
 can host the same function in-process for a single-container deployment
 (`server/delivery_tick.mjs`, enabled by `DELIVERY_IN_SERVER=1`; the Compose files
 set it to 0 because they run the `delivery` service). Both take the same
-advisory lock (`deliver`), so running both is safe but wasted work.
+advisory lock (`deliver`), so running both is safe but wasted work. Never
+turn both off: with `DELIVERY_IN_SERVER=0` and no `delivery` service nothing
+delivers (a contract test fails a Compose file that does this).
+
+**Is it alive?** An idle tick logs nothing, so a quiet log proves nothing.
+Instead (migration 0054, `tools/worker_heartbeat.mjs`):
+
+- the worker rewrites a heartbeat file every tick and the `delivery` container's
+  healthcheck (`tools/delivery-healthcheck.mjs`) is `unhealthy` when it has not
+  ticked, or not succeeded, for four intervals (never under 90 s);
+- it exits after 20 failed ticks in a row, or a loop hung for ten minutes, so
+  `restart` replaces it (Docker never restarts an unhealthy container by itself);
+- it upserts a `worker_heartbeat` row, readable only through the aggregate
+  `delivery_health()`; with `DELIVERY_IN_SERVER=0` the server logs
+  `WARNING delivery_worker_missing` a minute after boot, and every five minutes
+  while no worker reports;
+- it logs `deliver_heartbeat` with counts only every `DELIVERY_HEARTBEAT_LOG_MS`
+  (default ten minutes);
+- `tools/health-alert.mjs` raises `delivery_worker_missing` / `_stale` /
+  `_failing`, `delivery_ready_backlog` (`DELIVERY_READY_MAX_AGE_SEC`, default
+  900) and `delivery_pending_old` (`DELIVERY_PENDING_MAX_AGE_SEC`, default
+  86400).
+
+The rematerialize sweep is round-robin: it orders on
+`delivery_intent.rematerialize_checked_at` (never-checked first, newest first),
+stamps a row it looked at and left pending, and so cannot be crowded out by
+rows that stay pending for a legitimate reason (no bedtime defined yet).
 
 A message sent while a bedtime exists is stored `ready` with its delivery time
 at send time, so the worker delivers it the moment it is due rather than

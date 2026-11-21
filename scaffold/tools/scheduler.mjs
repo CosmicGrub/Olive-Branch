@@ -109,13 +109,16 @@ import { dirname, join } from 'node:path';
 import { DateTime } from 'luxon';
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { createPool, withSystemSession, childCtxFor, purgeExpiredChallenges, endStaleCalls,
-         adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS }
+         adoptUntrackedBlobs, orphanedUploads, releaseMediaUpload, MEDIA_ORPHAN_AGE_HOURS,
+         recordWorkerHeartbeat }
   from '../packages/db/src/pool.mjs';
 import { materialize } from '../packages/delivery-engine/src/materialize.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
 import { digestRecordFor, DIGEST_LEAD_DAYS } from '../packages/storage/src/retention.mjs';
 import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
+import { createWorkerHeartbeat, heartbeatFileFromEnv, heartbeatLogFields, heartbeatLogMsFromEnv,
+         watchdogVerdict } from './worker_heartbeat.mjs';
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -236,10 +239,15 @@ export async function runRematerializeSweep(pool, opts = {}) {
             to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at
        FROM delivery_intent
       WHERE state = 'pending'
-      ORDER BY created_at
+      ORDER BY rematerialize_checked_at NULLS FIRST, created_at DESC
       LIMIT $1`,
     [batchLimit],
   ));
+  // ISS-070 (0054). Rows this pass looked at and left `pending` are stamped at the end, so they go to
+  // the back of the next scan. Before this the scan was `ORDER BY created_at LIMIT 500`: rows that
+  // can stay pending for a legitimate reason (no bedtime yet, an event that has not happened) sat
+  // at the front for ever and, at 500 of them, no newer message was ever looked at again.
+  const leftPendingIds = [];
 
   let materialized = 0, expired = 0, stillPending = 0, skippedRows = 0, errored = 0;
   const ctxCache = new Map();
@@ -264,6 +272,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
       // defensively anyway (an honest skip + a warning line) rather than
       // letting one bad row crash the whole sweep.
       skippedRows++;
+      leftPendingIds.push(row.id);
       errLine({ event: 'warn', job: 'rematerialize', reason: 'missing_child_ctx',
         intent_id: row.id, child_id: row.child_id, at: DateTime.utc().toISO() });
       continue;
@@ -290,7 +299,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
           RETURNING id`,
         [row.id, result.scheduledAt.toUTC().toISO(), result.tz],
       ));
-      if (updated.length) materialized++; else stillPending++;
+      if (updated.length) materialized++; else { stillPending++; leftPendingIds.push(row.id); }
       continue;
     }
 
@@ -300,16 +309,30 @@ export async function runRematerializeSweep(pool, opts = {}) {
           WHERE id = $1 AND state = 'pending' RETURNING id`,
         [row.id],
       ));
-      if (updated.length) expired++; else stillPending++;
+      if (updated.length) expired++; else { stillPending++; leftPendingIds.push(row.id); }
       continue;
     }
 
     stillPending++;
+    leftPendingIds.push(row.id);
     } catch (e) {
       errored++;
+      leftPendingIds.push(row.id);
       errLine({ event: 'row_error', job: 'rematerialize', intent_id: row.id,
         child_id: row.child_id, error: String(e?.message ?? e).slice(0, 300),
         at: DateTime.utc().toISO() });
+    }
+  }
+
+  if (leftPendingIds.length) {
+    try {
+      await withSystemSession(pool, (q) => q(
+        `UPDATE delivery_intent SET rematerialize_checked_at = now()
+          WHERE id = ANY($1::uuid[]) AND state = 'pending'`, [leftPendingIds]));
+    } catch (e) {
+      // Not fatal: the rows simply keep their place in the queue and are looked at again.
+      errLine({ event: 'warn', job: 'rematerialize', reason: 'stamp_failed',
+        error: String(e?.message ?? e).slice(0, 200), at: DateTime.utc().toISO() });
     }
   }
 
@@ -1034,22 +1057,60 @@ export function deliverTickMsFromEnv(env = process.env) {
 }
 
 export async function deliverLoop(pool, databaseUrl, opts = {}) {
+  const env = opts.env ?? process.env;
   const tickMs = opts.tickMs !== undefined
     ? (Number.isFinite(Number(opts.tickMs)) ? Math.max(MIN_DELIVER_TICK_MS, Number(opts.tickMs)) : DEFAULT_DELIVER_TICK_MS)
-    : deliverTickMsFromEnv(process.env);
+    : deliverTickMsFromEnv(env);
+  // ISS-069: the heartbeat (file for the container healthcheck, row for the server's boot watch and
+  // health-alert), the watchdog that turns "alive but stuck" into an exit, and the periodic log line
+  // that proves an idle worker is alive. See tools/worker_heartbeat.mjs.
+  const hb = opts.heartbeat ?? createWorkerHeartbeat({
+    tickMs, file: opts.heartbeatFile === undefined ? heartbeatFileFromEnv(env) : opts.heartbeatFile });
+  const workerName = opts.workerName ?? 'delivery';
+  const logEveryMs = opts.heartbeatLogMs ?? heartbeatLogMsFromEnv(env);
+  const onFatal = opts.onFatal ?? (() => process.exit(3));
+  const runJob = opts.runJob ?? (() => runNamedJob(pool, databaseUrl, 'deliver', undefined, { quiet: true }));
+  const sleep = opts.sleep ?? interruptibleSleep;
   let stopping = false;
   const stop = () => { stopping = true; };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
   logLine({ event: 'deliver_loop_start', tick_ms: tickMs });
+  const watchdog = setInterval(() => {
+    const v = watchdogVerdict(hb.snapshot());
+    if (v.exit) {
+      errLine({ event: 'deliver_watchdog_exit', reason: v.reason, at: DateTime.utc().toISO() });
+      onFatal(v.reason);
+    }
+  }, opts.watchdogMs ?? 30_000);
+  watchdog.unref?.();
+  let lastLogAt = Date.now();
+  let beatWriteFailing = false;
+  let ticks = 0;
   while (!stopping) {
+    let ok = false;
     try {
-      await runNamedJob(pool, databaseUrl, 'deliver', undefined, { quiet: true });
+      ok = (await runJob()).ok !== false;
     } catch (e) {
       errLine({ event: 'deliver_tick_error', error: String(e?.message ?? e).slice(0, 300) });
     }
-    await interruptibleSleep(tickMs, () => stopping);
+    const snap = hb.beat(ok);
+    try {
+      await recordWorkerHeartbeat(pool, { worker: workerName, tickMs, ok, consecutiveFailures: snap.consecutiveFailures });
+      beatWriteFailing = false;
+    } catch (e) {
+      // One line per outage, not one per tick; the file heartbeat (the healthcheck's source) is unaffected.
+      if (!beatWriteFailing) errLine({ event: 'deliver_heartbeat_write_failed', error: String(e?.message ?? e).slice(0, 200) });
+      beatWriteFailing = true;
+    }
+    if (Date.now() - lastLogAt >= logEveryMs) {
+      logLine({ event: 'deliver_heartbeat', ...heartbeatLogFields(snap) });
+      lastLogAt = Date.now();
+    }
+    if (opts.maxTicks !== undefined && ++ticks >= opts.maxTicks) break;
+    await sleep(tickMs, () => stopping);
   }
+  clearInterval(watchdog);
   process.off('SIGTERM', stop);
   process.off('SIGINT', stop);
   logLine({ event: 'deliver_loop_stop' });

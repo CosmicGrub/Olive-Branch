@@ -36,11 +36,17 @@ import { Metrics, requestIdFor, accessLogLine, isInternalRequest, shouldLogAcces
 import { createShutdown, DEFAULT_SHUTDOWN_DEADLINE_MS } from './shutdown.mjs';
 import { createDeliveryTick, hostIntervalFromEnv } from './delivery_tick.mjs';
 import { checkReadiness, createReadinessCache } from './readiness.mjs';
+import { createWorkerWatch } from './delivery_watch.mjs';
+import { checkBootPort, databaseUrlProblem } from './boot_config.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PORT = Number(process.env.PORT ?? 8080);
+// ISS-074: PORT is a whole number from 1 to 65535 or unset; anything else (PORT=abc was NaN, PORT=
+// was 0, a random free port nobody can reach) refuses to boot, before anything else is touched.
+const bootPort = checkBootPort(process.env);
+if (!bootPort.ok) { console.error(`PORT check failed: ${bootPort.problem}`); process.exit(2); }
+const PORT = bootPort.port;
 const DATABASE_URL = process.env.DATABASE_URL;
 const DEV_LOGIN = process.env.DEV_LOGIN === '1';
 
@@ -55,6 +61,12 @@ if (DEV_LOGIN && process.env.NODE_ENV === 'production') {
   process.exit(2);
 }
 if (!DATABASE_URL) { console.error('DATABASE_URL required'); process.exit(2); }
+// ISS-074: the compose files interpolate operator passwords into this URL; a non-hex password changes
+// the URL's meaning. Say so at boot instead of failing later inside the driver.
+{
+  const dbUrlProblem = databaseUrlProblem(DATABASE_URL);
+  if (dbUrlProblem) { console.error(`DATABASE_URL check failed: ${dbUrlProblem}`); process.exit(2); }
+}
 // S-B13 -- SESSION_SECRET / MEDIA_SIGNING_SECRET must be real keys (valid hex,
 // >= 32 bytes, not a placeholder) outside NODE_ENV=development|test. See
 // server/secrets.mjs for the why.
@@ -316,6 +328,8 @@ deliveryTick = createDeliveryTick({
   pool, intervalMs: hostIntervalFromEnv(process.env), metrics,
   log: (line) => console.log(line),
 });
+// ISS-069: with DELIVERY_IN_SERVER=0 this process does not deliver; say loudly when no worker reports in.
+const workerWatch = createWorkerWatch({ pool, enabled: !deliveryTick.status().enabled });
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(SERVER_DIR, '..', 'db', 'migrations');
 let draining = false;
@@ -539,6 +553,7 @@ const { wss, stopSweep } = attachGameSocketServer(server, {
 server.listen(PORT, () => {
   console.log(`olive-branch server listening on :${PORT}` + (DEV_LOGIN ? ' (DEV_LOGIN enabled)' : ''));
   deliveryTick.start();
+  workerWatch.start();
   console.log(deliveryTick.status().enabled
     ? `delivery worker: every ${deliveryTick.status().intervalMs} ms`
     : 'delivery worker: not hosted in this process (DELIVERY_IN_SERVER=0; the dedicated `delivery` service must run it)');
@@ -548,7 +563,7 @@ server.listen(PORT, () => {
 // See shutdown.mjs for the full why. Idempotent: signals arriving while a
 // shutdown is already running share its promise, so pool.end() runs once.
 const shutdown = createShutdown({
-  server, wss, pool, stopTimers: [stopSweep, () => deliveryTick.stop()],
+  server, wss, pool, stopTimers: [stopSweep, () => deliveryTick.stop(), () => workerWatch.stop()],
   deadlineMs: Number(process.env.SHUTDOWN_DEADLINE_MS) > 0
     ? Number(process.env.SHUTDOWN_DEADLINE_MS) : DEFAULT_SHUTDOWN_DEADLINE_MS,
   log: (line) => console.log(line),
