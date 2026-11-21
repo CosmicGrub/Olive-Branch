@@ -18,6 +18,16 @@
 //     claimed by two concurrent additions belongs to the canonically earlier one. A revoked or departed key or
 //     person can never come back: the tombstone is permanent. Every fork is REPORTED, never silently resolved.
 //
+// LOST OR STOLEN DEVICE (this file's newest rules). `device.pause` suspends ONE device at once: its signatures are
+// refused, its yes-votes are ignored (a refusal still counts, so a pause can never silence an objection), and no new
+// key is wrapped to it, so it cannot read anything written after the pause. `device.resume` lifts it (a different,
+// active grown-up device signs it; a pause the OWNER made can be lifted by the other grown-up only once the pausing
+// phone is itself no longer active). A pause wins over what the paused device signed on a branch the pause did not
+// see (those entries are void, listed, never silently dropped). `device.revoke` (reason lost) is the existing,
+// permanent cut-off with its 72 hour notice for another grown-up's phone. `guardian.end` ends a grown-up: the person
+// themself saying yes ends it at once; otherwise it takes effect only after the 14 day notice with no refusal from
+// them or any other grown-up. A pause or an end is never a way to silence the grown-up it is about.
+//
 // PROVISIONAL. The design (section 11) says the merge rule of 3.2 is the piece most likely to need revision once it
 // is fuzzed, and this is a first model of it, tested on the hostile cases listed in the test file. Read the residual
 // risks in the PR description before relying on it. Not built here: any storage, the gossip, the settle-in screens,
@@ -89,6 +99,22 @@ class PendingItem {
   final int? expMs;
 }
 
+/// A device suspended by a `device.pause` that nothing has lifted. [bySignerHex] is the device that paused it.
+class PausedDevice {
+  PausedDevice(this.keyHex, this.byGidHex, this.bySignerHex, this.atMs, this.pauseHashHex);
+  final String keyHex, bySignerHex, pauseHashHex;
+  final String? byGidHex;
+  final int atMs;
+}
+
+/// A `device.revoke` that has been signed but whose notice has not ended (another grown-up's phone, 72 hours). The
+/// owner can cancel it until [effMs].
+class PendingRevoke {
+  PendingRevoke(this.hashHex, this.keyHex, this.effMs, this.reason);
+  final String hashHex, keyHex, reason;
+  final int effMs;
+}
+
 /// Two or more entries that follow the same entry. The family is told in one plain sentence; nothing is dropped.
 class LedgerFork {
   LedgerFork(this.parentHex, this.childrenHex, this.sameSigner);
@@ -115,6 +141,9 @@ class LedgerState {
         heads = const <Uint8List>[],
         legacyFids = const <String>[],
         history = const <String>[],
+        paused = const <PausedDevice>[],
+        pendingRevokes = const <PendingRevoke>[],
+        revokedKeys = const <String>[],
         genesisDeviceKey = null;
 
   LedgerState._ok({
@@ -132,6 +161,9 @@ class LedgerState {
     required this.heads,
     required this.legacyFids,
     required this.history,
+    required this.paused,
+    required this.pendingRevokes,
+    required this.revokedKeys,
     required this.genesisDeviceKey,
     required this.nowMs,
   })  : ok = true,
@@ -166,6 +198,15 @@ class LedgerState {
   /// Hashes of the entries that took effect, in the one canonical order.
   final List<String> history;
 
+  /// Devices suspended right now (marked as lost, or paused by another grown-up).
+  final List<PausedDevice> paused;
+
+  /// Revokes whose notice is still running as of [nowMs].
+  final List<PendingRevoke> pendingRevokes;
+
+  /// Device keys (hex) cut off for good: revoked with the notice over, or belonging to a grown-up who left or was ended.
+  final List<String> revokedKeys;
+
   FamilyPin? get pin => ok ? FamilyPin(fid!, genesisHash!) : null;
 
   LedgerDevice? deviceFor(List<int> key) {
@@ -185,7 +226,21 @@ class LedgerState {
   /// May this key sign a ledger entry that needs a full grown-up (not settling in) at [atMs]?
   bool canAct(List<int> key, int atMs) {
     final LedgerDevice? d = deviceFor(key);
-    return d != null && d.kind == 'guardian' && !d.settlingAt(atMs);
+    return d != null && d.kind == 'guardian' && !d.settlingAt(atMs) && !isPaused(key);
+  }
+
+  bool isPaused(List<int> key) {
+    final String k = hexOf(key);
+    return paused.any((PausedDevice p) => p.keyHex == k);
+  }
+
+  /// 'active', 'paused' (suspended, can come back), 'revoked' (cut off for good) or 'unknown' (never part of this
+  /// family as far as this ledger can tell). What a device asks about ITSELF before it trusts what it holds.
+  String standingOf(List<int> key) {
+    final String k = hexOf(key);
+    if (revokedKeys.contains(k)) return 'revoked';
+    if (deviceFor(key) == null) return 'unknown';
+    return isPaused(key) ? 'paused' : 'active';
   }
 
   bool isSettling(List<int> key, int atMs) => deviceFor(key)?.settlingAt(atMs) ?? false;
@@ -220,6 +275,13 @@ class _Gate {
   final Set<String> proposerKeys;
   final Map<String, int> yesAt = <String, int>{}; // gid or '*' for the candidate -> time of the latest yes
   bool declined = false;
+
+  /// Set only for `guardian.end`: when nobody has refused by this time the entry takes effect WITHOUT the required yes.
+  int? silentAt;
+
+  /// Devices that may only REFUSE (key hex -> gid): the other grown-ups, who are told and can object but whose yes is
+  /// not needed.
+  Map<String, String> refuseKeys = const <String, String>{};
 }
 
 class _Node {
@@ -252,6 +314,7 @@ class _St {
   final Set<String> knownKeys = <String>{}, knownGids = <String>{}, deadKeys = <String>{}, deadGids = <String>{};
   FamilyPolicy policy = const FamilyPolicy();
   int epoch = 0;
+  final Map<String, PausedDevice> paused = <String, PausedDevice>{};
 
   List<LedgerDevice> devicesOf(String gid) =>
       <LedgerDevice>[for (final LedgerDevice d in devices.values) if (d.gidHex == gid) d];
@@ -275,13 +338,72 @@ Future<LedgerState> reduceLedger({
   Iterable<LedgerVote> votes = const <LedgerVote>[],
   required int nowMs,
   FamilyPin? pin,
-}) =>
-    _Reducer(nowMs, pin).run(entries.toList(), votes.toList());
+}) async {
+  final List<LedgerEntry> es = entries.toList();
+  final List<LedgerVote> vs = votes.toList();
+  _Reducer r = _Reducer(nowMs, pin);
+  LedgerState s = await r.run(es, vs);
+  // A pause changes which votes count, and which votes count can change what is valid, so when the family has any
+  // pause the reduce is repeated with the pause intervals the previous round found, until they stop changing (at most
+  // three rounds: a pause never un-pauses itself, so this settles at once in practice).
+  Map<String, List<_Interval>> seed = r.found;
+  for (int round = 0; round < 2 && seed.isNotEmpty; round++) {
+    r = _Reducer(nowMs, pin, seed: seed);
+    s = await r.run(es, vs);
+    if (_sameIntervals(r.found, seed)) break;
+    seed = r.found;
+  }
+  return s;
+}
+
+/// One suspension of a device: from [from] until [to] (null while it lasts), named by the pause entry's hash.
+class _Interval {
+  _Interval(this.from, this.hash);
+  final int from;
+  final String hash;
+  int? to;
+}
+
+bool _sameIntervals(Map<String, List<_Interval>> a, Map<String, List<_Interval>> b) {
+  if (a.length != b.length) return false;
+  for (final MapEntry<String, List<_Interval>> e in a.entries) {
+    final List<_Interval>? o = b[e.key];
+    if (o == null || o.length != e.value.length) return false;
+    for (int i = 0; i < o.length; i++) {
+      if (o[i].from != e.value[i].from || o[i].to != e.value[i].to || o[i].hash != e.value[i].hash) return false;
+    }
+  }
+  return true;
+}
 
 class _Reducer {
-  _Reducer(this.now, this.pin);
+  _Reducer(this.now, this.pin, {this.seed});
   final int now;
   final FamilyPin? pin;
+
+  /// The pause intervals a previous round found, or null on the first round (then the ones found so far are used).
+  final Map<String, List<_Interval>>? seed;
+
+  /// The pause intervals this round found: device key hex -> intervals, in the order the entries were checked.
+  final Map<String, List<_Interval>> found = <String, List<_Interval>>{};
+
+  bool _pausedAt(String keyHex, int atMs) {
+    for (final _Interval iv in (seed ?? found)[keyHex] ?? const <_Interval>[]) {
+      if (iv.from <= atMs && (iv.to == null || atMs < iv.to!)) return true;
+    }
+    return false;
+  }
+
+  void _note(_Node n) {
+    if (n.type == EntryType.devicePause) {
+      (found[hexOf(n.e.body['key']! as Uint8List)] ??= <_Interval>[]).add(_Interval(n.e.issuedAtMs, n.h));
+    } else if (n.type == EntryType.deviceResume) {
+      final String ph = hexOf(n.e.body['pause']! as Uint8List);
+      for (final _Interval iv in found[hexOf(n.e.body['key']! as Uint8List)] ?? const <_Interval>[]) {
+        if (iv.hash == ph) iv.to = n.e.issuedAtMs;
+      }
+    }
+  }
 
   final Map<String, _Node> nodes = <String, _Node>{};
   final List<_Node> order = <_Node>[];
@@ -380,7 +502,11 @@ class _Reducer {
       }
       n.anc = anc;
       await _validate(n);
-      if (n.reject != null) rejected[n.h] = n.reject!;
+      if (n.reject != null) {
+        rejected[n.h] = n.reject!;
+      } else {
+        _note(n);
+      }
     }
     // 6. Removal beats a concurrent add.
     _markVoids();
@@ -441,6 +567,11 @@ class _Reducer {
     }
     final bool settling = d.settlingAt(e.issuedAtMs);
     final Map<String, Object?> b = e.body;
+    if (s.paused.containsKey(n.signerHex) && e.type != EntryType.guardianLeave) {
+      // A suspended device signs nothing. Leaving the family stays a floor: the person themself can always leave.
+      n.reject = 'signer-paused';
+      return;
+    }
     String? bad;
     switch (e.type) {
       case EntryType.memberAdd:
@@ -466,6 +597,15 @@ class _Reducer {
         break;
       case EntryType.keyRotate:
         bad = settling ? 'signer-settling' : _keyRotate(n, s);
+        break;
+      case EntryType.devicePause:
+        bad = settling ? 'signer-settling' : _devicePause(n, s);
+        break;
+      case EntryType.deviceResume:
+        bad = settling ? 'signer-settling' : _deviceResume(n, s, d);
+        break;
+      case EntryType.guardianEnd:
+        bad = settling ? 'signer-settling' : _end(n, s, d);
         break;
       default: // the reserved types
         if (settling) {
@@ -617,6 +757,63 @@ class _Reducer {
     return null;
   }
 
+  /// Suspends one device. Any grown-up may do it to any device (their own other phone, the other grown-up's phone, a
+  /// child's tablet): it is the safety lever and it is instant. It can never leave the family with no grown-up device
+  /// able to act, and it is reversible.
+  String? _devicePause(_Node n, _St s) {
+    final String keyHex = hexOf(n.e.body['key']! as Uint8List);
+    final LedgerDevice? t = s.devices[keyHex];
+    if (t == null) return 'unknown-device';
+    if (s.paused.containsKey(keyHex)) return 'already-paused';
+    if (t.kind == 'guardian') {
+      final int stillActive = s.devices.values
+          .where((LedgerDevice x) => x.kind == 'guardian' && x.keyHex != keyHex && !s.paused.containsKey(x.keyHex))
+          .length;
+      if (stillActive < 1) return 'last-active-guardian-device';
+    }
+    return null;
+  }
+
+  String? _deviceResume(_Node n, _St s, LedgerDevice signer) {
+    final Map<String, Object?> b = n.e.body;
+    final String keyHex = hexOf(b['key']! as Uint8List), ph = hexOf(b['pause']! as Uint8List);
+    final PausedDevice? p = s.paused[keyHex];
+    if (p == null) return 'not-paused';
+    if (!n.anc.contains(ph)) return 'pause-not-seen';
+    if (p.pauseHashHex != ph) return 'wrong-pause';
+    if (signer.keyHex == keyHex) return 'cannot-resume-itself';
+    final LedgerDevice? t = s.devices[keyHex];
+    if (t == null) return 'unknown-device';
+    // A report the OWNER made themselves (they paused their own phone from another one) cannot be undone by another
+    // grown-up, unless the phone it was made from is itself no longer active (a thief who knew the PIN).
+    final bool ownerMade = t.kind == 'guardian' && t.gidHex != null && t.gidHex == p.byGidHex;
+    if (ownerMade && signer.gidHex != t.gidHex) {
+      final bool pauserActive = s.devices.containsKey(p.bySignerHex) && !s.paused.containsKey(p.bySignerHex);
+      if (pauserActive) return 'only-the-owner-resumes';
+    }
+    return null;
+  }
+
+  /// Ending a grown-up. The person's own yes ends it at once; with no yes, it takes effect only after [kEndWaitMs]
+  /// with no refusal from them or from any other grown-up. A refusal (a `no` vote) ends the proposal for good.
+  String? _end(_Node n, _St s, LedgerDevice signer) {
+    final Map<String, Object?> b = n.e.body;
+    final String gid = hexOf(_gidOf(b));
+    final _Mem? m = s.members.containsKey(gid) ? s.members[gid] : null;
+    if (m == null || m.kind != 'guardian') return 'unknown-subject';
+    if (gid == signer.gidHex) return 'use-leave';
+    final int exp = n.e.issuedAtMs + kEndWaitMs;
+    final _Gate g = _gateFor(s, proposerGid: signer.gidHex!, required: <String>{gid}, acceptKey: null, exp: exp,
+        includeSettlingVoters: true, asOf: n.e.issuedAtMs);
+    g.silentAt = exp;
+    g.refuseKeys = <String, String>{
+      for (final LedgerDevice d in s.devices.values)
+        if (d.kind == 'guardian' && d.gidHex != null && d.gidHex != gid && d.gidHex != signer.gidHex) d.keyHex: d.gidHex!,
+    };
+    n.gate = g;
+    return null;
+  }
+
   String? _policySet(_Node n, _St s, LedgerDevice signer) {
     final Map<String, Object?> b = n.e.body;
     final FamilyPolicy np = FamilyPolicy.fromValue(b['policy'])!;
@@ -639,7 +836,8 @@ class _Reducer {
     if ((b['epoch']! as int) != s.epoch + 1) return 'wrong-epoch';
     final Map<String, bool> want = <String, bool>{
       for (final LedgerDevice d in s.devices.values)
-        if (d.agree != null) d.keyHex: d.kind == 'guardian',
+        // A suspended device gets no new key: it cannot read anything written after the pause.
+        if (d.agree != null && !s.paused.containsKey(d.keyHex)) d.keyHex: d.kind == 'guardian',
     };
     final Set<String> seen = <String>{};
     for (final Object? w in b['wraps']! as List) {
@@ -699,14 +897,26 @@ class _Reducer {
     final List<LedgerVote> vs = votesByTarget[n.h] ?? const <LedgerVote>[];
     final List<LedgerVote> refusals = <LedgerVote>[];
     for (final LedgerVote v in vs) {
-      final String? role = v.voterHex == g.acceptKey
+      String? role = v.voterHex == g.acceptKey
           ? '*'
           : (g.voterKeys[v.voterHex] ?? (g.proposerKeys.contains(v.voterHex) ? g.proposerGid : null));
+      bool refuseOnly = false;
+      if (role == null && g.refuseKeys.containsKey(v.voterHex)) {
+        role = g.refuseKeys[v.voterHex];
+        refuseOnly = true;
+      }
       if (role == null) continue; // not somebody who was asked
+      // A suspended device cannot say yes (a thief on a phone that was already marked as lost approves nothing), but
+      // it can always say no: a pause must never be a way to silence an objection.
+      if (v.answer != 'no' && _pausedAt(v.voterHex, v.atMs)) continue;
       if (v.atMs > now + kClockSkewMs) continue; // from the future
       if (v.atMs < n.e.issuedAtMs - kClockSkewMs) continue; // cannot answer a question not yet asked
       final int? exp = g.exp;
       if (exp != null && v.atMs >= exp) continue; // silence ran out: a late answer is not an answer
+      if (refuseOnly) {
+        if (v.answer == 'no') refusals.add(v);
+        continue;
+      }
       if (role == g.proposerGid) {
         // The proposer's yes is implied by signing. Only a withdrawal (or a no) means anything.
         if (v.answer == 'withdraw' || v.answer == 'no') refusals.add(v);
@@ -751,18 +961,29 @@ class _Reducer {
     if (g == null) return n.e.issuedAtMs;
     if (g.declined) return null;
     int t = n.e.issuedAtMs;
+    bool allYes = true;
     for (final String r in g.required) {
       final int? at = g.yesAt[r];
-      if (at == null || at > asOf) return null;
+      if (at == null || at > asOf) {
+        allYes = false;
+        break;
+      }
       if (at > t) t = at;
     }
     final String? a = g.acceptKey;
-    if (a != null) {
+    if (allYes && a != null) {
       final int? at = g.yesAt['*'];
-      if (at == null || at > asOf) return null;
-      if (at > t) t = at;
+      if (at == null || at > asOf) {
+        allYes = false;
+      } else if (at > t) {
+        t = at;
+      }
     }
-    return t;
+    if (allYes) return t;
+    // guardian.end: no yes and no refusal for the whole wait.
+    final int? quiet = g.silentAt;
+    if (quiet != null && asOf >= quiet) return quiet;
+    return null;
   }
 
   // ------------------------------------------------------------------------------------------------------------
@@ -794,7 +1015,8 @@ class _Reducer {
     final _St st = _St();
     final List<_Node> policyNodes = <_Node>[];
     final List<_Node> revokes = <_Node>[];
-    final Set<String> cancelled = <String>{};
+    final List<_Node> pauseNodes = <_Node>[];
+    final Set<String> resumed = <String>{}, cancelled = <String>{};
     final Set<String> revokedByNow = _revokedKeys(include, asOf, useVoid);
     for (final _Node n in order) {
       if (include != null && n.topo != 0 && !include.contains(n.h)) continue; // the genesis is in every fold
@@ -865,7 +1087,14 @@ class _Reducer {
           break;
         case EntryType.guardianLeave:
         case EntryType.guardianRemove:
+        case EntryType.guardianEnd:
           st.deadGids.add(hexOf(b['gid']! as Uint8List));
+          break;
+        case EntryType.devicePause:
+          pauseNodes.add(n);
+          break;
+        case EntryType.deviceResume:
+          resumed.add(hexOf(b['pause']! as Uint8List));
           break;
         case EntryType.policySet:
           policyNodes.add(n);
@@ -885,6 +1114,14 @@ class _Reducer {
     st.devices.removeWhere((String k, LedgerDevice d) =>
         st.deadKeys.contains(k) || (d.gidHex != null && st.deadGids.contains(d.gidHex)));
     st.members.removeWhere((String g, _Mem m) => st.deadGids.contains(g));
+    // Suspended devices: a pause nothing has lifted, on a device that is still part of the family.
+    for (final _Node p in pauseNodes) {
+      if (resumed.contains(p.h)) continue;
+      final String k = hexOf(p.e.body['key']! as Uint8List);
+      if (!st.devices.containsKey(k)) continue;
+      final LedgerDevice? by = st.devices[p.signerHex];
+      st.paused[k] = PausedDevice(k, by?.gidHex ?? _signerGidAt(p), p.signerHex, p.e.issuedAtMs, p.h);
+    }
     // The policy in force: the strictest of the entries nothing newer replaces.
     FamilyPolicy? pol;
     for (final _Node x in policyNodes) {
@@ -894,6 +1131,18 @@ class _Reducer {
     }
     st.policy = pol ?? const FamilyPolicy();
     return st;
+  }
+
+  /// The person a signer belonged to, read from the entries that made that device (null when it cannot be told).
+  String? _signerGidAt(_Node p) {
+    for (final _Node a in order) {
+      if (a.reject != null) continue;
+      if (a.type != EntryType.genesis && a.type != EntryType.memberAdd && a.type != EntryType.deviceAdd) continue;
+      if (hexOf(DeviceRecord.fromValue(a.e.body['dev'])!.key) != p.signerHex) continue;
+      final Object? g = a.e.body['gid'];
+      if (g is Uint8List) return hexOf(g);
+    }
+    return null;
   }
 
   // ------------------------------------------------------------------------------------------------------------
@@ -919,6 +1168,7 @@ class _Reducer {
           tombGids[n] = <String>{hexOf(b['gid']! as Uint8List)};
           break;
         case EntryType.guardianRemove:
+        case EntryType.guardianEnd:
           if (_activation(n, now) != null) tombGids[n] = <String>{hexOf(b['gid']! as Uint8List)};
           break;
         case EntryType.genesis:
@@ -958,6 +1208,19 @@ class _Reducer {
       if (hit) {
         n.voided = true;
         n.voidReason = 'signer-removed-concurrently';
+        continue;
+      }
+      // (b2) A pause wins over what the paused device signed on a branch the pause did not see.
+      for (final _Node p in good) {
+        if (p.type != EntryType.devicePause || identical(p, n)) continue;
+        if (hexOf(p.e.body['key']! as Uint8List) != sk) continue;
+        if (n.anc.contains(p.h) || p.anc.contains(n.h)) continue; // ordered, not concurrent
+        hit = true;
+        break;
+      }
+      if (hit) {
+        n.voided = true;
+        n.voidReason = 'signer-paused-concurrently';
         continue;
       }
       // (c) Two concurrent additions of the same device key: the canonically earlier one keeps it.
@@ -1002,6 +1265,16 @@ class _Reducer {
     final List<PendingItem> pending = <PendingItem>[];
     final Map<String, String> voided = <String, String>{};
     final List<String> history = <String>[];
+    final Set<String> cancelledRevokes = <String>{
+      for (final _Node n in order)
+        if (n.reject == null && !n.voided && n.type == EntryType.deviceRevokeCancel) hexOf(n.e.body['revoke']! as Uint8List),
+    };
+    final List<PendingRevoke> pendingRevokes = <PendingRevoke>[
+      for (final _Node n in order)
+        if (n.reject == null && !n.voided && n.type == EntryType.deviceRevoke && !cancelledRevokes.contains(n.h) &&
+            (n.e.body['eff']! as int) > now)
+          PendingRevoke(n.h, hexOf(n.e.body['key']! as Uint8List), n.e.body['eff']! as int, n.e.body['reason']! as String),
+    ];
     for (final _Node n in order) {
       if (n.reject != null) continue;
       if (n.voided) {
@@ -1058,6 +1331,13 @@ class _Reducer {
       heads: heads,
       legacyFids: <String>[for (final Object? s in g.e.body['legacyFids']! as List) s! as String],
       history: history,
+      paused: <PausedDevice>[for (final PausedDevice p in st.paused.values) p]
+        ..sort((PausedDevice a, PausedDevice b) => a.keyHex.compareTo(b.keyHex)),
+      pendingRevokes: pendingRevokes,
+      revokedKeys: <String>[
+        for (final String k in st.knownKeys)
+          if (st.deadKeys.contains(k) || !st.devices.containsKey(k)) k,
+      ]..sort(),
       genesisDeviceKey: g.e.signer,
       nowMs: now,
     );

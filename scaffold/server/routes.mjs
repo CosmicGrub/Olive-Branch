@@ -48,6 +48,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createDevicePairingCode, cancelDevicePairingCode, redeemDevicePairingCode,
          pairedDevicesForChild, revokePairedDevice,
          refreshPairedDeviceSession, revokeOwnPairedDevice,
+         markDeviceLost, foundDevice, confirmDeviceLost, familyDevicesFor,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
@@ -1214,9 +1215,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         return { status: 400, body: { error: 'device_credential_required' } };
       }
       const result = await refreshPairedDeviceSession(
-        pool, deviceId, deviceCredential, new Date());
+        pool, deviceId, deviceCredential, new Date(),
+        { pin: typeof c.body?.pin === 'string' ? c.body.pin : undefined });
       if (!result.ok) {
-        const status = result.reason === 'account_deactivated' ? 403 : 401;
+        // 0054: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
+        // phone back from a pause must show its owner's PIN once (pin_required / pin_incorrect / pin_locked).
+        const status = result.reason === 'account_deactivated' ? 403
+          : (result.reason === 'pin_required' || result.reason === 'pin_incorrect' || result.reason === 'pin_locked') ? 403
+          : 401;
         return { status, body: { error: result.reason } };
       }
       const sessionToken = api.issueSessionToken({
@@ -1303,6 +1309,99 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         pool, c.childId, c.params.deviceId, c.principal.userId, now);
       if (!result.ok) return { status: 404, body: { error: result.reason } };
       return { status: 200, body: { ok: true } };
+    },
+  });
+
+
+  // ===========================================================================
+  // LOST OR STOLEN DEVICE -- db/migrations/0054_lost_device.sql. A grown-up
+  // marks a phone or tablet as lost from ANOTHER device (their own other
+  // phone, another grown-up's phone of the same family, a child's tablet of
+  // the same family), behind their own PIN. The device is paused at once and
+  // refused on its next request; every grown-up gets a notice (the security
+  // feed); nothing is deleted; it can come back for 72 hours ("I have it"),
+  // after which the cut-off is final. See the pool functions for the rules.
+  // ===========================================================================
+  const lostFailure = (r) => ({
+    status: r.reason === 'not_found' ? 404
+      : r.reason === 'rate_limited' ? 429
+      : r.reason === 'owner_only' ? 403
+      : 409,
+    body: { error: r.reason },
+  });
+  const lostView = (r) => ({
+    deviceId: r.deviceId, state: r.state, incidentId: r.incidentId, already: r.already,
+    revokeDueAt: r.revokeDueAt ? new Date(r.revokeDueAt).toISOString() : null,
+  });
+  const lostGate = async (c) => {
+    if (c.principal.roleName === 'child' || !c.principal.userId) {
+      return { status: 403, body: { error: 'guardian_session_required' } };
+    }
+    const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+    if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
+    return null;
+  };
+  const incidentOf = (c) => (typeof c.body?.incidentId === 'string' ? c.body.incidentId : '');
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // GET /v1/me/devices -- the phones and tablets this grown-up may see and act on, with what each may be asked.
+  api.register({
+    method: 'GET', path: '/v1/me/devices', action: null, skipOuterSession: true,
+    handler: async (c) => {
+      if (c.principal.roleName === 'child' || !c.principal.userId) {
+        return { status: 403, body: { error: 'guardian_session_required' } };
+      }
+      const devices = await familyDevicesFor(pool, c.principal.userId, c.principal.deviceId ?? null, new Date());
+      return { status: 200, body: { devices } };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/mark-lost  {pin}
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/mark-lost', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await markDeviceLost(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: r.already ? 200 : 201, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/found  {pin, incidentId}  -- "I have it"
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/found', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await foundDevice(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/confirm-lost  {pin, incidentId}  -- "It is lost"
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/confirm-lost', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await confirmDeviceLost(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: lostView(r) };
     },
   });
 

@@ -159,6 +159,11 @@ export interface DbPort {
    * revoked."
    */
   isDeviceRevoked(deviceId: string): Promise<boolean>;
+  /**
+   * Optional richer answer (migration 0054): 'paused' is a device a grown-up marked as lost. When a port provides it,
+   * it is what `handle()` asks; a port that does not (a test double) keeps the revoked-or-not behaviour.
+   */
+  deviceStanding?(deviceId: string): Promise<'active' | 'paused' | 'revoked'>;
 }
 export type Query = (sql: string, params?: unknown[]) => Promise<any[]>;
 
@@ -484,8 +489,13 @@ export class Api {
     // grounds — the same 401 posture `expired`/`bad_signature` already
     // get — rather than reaching A3's childId/edge logic at all.
     if (principal.deviceId) {
-      const revoked = await this.db.isDeviceRevoked(principal.deviceId);
-      if (revoked) return { status: 401, body: { error: 'device_revoked' } };
+      const standing = this.db.deviceStanding
+        ? await this.db.deviceStanding(principal.deviceId)
+        : ((await this.db.isDeviceRevoked(principal.deviceId)) ? 'revoked' : 'active');
+      if (standing === 'revoked') return { status: 401, body: { error: 'device_revoked' } };
+      // A phone marked as lost: refused like a revoked one, but with its own word so the phone can lock itself
+      // and wait to be told "found" (it is NOT erased). Nothing it asks for is answered.
+      if (standing === 'paused') return { status: 401, body: { error: 'device_paused' } };
     }
 
     if (m.route.escalated && !principal.escalated) {
