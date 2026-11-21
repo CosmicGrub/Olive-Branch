@@ -64,6 +64,51 @@ Future<BackupKeyPair> deriveBackupKeyPair(RecoveryKey key, BackupKind kind) asyn
   return BackupKeyPair._(Uint8List.fromList((await pair.extractPublicKey()).bytes), pair);
 }
 
+/// What only the sheet can do: sign. Derived from the same seed as [BackupKeyPair] under its own label, so the two never
+/// share a key. A phone keeps only [publicKey]. The sheet's signature does three jobs and nothing else:
+///   - it CERTIFIES a phone as one that may write backups for this set ([certifyWriter]), done once, on the phone that
+///     has the sheet in front of it (setting up, or a second grown-up typing the sheet to join). A server, a drive or a
+///     thief with the public half can therefore not make a backup that a restore will accept;
+///   - it signs the server's restore challenge (the "proof" that the person asking holds the paper);
+///   - nothing else: it never signs data.
+class BackupAuthority {
+  BackupAuthority._(this.publicKey, this._pair);
+  final Uint8List publicKey;
+  final SimpleKeyPair _pair;
+
+  Future<Uint8List> sign(List<int> message) async =>
+      Uint8List.fromList((await Ed25519().sign(message, keyPair: _pair)).bytes);
+
+  /// The certificate for a writing phone's own public key.
+  Future<Uint8List> certifyWriter(List<int> writerPublic, BackupKind kind) => sign(writerCertMessage(kind, writerPublic));
+
+  static Future<bool> verify(List<int> publicKey, List<int> message, List<int> signature) async {
+    if (publicKey.length != 32 || signature.length != 64) return false;
+    try {
+      return await Ed25519().verify(message,
+          signature: Signature(signature, publicKey: SimplePublicKey(publicKey, type: KeyPairType.ed25519)));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> verifyWriter(List<int> authorityPublic, BackupKind kind, List<int> writerPublic, List<int> cert) =>
+      verify(authorityPublic, writerCertMessage(kind, writerPublic), cert);
+}
+
+Uint8List writerCertMessage(BackupKind kind, List<int> writerPublic) => cat(<List<int>>[
+      lv(utf8.encode('olive-backup-writer-cert-v1')), lv(utf8.encode(kind.name)), lv(writerPublic),
+    ]);
+
+Future<BackupAuthority> deriveBackupAuthority(RecoveryKey key, BackupKind kind) async {
+  final SecretKey seed32 = await Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
+      secretKey: SecretKey(key.seed),
+      nonce: utf8.encode('olive/backup/salt/v1'),
+      info: utf8.encode('olive/backup/ed25519/v1/${kind.name}'));
+  final SimpleKeyPair pair = await Ed25519().newKeyPairFromSeed(await seed32.extractBytes());
+  return BackupAuthority._(Uint8List.fromList((await pair.extractPublicKey()).bytes), pair);
+}
+
 /// The opaque name of one family's (or tablet's) backups on any destination: a hash of the PUBLIC half, so the
 /// words are enough to find it again and a destination learns nothing it could reverse.
 Future<String> backupSetId(List<int> publicKey, BackupKind kind) async => hexString(
@@ -196,6 +241,7 @@ Uint8List headerSigMessage({
   required List<int> mbox,
   required List<String> chunks,
   required List<int> writer,
+  required List<int> cert,
 }) =>
     cat(<List<int>>[
       lv(utf8.encode('olive-backup-header-v1')),
@@ -206,4 +252,5 @@ Uint8List headerSigMessage({
       lv(mbox),
       lv(utf8.encode(chunks.join(','))),
       lv(writer),
+      lv(cert),
     ]);

@@ -29,6 +29,7 @@ import 'dart:typed_data';
 import 'backup_classes.dart';
 import 'backup_crypto.dart';
 import 'backup_engine.dart';
+import 'backup_header.dart';
 import 'backup_merge.dart';
 import 'backup_sink.dart';
 import 'backup_state.dart';
@@ -286,11 +287,12 @@ class RestoreEngine {
   }
 
   /// Reads and checks a backup. Writes nothing here. A sheet that finds nothing counts as one wrong try.
-  Future<RestoreOpen> open({required BackupSink source, required RecoveryKey key, required BackupKind kind}) async {
+  Future<RestoreOpen> open({required BackupSource source, required RecoveryKey key, required BackupKind kind}) async {
     _roleCheck(kind);
     final int rest = await state.restLeftMs(_nowMs);
     if (rest > 0) throw RestoreBlocked(RestoreProblem.resting, restLeftMs: rest);
     final BackupKeyPair pair = await deriveBackupKeyPair(key, kind);
+    final BackupAuthority authority = await deriveBackupAuthority(key, kind);
     final String setId = await backupSetId(pair.publicKey, kind);
     final List<String> names = await source.listManifests(setId);
     final Map<String, List<BackupHeader>> byWriter = <String, List<BackupHeader>>{};
@@ -298,7 +300,13 @@ class RestoreEngine {
     for (final String n in names) {
       final Uint8List? bytes = await source.getManifest(setId, n);
       final BackupHeader? h = bytes == null ? null : BackupHeader.parse(bytes);
-      if (h == null || h.setId != setId || h.kind != kind || h.name != n || !await h.signatureOk()) {
+      if (h == null ||
+          h.setId != setId ||
+          h.kind != kind ||
+          h.name != n ||
+          !await h.signatureOk() ||
+          !await h.certifiedBy(authority.publicKey)) {
+        // Not whole, not written by a phone this sheet certified, or not signed by the phone it says: not trusted.
         damaged++;
         continue;
       }
@@ -330,7 +338,7 @@ class RestoreEngine {
     return RestoreOpen(kind: kind, heads: heads, skippedDamaged: damaged, refusedAreas: refused);
   }
 
-  Future<VerifiedHead?> _verifyHead(BackupSink source, BackupKeyPair pair, BackupHeader h, BackupKind kind,
+  Future<VerifiedHead?> _verifyHead(BackupSource source, BackupKeyPair pair, BackupHeader h, BackupKind kind,
       List<String> refused, bool usedOlder) async {
     try {
       final Uint8List? dk = await unwrapDataKey(pair: pair, wrapped: h.wrap, setId: h.setId, kind: kind);

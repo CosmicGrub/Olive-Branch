@@ -80,6 +80,51 @@ class BackupStateStore {
     return _ns.put('$kStatePublicKeyPrefix${kind.name}', b64(publicKey));
   }
 
+  /// The sheet's certificate for THIS phone's writing key (set once, when the sheet was in front of the person), or
+  /// null when none is held for [writerPublic] (a different key, or never set up).
+  Future<Uint8List?> writerCert(BackupKind kind, List<int> writerPublic) async {
+    final Object? v = await _ns.get('cert.${kind.name}');
+    if (v is! Map || v['w'] is! String || v['c'] is! String) return null;
+    try {
+      final Uint8List w = unb64(v['w'] as String), c = unb64(v['c'] as String);
+      if (w.length != 32 || c.length != 64 || hexString(w) != hexString(writerPublic)) return null;
+      return c;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setWriterCert(BackupKind kind, List<int> writerPublic, List<int> cert) {
+    if (writerPublic.length != 32 || cert.length != 64) throw ArgumentError('bad certificate');
+    return _ns.put('cert.${kind.name}', <String, Object?>{'w': b64(writerPublic), 'c': b64(cert)});
+  }
+
+  /// What this phone knows of the family's server vault: its id, and the newest (number, chain value) of it this phone
+  /// has ever seen, so a server that later shows an older history is noticed (a rollback).
+  Future<({String? vaultId, int highSeq, String? highChain})> vault() async {
+    final Object? v = await _ns.get('vault');
+    if (v is! Map) return (vaultId: null, highSeq: 0, highChain: null);
+    return (
+      vaultId: v['id'] is String ? v['id'] as String : null,
+      highSeq: v['seq'] is int ? v['seq'] as int : 0,
+      highChain: v['chain'] is String ? v['chain'] as String : null,
+    );
+  }
+
+  Future<void> setVault(String vaultId) async {
+    final v = await vault();
+    if (v.vaultId == vaultId) return;
+    await _ns.put('vault', <String, Object?>{'id': vaultId, 'seq': 0});
+  }
+
+  Future<void> raiseHighWater(int seq, String chain) async {
+    final v = await vault();
+    if (v.vaultId == null || seq < v.highSeq) return;
+    await _ns.put('vault', <String, Object?>{'id': v.vaultId, 'seq': seq, 'chain': chain});
+  }
+
+  Future<void> forgetVault() => _ns.delete('vault');
+
   Future<int> lastSeq(BackupKind kind) async {
     final Object? v = await _ns.get('seq.${kind.name}');
     return v is int ? v : 0;
