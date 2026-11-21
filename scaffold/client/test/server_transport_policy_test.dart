@@ -80,16 +80,16 @@ void main() {
         'http://localhost:8123', 'http://LOCALHOST:8123', 'http://foo.localhost', 'http://127.0.0.2:8123',
         'http://127.1:8123', 'http://127.0.0.1.evil.com', 'http://evil-127.0.0.1.com', 'http://0.0.0.0:8123',
         'http://[0:0:0:0:0:0:0:1]:8123', 'http://[::ffff:127.0.0.1]:8123', 'http://[::]:8123',
-        'http://10.0.2.2:8123', 'http://192.168.1.20:8123', 'http://10.0.0.5', 'http://172.16.0.5',
-        'http://169.254.10.10', 'http://olive-dev.local', 'http://[fd12:3456::1]', 'http://api.example.com',
-        'http://8.8.8.8', 'http://[2001:db8::1]', 'http://2130706433', 'http://0x7f.0.0.1',
+        'http://10.0.2.2:8123', 'http://192.168.1.20:8123', 'http://10.0.0.5', 'http://172.16.0.5', // privacy-gate: allow ip
+        'http://169.254.10.10', 'http://olive-dev.local', 'http://[fd12:3456::1]', 'http://api.example.com', // privacy-gate: allow ip
+        'http://8.8.8.8', 'http://[2001:db8::1]', 'http://2130706433', 'http://0x7f.0.0.1', // privacy-gate: allow ip
       ]) {
         expect(relDev.violation(u(bad)), contains('release'), reason: bad);
       }
     });
     test('release + define: credentials, query, fragment and odd schemes on loopback are still refused', () {
       for (final bad in [
-        'http://user:pw@127.0.0.1:8123', 'http://127.0.0.1@evil.com', 'http://127.0.0.1:8123?x=1',
+        'http://user:pw@127.0.0.1:8123', 'http://127.0.0.1@evil.com', 'http://127.0.0.1:8123?x=1', // privacy-gate: allow email
         'http://127.0.0.1:8123#f', 'ftp://127.0.0.1', 'ws://127.0.0.1:8123', 'file://127.0.0.1/x',
       ]) {
         expect(relDev.violation(u(bad)), isNotNull, reason: bad);
@@ -106,7 +106,7 @@ void main() {
       }
     });
     test('debug builds are unchanged by the define in both directions', () {
-      for (final h in ['http://127.0.0.1:8123', 'http://10.0.2.2:8080', 'http://192.168.1.20:8123', 'http://localhost:8080']) {
+      for (final h in ['http://127.0.0.1:8123', 'http://10.0.2.2:8080', 'http://192.168.1.20:8123', 'http://localhost:8080']) { // privacy-gate: allow ip
         expect(dbgDev.violation(u(h)), isNull, reason: h);
         expect(dbg.violation(u(h)), isNull, reason: h);
       }
@@ -126,7 +126,7 @@ void main() {
       OliveTransport.policy = relDev;
       expect(OliveTransport.refusalFor('http://127.0.0.1:8123'), isNull);
       expect(OliveTransport.clientFor('http://127.0.0.1:8123'), isNot(isA<RefusingClient>()));
-      expect(OliveTransport.clientFor('http://192.168.1.20:8123'), isA<RefusingClient>());
+      expect(OliveTransport.clientFor('http://192.168.1.20:8123'), isA<RefusingClient>()); // privacy-gate: allow ip
       expect(OliveTransport.refusalFor('127.0.0.1:8123'), isNotNull); // no scheme: unparseable, refused
       OliveTransport.policy = rel;
       expect(OliveTransport.clientFor('http://127.0.0.1:8123'), isA<RefusingClient>());
