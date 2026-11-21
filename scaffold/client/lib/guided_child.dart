@@ -23,6 +23,7 @@ import 'guided_registry.dart';
 import 'guided_script.dart';
 import 'guided_sim.dart';
 import 'local_services.dart';
+import 'access_scope.dart' show motionDuration;
 import 'read_aloud.dart' show SpeakerButton;
 
 enum _Stage { off, offer, forGrownUp, welcome }
@@ -351,7 +352,8 @@ class _ChildWelcomeCardState extends State<ChildWelcomeCard> {
     }
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
+      // Reduced motion is honoured: motionDuration() is zero when she or a grown-up turned motion down.
+      duration: motionDuration(context, 250),
       color: tint ?? s.surface,
       child: SafeArea(
         child: Column(children: <Widget>[
