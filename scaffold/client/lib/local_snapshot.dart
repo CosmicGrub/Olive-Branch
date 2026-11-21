@@ -29,6 +29,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'device_keys.dart' show unb64;
 import 'local_services.dart';
 import 'local_store.dart';
 import 'sha256.dart';
@@ -229,6 +230,9 @@ Object? joinValue(String area, String key, Object? held, Object? incoming) {
     if (hq != null && hq is! List) return null;
     if (iq != null && iq is! List) return null;
     if (he.any((Object? x) => x is! String) || ie.any((Object? x) => x is! String)) return null;
+    // An incoming event that is not base64url could never be read back: joining it would make the whole held record
+    // unreadable. Park the whole incoming value instead (the caller quarantines it); the held record is untouched.
+    if (ie.any((Object? x) => !_isBase64Url(x as String))) return null;
     final Set<String> seen = <String>{...he.cast<String>()};
     final List<Object?> events = <Object?>[...he];
     for (final String w in ie.cast<String>()) {
@@ -251,6 +255,17 @@ Object? joinValue(String area, String key, Object? held, Object? incoming) {
     return <Object?>[...held, for (final Object? x in incoming) if (ids.add(idOf(x)!)) x];
   }
   return null;
+}
+
+final RegExp _b64urlRe = RegExp(r'^[A-Za-z0-9_-]*={0,2}$');
+bool _isBase64Url(String s) {
+  if (s.isEmpty || !_b64urlRe.hasMatch(s) || s.replaceAll('=', '').length % 4 == 1) return false;
+  try {
+    unb64(s);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// What [restoreSnapshot] did. Counts and names only; nothing here is worded for a screen.
@@ -291,7 +306,7 @@ Future<RestoreReport> restoreSnapshot(LocalStore store, LocalSnapshot snap) asyn
           combine: (String key, Object? held, Object? other) => joinValue(img.area, key, held, other),
           keepConflicts: (Map<String, Object?> c) async {
         await store.backend.quarantine(
-            img.namespace, Uint8List.fromList(utf8.encode(canonicalJson(c))), 'restore-conflict');
+            img.namespace, Uint8List.fromList(utf8.encode(canonicalJson(c))), kRestoreConflictReason);
       });
       r.restored.add(img.namespace);
       r.keysAdded += m.added;

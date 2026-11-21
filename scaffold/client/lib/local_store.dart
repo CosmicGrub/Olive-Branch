@@ -141,10 +141,22 @@ abstract class StoreBackend {
   Future<void> deleteEverything();
 }
 
+/// The quarantine reason for a value a restore could not join with the one already held.
+const String kRestoreConflictReason = 'restore-conflict';
+
+bool _sameBytes(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// Holds everything in a map. For tests and for the offline preview build.
 class MemoryStoreBackend implements StoreBackend {
   final Map<String, Uint8List> _files = <String, Uint8List>{};
   final List<Uint8List> _quarantine = <Uint8List>[];
+  final List<String> _quarantineKey = <String>[];
 
   /// Test hook: what is actually "on disk" for [name] (for ciphertext checks).
   Uint8List? rawFor(String name) => _files[name];
@@ -162,8 +174,17 @@ class MemoryStoreBackend implements StoreBackend {
   @override
   Future<List<String>> names() async => _files.keys.toList()..sort();
   @override
-  Future<void> quarantine(String name, Uint8List bytes, String reason) async =>
-      _quarantine.add(Uint8List.fromList(bytes));
+  Future<void> quarantine(String name, Uint8List bytes, String reason) async {
+    // A parked restore conflict is kept once: the same bytes parked again (a retried restore) add no new copy.
+    final String key = '$name|$reason';
+    if (reason == kRestoreConflictReason) {
+      for (int i = 0; i < _quarantine.length; i++) {
+        if (_quarantineKey[i] == key && _sameBytes(_quarantine[i], bytes)) return;
+      }
+    }
+    _quarantine.add(Uint8List.fromList(bytes));
+    _quarantineKey.add(key);
+  }
   @override
   Future<int> quarantineCount() async => _quarantine.length;
   @override
@@ -241,6 +262,14 @@ class DirectoryStoreBackend implements StoreBackend {
   @override
   Future<void> quarantine(String name, Uint8List bytes, String reason) async {
     await _quarantineDir.create(recursive: true);
+    if (reason == kRestoreConflictReason) {
+      // A parked restore conflict is kept once: the same bytes parked again (a retried restore) add no new copy.
+      await for (final FileSystemEntity e in _quarantineDir.list()) {
+        if (e is! File) continue;
+        final String f = e.uri.pathSegments.last;
+        if (f.startsWith('$name.') && f.endsWith('.$reason') && _sameBytes(await e.readAsBytes(), bytes)) return;
+      }
+    }
     final int t = _clock().millisecondsSinceEpoch;
     await File('${_quarantineDir.path}${Platform.pathSeparator}$name.$t.$reason').writeAsBytes(bytes, flush: true);
     onStep?.call('quarantine_written');

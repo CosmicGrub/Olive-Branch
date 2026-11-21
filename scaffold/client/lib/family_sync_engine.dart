@@ -180,10 +180,14 @@ class LocalStoreSyncRepository implements SyncRepository {
     final Object? raw = await _ns.get(_key);
     if (raw is! Map || raw['v'] != 1 || raw['e'] is! List || raw['p'] is! Map) return null;
     try {
-      final List<Uint8List> wires = <Uint8List>[
-        for (final Object? e in raw['e'] as List)
-          if (e is String) unb64(e),
-      ];
+      // One unreadable entry is skipped, never allowed to make the whole record unreadable.
+      final List<Uint8List> wires = <Uint8List>[];
+      for (final Object? e in raw['e'] as List) {
+        if (e is! String) continue;
+        try {
+          wires.add(unb64(e));
+        } catch (_) {}
+      }
       final Map<String, SyncSummary> peers = <String, SyncSummary>{};
       for (final MapEntry<dynamic, dynamic> p in (raw['p'] as Map).entries) {
         final SyncSummary? s = SyncSummary.fromJson(p.value);
