@@ -299,7 +299,8 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     WindowHost? host;
     try {
       host = await widget.startHost(w);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[olive.pairing] this phone could not open the window on the network: ${e.runtimeType}');
       host = null;
     }
     String? qr;

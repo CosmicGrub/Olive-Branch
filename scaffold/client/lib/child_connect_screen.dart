@@ -199,8 +199,10 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     _finder = f;
     try {
       await f.start();
-    } catch (_) {
-      return; // nothing nearby can be found; the list simply stays empty
+    } catch (e) {
+      // Nothing nearby can be found; the list simply stays empty (the child sees nothing). Said in the log, with no address.
+      debugPrint('[olive.pairing] looking for a window nearby could not start: ${e.runtimeType}');
+      return;
     }
     _foundSub = f.found.listen((NearbyWindow w) {
       if (!mounted) return;
