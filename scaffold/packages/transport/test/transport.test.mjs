@@ -154,12 +154,12 @@ const REF = 'r_' + 'a'.repeat(20);
     !readFileSync(join(dartDir, f), 'utf8').includes('UNVERIFIED'));
   check('I contract', 'every Dart file is marked UNVERIFIED', unmarked.join(','), '');
 
-  // §8.3 — the PIN keypad shuffle must use a CSPRNG.
-  const pin = readFileSync(join(dartDir, 'pin_gate.dart'), 'utf8');
-  check('I contract', 'PIN keypad shuffles with Random.secure()',
+  // §8.3 — the keypad is the ordinary pad; the OPTIONAL scramble must use a CSPRNG and re-shuffle after each try.
+  const pin = readFileSync(join(dartDir, 'pin_keypad.dart'), 'utf8');
+  check('I contract', 'PIN keypad scramble shuffles with Random.secure()',
     pin.includes('Random.secure()'), 'true');
-  check('I contract', 'PIN gate re-shuffles after each attempt',
-    (pin.match(/shuffle\(Random\.secure\(\)\)/g) || []).length >= 2, 'true');
+  check('I contract', 'PIN keypad re-lays the scramble after each attempt',
+    (pin.match(/_order = _layout\(\)/g) || []).length >= 2, 'true');
 
   // §8.1 — the child shell must contain no settings affordance.
   const childSrc = readFileSync(join(dartDir, 'child_home.dart'), 'utf8');

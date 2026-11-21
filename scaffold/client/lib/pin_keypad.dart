@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the ONE keypad a grown-up types a PIN on. MASTERFILE §8.3, §8.5.9.
+// UNVERIFIED on a device; verified by CI headless (client/test).
 //
 // WHAT IT IS. A plain numeric keypad, the same on every device and in every place a grown-up types a code on
 // screen: 1 2 3 / 4 5 6 / 7 8 9 / (blank) 0 (delete), then one big OK. The dots above it are for what was TYPED:

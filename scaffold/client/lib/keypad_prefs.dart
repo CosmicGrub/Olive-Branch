@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the grown-up's one keypad choice: "Scramble the keypad". MASTERFILE §8.3, §8.5.9.
+// UNVERIFIED on a device; verified by CI headless (client/test).
 //
 // The code keypad is a plain 1 2 3 / 4 5 6 / 7 8 9 / 0 pad everywhere (pin_keypad.dart). A grown-up who types their
 // code with a child watching can ask for the digits to be shuffled, from the platform's secure random source, again

@@ -1,4 +1,5 @@
 // OLIVE BRANCH — DEVELOPMENT BUILDS ONLY: open the grown-up's first run on a phone that is already set up, so the
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // "Choose your PIN" step can be seen on a real device without wiping it. MASTERFILE §8.5.9.
 //
 // OFF BY DEFAULT. It is a compile-time flag, --dart-define=OLIVE_DEV_GUARDIAN_FIRST_RUN=true, passed only by
