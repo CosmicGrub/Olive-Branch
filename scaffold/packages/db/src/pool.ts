@@ -6084,18 +6084,63 @@ export async function houseRulesFor(
 // oldest due row is). The worker itself is tools/scheduler.mjs runDeliverSweep: ONE
 // implementation (the delivery lane's), which this file does not duplicate.
 
-/** Counts for the log line and /readyz: how much is waiting, and how old the oldest is. */
+/**
+ * Counts for the log line and /readyz: how much is waiting, and how old the oldest is.
+ * `oldestPendingAgeSec` is the age of the oldest `pending` row (a row can legitimately stay
+ * pending: no bedtime yet), `oldestUnsweptSec` is how long the rematerialize sweep has gone
+ * without looking at the row it has neglected longest, which is the sweeper's own health
+ * (0054: round-robin, so under a working sweep it stays within a few ticks).
+ */
 export async function deliveryBacklog(pool: pg.Pool): Promise<{
-  pending: number; ready: number; oldestReadyAgeSec: number | null }> {
+  pending: number; ready: number; oldestReadyAgeSec: number | null;
+  oldestPendingAgeSec: number | null; oldestUnsweptSec: number | null }> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
       `SELECT count(*) FILTER (WHERE state = 'pending')::int AS pending,
               count(*) FILTER (WHERE state = 'ready')::int AS ready,
-              EXTRACT(EPOCH FROM (now() - min(scheduled_at) FILTER (WHERE state = 'ready' AND scheduled_at <= now())))::int AS oldest
+              EXTRACT(EPOCH FROM (now() - min(scheduled_at) FILTER (WHERE state = 'ready' AND scheduled_at <= now())))::int AS oldest,
+              EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (WHERE state = 'pending')))::int AS oldest_pending,
+              EXTRACT(EPOCH FROM (now() - min(coalesce(rematerialize_checked_at, created_at)) FILTER (WHERE state = 'pending')))::int AS oldest_unswept
          FROM delivery_intent WHERE state IN ('pending','ready')`);
     const r = rows[0];
-    return { pending: r.pending ?? 0, ready: r.ready ?? 0, oldestReadyAgeSec: r.oldest ?? null };
+    return { pending: r.pending ?? 0, ready: r.ready ?? 0, oldestReadyAgeSec: r.oldest ?? null,
+             oldestPendingAgeSec: r.oldest_pending ?? null, oldestUnsweptSec: r.oldest_unswept ?? null };
   });
+}
+
+/**
+ * Upserts one worker's heartbeat row (0054). `ok` says the tick succeeded; a failed tick still
+ * records that the worker is alive (beat_at) but leaves last_ok_at where it was.
+ */
+export async function recordWorkerHeartbeat(pool: pg.Pool, o: {
+  worker: string; tickMs: number; ok: boolean; consecutiveFailures: number }): Promise<void> {
+  await withSystemSession(pool, (q) => q(
+    `INSERT INTO worker_heartbeat (worker, beat_at, last_ok_at, tick_ms, consecutive_failures)
+     VALUES ($1, now(), CASE WHEN $3::boolean THEN now() END, $2::int, $4::int)
+     ON CONFLICT (worker) DO UPDATE
+        SET beat_at = now(),
+            last_ok_at = CASE WHEN $3::boolean THEN now() ELSE worker_heartbeat.last_ok_at END,
+            tick_ms = $2::int, consecutive_failures = $4::int`,
+    [o.worker, Math.max(1, Math.round(o.tickMs)), o.ok, Math.max(0, Math.round(o.consecutiveFailures))]));
+}
+
+export type DeliveryHealth = {
+  pending: number; ready: number;
+  oldestReadyAgeSec: number | null; oldestPendingAgeSec: number | null; oldestUnsweptAgeSec: number | null;
+  workerBeatAgeSec: number | null; workerOkAgeSec: number | null; workerTickMs: number | null };
+
+/** The aggregate-only reader (0054 delivery_health()): ages in seconds, never a row. */
+export async function deliveryHealth(pool: pg.Pool): Promise<DeliveryHealth> {
+  const n = (v: any) => (v === null || v === undefined ? null : Number(v));
+  const { rows } = await pool.query('SELECT * FROM delivery_health()');
+  const r = rows[0] ?? {};
+  return {
+    pending: Number(r.pending ?? 0), ready: Number(r.ready ?? 0),
+    oldestReadyAgeSec: n(r.oldest_ready_age_sec), oldestPendingAgeSec: n(r.oldest_pending_age_sec),
+    oldestUnsweptAgeSec: n(r.oldest_unswept_age_sec),
+    workerBeatAgeSec: n(r.worker_beat_age_sec), workerOkAgeSec: n(r.worker_ok_age_sec),
+    workerTickMs: n(r.worker_tick_ms),
+  };
 }
 
 /** Assembled `DbPort` for `new Api(secret, dbPort)` — see packages/api/src/api.ts. */

@@ -319,6 +319,16 @@ services:
     volumes:
       - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "deliver-loop"]
+    # ISS-069: a worker that stops ticking, or fails every tick, turns this container `unhealthy`
+    # (tools/delivery-healthcheck.mjs reads the heartbeat file tools/scheduler.mjs deliver-loop writes;
+    # no database needed). The worker also EXITS after 20 failed ticks in a row or a hung one, so
+    # `restart` brings back a fresh process; Docker alone never restarts an unhealthy container.
+    healthcheck:
+      test: ["CMD", "node", "tools/delivery-healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

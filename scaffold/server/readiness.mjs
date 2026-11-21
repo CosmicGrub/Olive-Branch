@@ -136,6 +136,12 @@ export async function checkReadiness({
         const b = await withTimeout(delivery.backlog(), 3000, 'readyz backlog');
         if (b?.oldestReadyAgeSec !== null && b?.oldestReadyAgeSec !== undefined
             && b.oldestReadyAgeSec > backlogStaleAfterSec) degraded.push('delivery');
+        // ISS-070: the rematerialize sweep is round-robin (0054), so under a working worker no pending
+        // row goes unlooked-at for long. A pending row the sweep has not touched for this long means
+        // the sweep itself is not running or cannot reach it (a pending row that is merely WAITING,
+        // for a bedtime that is not defined yet, is looked at every pass and does not trip this).
+        if (!degraded.includes('delivery') && b?.oldestUnsweptSec !== null && b?.oldestUnsweptSec !== undefined
+            && b.oldestUnsweptSec > backlogStaleAfterSec) degraded.push('delivery');
       } catch { /* the database going away is reported by the db check, not here */ }
     }
   }
