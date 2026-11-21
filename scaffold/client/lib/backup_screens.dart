@@ -94,7 +94,7 @@ class BackupCopy {
   static const String sheetIntro =
       'Olive will show you 18 words. They are your recovery sheet. Write them on paper, in order, and keep the paper '
       'somewhere safe, like your important papers.\n\n'
-      'Anyone who has this paper and a copy of your backup can read your records, so treat it like the key to a safe. '
+      'Anyone who has this paper and a copy of your backup can read your records, so keep it as carefully as the key to a safe. '
       'Do not take a photo of it or save it on this phone. Only type these words in Olive. Olive will never ask for them '
       'by call, text or email.';
 
