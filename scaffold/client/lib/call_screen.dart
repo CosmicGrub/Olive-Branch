@@ -120,6 +120,9 @@ class _CallScreenState extends State<CallScreen> {
   _Stage _stage = _Stage.fetching;
   CallUnavailableReason _reason = CallUnavailableReason.unreachable;
   CallViewState _view = const CallViewState();
+  // The newest join/leave sentence, shown on screen and read out (a live region) for a few seconds (call_roster.dart).
+  String? _announcement;
+  Timer? _announcementTimer;
   bool _finished = false;
   // Bumped on each attempt so a late result from an abandoned attempt (Try
   // again, or leaving the screen) can never act on the new state.
@@ -245,10 +248,18 @@ class _CallScreenState extends State<CallScreen> {
       }
       return;
     }
+    final List<String> said = rosterAnnouncements(_view.participants, v.participants);
     setState(() {
       _view = v;
+      if (said.isNotEmpty) _announcement = said.join('. ');
       if (v.phase == CallPhase.connected || v.phase == CallPhase.reconnecting) _stage = _Stage.live;
     });
+    if (said.isNotEmpty) {
+      _announcementTimer?.cancel();
+      _announcementTimer = Timer(const Duration(seconds: 8), () {
+        if (mounted) setState(() => _announcement = null);
+      });
+    }
   }
 
   /// Runs every _qualityTickMs off a real Timer; evaluate()/noticeFor()/
@@ -269,6 +280,7 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     CallPresence.leave();
+    _announcementTimer?.cancel();
     _qualityTicker?.cancel();
     unawaited(_sub?.cancel());
     final p = _provider;
@@ -321,13 +333,16 @@ class _CallScreenState extends State<CallScreen> {
             // The engine's native screen is on top; this is what rests behind
             // it (and what she lands on if she comes back to the app mid-call).
             return Center(child: _OnACallSurface(
-              displayName: widget.displayName, onHangUp: _hangUp, color: widget.accentColor));
+              displayName: widget.displayName, onHangUp: _hangUp, color: widget.accentColor,
+              participants: _view.participants, announcement: _announcement));
           }
           return InCallView(
             tabletop: tabletop,
             localVideo: _view.hasLocalVideo ? p.buildLocalVideo() : null,
             remoteVideo: _view.hasRemoteVideo ? p.buildRemoteVideo() : null,
             remoteName: _view.remoteName,
+            participants: _view.participants,
+            announcement: _announcement,
             notice: _notice,
             isGuardian: _isGuardian,
             onHangUp: _hangUp,
@@ -382,16 +397,23 @@ class _UnavailableState extends StatelessWidget {
 
 /// The resting surface behind an engine that draws its own call screen.
 class _OnACallSurface extends StatelessWidget {
-  const _OnACallSurface({required this.displayName, required this.onHangUp, this.color});
+  const _OnACallSurface({
+    required this.displayName, required this.onHangUp, this.color,
+    this.participants = const <CallParticipant>[], this.announcement,
+  });
   final String displayName;
   final Future<void> Function() onHangUp;
   final Color? color;
+  final List<CallParticipant> participants;
+  final String? announcement;
   @override
   Widget build(BuildContext context) => Column(mainAxisSize: MainAxisSize.min, children: [
     Icon(Icons.call, size: 40, color: color ?? Colors.white70),
     const SizedBox(height: 12),
     Text("You're on a call with $displayName.",
       textAlign: TextAlign.center, style: TextStyle(color: color ?? Colors.white)),
+    const SizedBox(height: 8),
+    CallRosterBar(participants: participants, announcement: announcement),
     const SizedBox(height: 20),
     _CallControlButton(
       icon: Icons.call_end, label: 'Hang up', backgroundColor: Colors.redAccent, onPressed: onHangUp),
@@ -419,6 +441,8 @@ class InCallView extends StatelessWidget {
     required this.localVideo,
     required this.remoteVideo,
     required this.remoteName,
+    this.participants = const <CallParticipant>[],
+    this.announcement,
     required this.notice,
     required this.isGuardian,
     required this.onHangUp,
@@ -437,6 +461,10 @@ class InCallView extends StatelessWidget {
   final Widget? localVideo;
   final Widget? remoteVideo;
   final String? remoteName;
+  /// Everyone else on the call, observers included; drives the count line (call_roster.dart).
+  final List<CallParticipant> participants;
+  /// The newest join/leave sentence, or null. Read out as a live region and shown for a few seconds.
+  final String? announcement;
   final StreamNotice? notice;
   final bool isGuardian;
   final Future<void> Function() onHangUp;
@@ -494,6 +522,8 @@ class InCallView extends StatelessWidget {
         child: Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: _remoteView()),
         DegradationBanner(notice: notice),
+        Positioned(top: 16, left: 16, right: 140,
+          child: CallRosterBar(participants: participants, announcement: announcement)),
         if (localVideo != null)
           Positioned(
             top: 16, right: 16, width: 110, height: 150,
@@ -555,6 +585,8 @@ class InCallView extends StatelessWidget {
     return Stack(fit: StackFit.expand, children: [
     Positioned.fill(child: _remoteView()),
     DegradationBanner(notice: notice),
+    Positioned(top: 16, left: 16, right: 140,
+      child: CallRosterBar(participants: participants, announcement: announcement)),
     if (localVideo != null)
       Positioned(
         top: 16, right: 16, width: 110, height: 150,
@@ -698,4 +730,42 @@ class _CallControlButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The persistent "who is here" line and the newest join/leave sentence (call_roster.dart; ISS-099).
+///
+/// The count line is always on screen, counts everyone present (you and any observers too) and is described to a screen
+/// reader with the names. The announcement is a live region: when somebody joins or leaves, TalkBack/VoiceOver say it
+/// without any tap, and it is also written on screen for a few seconds, so it works for a person who cannot hear it too.
+class CallRosterBar extends StatelessWidget {
+  const CallRosterBar({super.key, required this.participants, this.announcement});
+  final List<CallParticipant> participants;
+  final String? announcement;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Semantics(
+            container: true,
+            label: rosterSpokenLine(participants),
+            excludeSemantics: true,
+            child: Text(rosterCountLine(participants),
+                key: const Key('callRosterCount'),
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+          ),
+          if (announcement != null)
+            Semantics(
+              liveRegion: true,
+              container: true,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(announcement!,
+                    key: const Key('callRosterAnnouncement'),
+                    style: const TextStyle(color: Colors.white, fontSize: 16)),
+              ),
+            ),
+        ],
+      );
 }

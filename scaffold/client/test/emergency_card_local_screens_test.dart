@@ -115,6 +115,7 @@ void main() {
     });
 
     testWidgets('nothing written and the preview build: the demo card as before; a live build: no invented data', (t) async {
+      LocalServices.install(LocalServices.memory(demoSeeds: true));
       await pump(t, EmergencyCardScreen(childName: 'Ivy', localService: EmergencyCardService.memory(), principal: gA));
       expect(find.textContaining('Peanuts'), findsOneWidget, reason: 'the preview build keeps its demo');
 

@@ -185,7 +185,7 @@ void main() {
     testWidgets('the Add buttons and the item rows are 64dp', (WidgetTester t) async {
       await t.binding.setSurfaceSize(const Size(500, 2600));
       addTearDown(() => t.binding.setSurfaceSize(null));
-      await t.pumpWidget(wrap(const WantsNeedsScreen()));
+      await t.pumpWidget(wrap(const WantsNeedsScreen(seedDemoItems: true)));
       await t.pumpAndSettle();
       for (final Element e in find.widgetWithText(FilledButton, 'Add').evaluate()) {
         expect((e.renderObject! as RenderBox).size.height, greaterThanOrEqualTo(64));

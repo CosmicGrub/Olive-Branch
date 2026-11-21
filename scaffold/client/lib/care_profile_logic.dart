@@ -21,6 +21,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'allergy_field.dart';
 import 'care_local.dart' show CareDoc, CareMedication, CareResult, MedKind;
 import 'care_note.dart' show careNoteBanned;
 import 'emergency_card_local.dart' show LocalEmergencyCard;
@@ -525,7 +526,7 @@ List<CpMedLine> cpMedicineLines(CareDoc? meds) {
           dose: m.dose,
           schedule: m.kind == MedKind.scheduled
               ? 'at ${m.slots.join(', ')}'
-              : 'when needed, with the ${m.gapHours} hour gap set in Medications',
+              : (m.gapHours == null ? 'when needed' : 'when needed, with the ${m.gapHours} hour gap set in Medications'),
           note: m.note,
           lastGiven: m.doses.isEmpty
               ? null
@@ -829,9 +830,16 @@ String cpDoctorSheetText({
 
   entries(careProfilePartTitle(CareProfilePart.safe, childName), CareProfilePart.safe);
 
+  // The allergy line is ALWAYS on the sheet, with or without a card: a sheet that left it out would read as "no
+  // allergies" to a doctor. Three states (allergy_field.dart): an empty list is "Not recorded", never "none".
+  if (card == null || card.isEmpty) {
+    b.writeln('EMERGENCY CARD (as written by a guardian)');
+    b.writeln(allergyExportLine(const <String>[], null));
+    b.writeln();
+  }
   if (card != null && !card.isEmpty) {
     b.writeln('EMERGENCY CARD (as written by a guardian)');
-    if (card.allergies.isNotEmpty) b.writeln('Allergies: ${card.allergies.join('; ')}');
+    b.writeln(allergyExportLine(card.allergies, card.allergyNone));
     if (card.conditions.isNotEmpty) b.writeln('Conditions: ${card.conditions.join('; ')}');
     if (!card.doctor.isEmpty) {
       b.writeln(

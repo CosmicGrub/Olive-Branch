@@ -15,6 +15,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'allergy_field.dart';
 import 'emergency_card_local.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 
@@ -52,6 +53,10 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
   final List<_Row> _meds = <_Row>[];
   final List<_Row> _contacts = <_Row>[];
   int _version = 0;
+  // The "no known allergies" confirmation (allergy_field.dart): the box, and the confirmation already on the card (kept
+  // as it was, name and date, when the box stays ticked).
+  bool _confirmNone = false;
+  AllergyNone? _existingNone;
   bool _loaded = false;
   bool _refused = false;
   String? _banner;
@@ -59,7 +64,20 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
   @override
   void initState() {
     super.initState();
+    // The "no known allergies" box follows what is typed: with an entry the box is off (it cannot sit beside one).
+    _allergies.addListener(_allergiesChanged);
     unawaited(_load());
+  }
+
+  void _allergiesChanged() {
+    if (!mounted) return;
+    setState(() {
+      // Typing an entry withdraws the "none" confirmation; erasing it again must not bring it back, the guardian ticks it afresh.
+      if (_lines(_allergies).isNotEmpty) {
+        _confirmNone = false;
+        _existingNone = null;
+      }
+    });
   }
 
   @override
@@ -98,6 +116,8 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
 
   void _apply(LocalEmergencyCard c) {
     _allergies.text = c.allergies.join('\n');
+    _existingNone = c.allergyNone;
+    _confirmNone = c.allergyNone != null;
     _conditions.text = c.conditions.join('\n');
     _docName.text = c.doctor.name;
     _docPractice.text = c.doctor.practice;
@@ -121,8 +141,18 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
   List<String> _lines(TextEditingController c) =>
       <String>[for (final String s in c.text.split('\n')) if (s.trim().isNotEmpty) s.trim()];
 
+  static String _today() {
+    final DateTime d = DateTime.now();
+    return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   LocalEmergencyCard _card() => LocalEmergencyCard(
-        allergies: _lines(_allergies), conditions: _lines(_conditions),
+        allergies: _lines(_allergies),
+        // Only with no entries: a confirmation of "none" never sits beside a written allergy.
+        allergyNone: _lines(_allergies).isEmpty && _confirmNone
+            ? (_existingNone ?? AllergyNone(by: _name.text.trim(), on: _today()))
+            : null,
+        conditions: _lines(_conditions),
         medicines: <EcMedicine>[
           for (final _Row r in _meds) EcMedicine(name: r.c[0].text, dose: r.c[1].text),
         ],
@@ -184,6 +214,24 @@ class _EmergencyCardEditorState extends State<EmergencyCardEditorScreen> {
                   _field(const Key('cardMyName'), _name, 'Your name', maxLength: 40),
                   _head('Allergies (written by a guardian)'),
                   _field(const Key('cardAllergies'), _allergies, 'One per line', maxLines: null),
+                  CheckboxListTile(
+                    key: const Key('cardAllergyNone'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _confirmNone && _lines(_allergies).isEmpty,
+                    onChanged: _lines(_allergies).isNotEmpty
+                        ? null
+                        : (bool? v) => setState(() {
+                              _confirmNone = v ?? false;
+                              if (!_confirmNone) _existingNone = null;
+                            }),
+                    title: const Text('No known allergies (I confirm this)'),
+                    subtitle: Text(
+                      _existingNone != null && _confirmNone
+                          ? 'Confirmed by ${_existingNone!.by} on ${_existingNone!.on}.'
+                          : 'Left unticked, the card says "$kAllergiesNotRecorded".',
+                      key: const Key('cardAllergyNoneNote')),
+                  ),
                   _head('Conditions'),
                   _field(const Key('cardConditions'), _conditions, 'One per line', maxLines: null),
                   _head('Medicines'),

@@ -1,0 +1,19 @@
+{
+  "about": "Invented demo content (client/lib/demo_fixtures.dart). None of these strings may be in a built release: tools/check-release-literals.mjs reads the built artifact, and client/test/demo_fixtures_guard_test.dart checks the source. Each is at least 4 characters and specific enough not to occur in legitimate app text.",
+  "literals": [
+    "Methylphenidate",
+    "Cetirizine",
+    "Albuterol inhaler",
+    "carries an EpiPen",
+    "Claire Solomon",
+    "Marcus Solomon",
+    "Priya Nair",
+    "Riverbend Pediatrics",
+    "BlueBridge Family Health",
+    "BBH-7734-2201",
+    "(617) 555-0142",
+    "(617) 555-0198",
+    "(617) 555-0177",
+    "Olive (demo)"
+  ]
+}

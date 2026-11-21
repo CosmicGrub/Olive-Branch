@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'allergy_field.dart';
 import 'care_local.dart' show CareDoc, CareLocalRefused, CareMedication, CareService, MedKind;
 import 'emergency_card.dart';
 import 'emergency_card_editor_screen.dart';
@@ -507,8 +508,9 @@ class _HospitalModeScreenState extends State<HospitalModeScreen> {
 
   /// The guardian's local emergency card, in the words they wrote, allergies first.
   List<Widget> _localCardBlocks(BuildContext context, LocalEmergencyCard c) => <Widget>[
-        if (c.allergies.isNotEmpty)
-          _block(context, 'Allergies (emergency card)', c.allergies.join('\n'), key: const Key('hospCardAllergies')),
+        // Always shown: an empty list reads "Not recorded" (allergy_field.dart), never "none".
+        _block(context, 'Allergies (emergency card)', allergyDisplay(c.allergies, c.allergyNone, separator: '\n'),
+            key: const Key('hospCardAllergies')),
         if (c.conditions.isNotEmpty)
           _block(context, 'Conditions', c.conditions.join('\n'), key: const Key('hospCardConditions')),
         if (c.medicines.isNotEmpty)

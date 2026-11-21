@@ -36,10 +36,13 @@
 // a copy).
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'allergy_field.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
+import 'demo_fixtures.dart';
 import 'design_tokens.dart';
 import 'form_factors.dart' as ff;
+import 'local_services.dart' show LocalServices;
 
 // ================================================================ care.ts ===
 enum DoseStatus { given, skipped, refused, missed }
@@ -204,13 +207,14 @@ String _clock(DateTime d) {
 // ============================================================== the demo ===
 class _Medication {
   _Medication({required this.id, required this.name, required this.dose,
-    required this.slots, this.isPrn = false, this.minGapHours = 4});
+    required this.slots, this.isPrn = false, this.minGapHours});
   final String id;
   final String name;
   final String dose;
   final List<String> slots;
   final bool isPrn;
-  final double minGapHours;
+  // Null = no minimum gap is set. Never invented: with none, no gap check runs and no gap is quoted.
+  final double? minGapHours;
 }
 
 enum _LoadState { ready, loading, error }
@@ -239,13 +243,9 @@ class MedsCareScreen extends StatefulWidget {
 class _MedsCareScreenState extends State<MedsCareScreen> {
   final DateTime _today = DateTime.utc(2026, 8, 4);
 
-  List<_Medication> _meds = <_Medication>[
-    _Medication(id: 'methylphenidate', name: 'Methylphenidate', dose: '10 mg',
-      slots: <String>['morning']),
-    _Medication(id: 'cetirizine', name: 'Cetirizine', dose: '5 mg', slots: <String>['evening']),
-    _Medication(id: 'albuterol', name: 'Albuterol inhaler', dose: '2 puffs',
-      slots: <String>['prn'], isPrn: true, minGapHours: 4),
-  ];
+  // Empty until something real is loaded. The invented list is debug-only demo content (demo_fixtures.dart), put
+  // here in initState only where LocalServices.demoSeeds allows it.
+  List<_Medication> _meds = <_Medication>[];
 
   final List<DoseRecord> _records = <DoseRecord>[];
   String? _banner;
@@ -255,13 +255,24 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
   // date, since every real dose-collision key is keyed on it.
   String? _liveLocalDate;
 
-  List<String> _allergies = <String>['Peanuts — carries an EpiPen'];
-  List<String> _conditions = <String>['Mild asthma'];
+  // Three-state allergy field (allergy_field.dart): an empty list with no confirmation reads "Not recorded".
+  List<String> _allergies = <String>[];
+  AllergyNone? _allergyNone;
+  List<String> _conditions = <String>[];
 
   @override
   void initState() {
     super.initState();
-    if (widget._isLive) _load();
+    if (widget._isLive) {
+      _load();
+    } else if (LocalServices.current.demoSeeds) {
+      _meds = <_Medication>[
+        for (final DemoMed m in demoMedications())
+          _Medication(id: m.id, name: m.name, dose: m.dose, slots: m.slots, isPrn: m.isPrn, minGapHours: m.minGapHours),
+      ];
+      _allergies = demoAllergies();
+      _conditions = demoConditions();
+    }
   }
 
   /// The ONLY place this screen calls the network to READ — mirrors
@@ -289,7 +300,7 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
           id: row['id'] as String, name: row['name'] as String, dose: row['dose'] as String,
           slots: (row['slots'] as List<dynamic>).cast<String>(),
           isPrn: row['isPrn'] as bool? ?? false,
-          minGapHours: (row['minGapHours'] as num?)?.toDouble() ?? 4,
+          minGapHours: (row['minGapHours'] as num?)?.toDouble(),
         );
       }).toList();
       final List<DoseRecord> records = rawDoses.map((dynamic d) {
@@ -309,6 +320,7 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         _records..clear()..addAll(records);
         _liveLocalDate = medsResult['localDate'] as String?;
         _allergies = (cardResult['allergies'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
+        _allergyNone = allergyNoneFromServer(cardResult);
         _conditions = (cardResult['conditions'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
         _loadState = _LoadState.ready;
       });
@@ -326,8 +338,12 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
           doseKey(med.id, slot, _today).localDate,
           _records.where((DoseRecord r) => r.medicationId == med.id).toList()).ok;
         if (!ok) {
-          setState(() => _banner = "Too soon for another ${med.name} dose — "
-            'wait at least ${med.minGapHours.toStringAsFixed(0)} hours between doses.');
+          // checkDose refuses on the gap only when one is set; with none it never gets here for the gap.
+          final double? gap = med.minGapHours;
+          setState(() => _banner = gap == null
+            ? 'Too soon for another ${med.name} dose.'
+            : "Too soon for another ${med.name} dose — "
+              'wait at least ${gap.toStringAsFixed(0)} hours between doses.');
           return;
         }
         setState(() {
@@ -366,9 +382,12 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       if (row['error'] == 'too_soon' || row['error'] == 'daily_max') {
+        final num? serverGap = row['minGapHours'] as num?;
         setState(() => _banner = row['error'] == 'too_soon'
-          ? 'Too soon for another ${med.name} dose — wait at least '
-            '${(row['minGapHours'] as num?)?.toStringAsFixed(0) ?? 'a few'} hours between doses.'
+          ? (serverGap == null
+              ? 'Too soon for another ${med.name} dose.'
+              : 'Too soon for another ${med.name} dose — wait at least '
+                '${serverGap.toStringAsFixed(0)} hours between doses.')
           : "That's the most ${med.name} doses allowed in 24 hours.");
         return;
       }
@@ -455,6 +474,10 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
             ])),
         const _SectionLabel('Scheduled medications'),
         const SizedBox(height: 8),
+        if (_meds.isEmpty)
+          Padding(padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text('No medicines are recorded here yet.', key: const Key('medsNone'),
+              style: Theme.of(context).textTheme.bodyMedium)),
         for (final _Medication med in _meds.where((_Medication m) => !m.isPrn))
           Card(margin: const EdgeInsets.only(bottom: AppSpacing.sm), child: Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -501,7 +524,7 @@ class _MedsCareScreenState extends State<MedsCareScreen> {
         Card(margin: const EdgeInsets.all(AppSpacing.sm), child: Padding(padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Allergies', style: TextStyle(fontWeight: FontWeight.w600)),
-            for (final String a in _allergies) Text(a),
+            Text(allergyDisplay(_allergies, _allergyNone, separator: '\n'), key: const Key('medsAllergies')),
             const SizedBox(height: 12),
             const Text('Conditions', style: TextStyle(fontWeight: FontWeight.w600)),
             for (final String c in _conditions) Text(c),

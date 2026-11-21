@@ -111,7 +111,7 @@ AuthSession _deviceSession(DeviceIdentity identity) => AuthSession.device(
 void _returnToPairing() => runApp(const _PairingBootApp(baseUrl: _dartDefineBaseUrl));
 
 /// The real backend PIN check — replaces the former hardcoded
-/// `_demoVerifyGuardianPin` ('1273', never checked against anything). This is
+/// `_demoVerifyGuardianPin` (a fixed code, never checked against anything). This is
 /// the actual release-blocker fix: server/routes.mjs's real
 /// POST /kiosk-pin/verify now backs the kiosk lock's PIN gate on this entry
 /// point, exactly the way KioskShell's own header always said a real backend

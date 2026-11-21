@@ -9,8 +9,11 @@
 import { AccessToken } from 'livekit-server-sdk';
 import {
   createSession, mintToken, deriveGrant, newRoomName, roomNameLeaks,
-  TOKEN_TTL_SECONDS, FORBIDDEN_GRANTS,
+  TOKEN_TTL_SECONDS, FORBIDDEN_GRANTS, RECORDING_NOTICE_SURFACE_EXISTS,
 } from '../src/rooms.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { mintLiveKitToken } from '../src/livekit-token.mjs';
 import {
   initialState, onLockTaskExited, onBackgrounded, submitChildPin, escalate,
@@ -184,8 +187,11 @@ async function onWire(token) {
 // §5.15 / §10.5 — the ladder drives recording, and recording is disclosed.
 // ---------------------------------------------------------------------------
 {
-  check('§5.15 recording', 'supervised is recorded',
-    session({ ladderStep: 'supervised' }).recorded, 'true');
+  // ISS-106: nothing records and there is no notice surface yet, so no session claims to be recorded.
+  check('§5.15 recording', 'the recording notice surface does not exist yet (the switch is off)',
+    RECORDING_NOTICE_SURFACE_EXISTS, 'false');
+  check('§5.15 recording', 'supervised is NOT recorded while no notice surface exists',
+    session({ ladderStep: 'supervised' }).recorded, 'false');
   check('§5.15 recording', 'monitored is NOT recorded',
     session({ ladderStep: 'monitored' }).recorded, 'false');
   check('§5.15 recording', 'open is NOT recorded',
@@ -197,7 +203,13 @@ async function onWire(token) {
   try { session({ ladderStep: 'none' }); } catch { threw = true; }
   check('§5.15 recording', 'step none cannot create a session at all', threw, 'true');
 
-  const sup = mintToken(session({ ladderStep: 'supervised' }),
+  const supNow = mintToken(session({ ladderStep: 'supervised' }),
+    { userId: DAD, observerOnly: false, isChild: false, roleName: 'guardian' },
+    [edge({ ladderStep: 'supervised' })], NOW);
+  check('§10.5 disclosure', 'a supervised session today is not recorded, so its token says recorded:false',
+    supNow.token.recorded, 'false');
+  // The disclosure path itself stays tested: a session that DID claim recording must still disclose it.
+  const sup = mintToken({ ...session({ ladderStep: 'supervised' }), recorded: true },
     { userId: DAD, observerOnly: false, isChild: false, roleName: 'guardian' },
     [edge({ ladderStep: 'supervised' })], NOW);
   check('§10.5 disclosure', 'recorded session carries a disclosure',
@@ -358,6 +370,54 @@ async function onWire(token) {
   const obsClaims = JSON.parse(Buffer.from(obsJwt.split('.')[1], 'base64url').toString());
   check('LK mint', 'an observer-only guardian gets canPublish:false on the wire',
     obsClaims.video?.canPublish, 'false');
+}
+
+// ---------------------------------------------------------------------------
+// I6 (ISS-100, ISS-106) — nobody is ever in a room unseen, and nothing claims to be recorded.
+// No grant path yields hidden presence: every ladder step x observer tier x child/guardian combination is minted and
+// read back through the real LiveKit SDK, and `hidden` is never true. The source is also scanned, so a future
+// "join unannounced" option cannot be added without this suite failing.
+// ---------------------------------------------------------------------------
+{
+  const DEVKEY = 'devkey', DEVSECRET = 'devsecret_at_least_32_chars_long_xx';
+  const steps = ['supervised', 'monitored', 'time_limited', 'open'];
+  let combos = 0, hiddenSeen = 0, recordedSeen = 0, wireHidden = 0;
+  for (const ladderStep of steps) {
+    for (const observerOnly of [false, true]) {
+      for (const isChild of [false, true]) {
+        const sess = createSession({ childId: CHILD_A, kind: 'call', createdBy: DAD,
+          authorizedUserIds: [DAD, MOM, CHILD_A], ladderStep });
+        const principal = { userId: isChild ? CHILD_A : DAD, observerOnly, isChild, roleName: 'guardian' };
+        const g = deriveGrant(sess, principal);
+        const m = mintToken(sess, principal, [edge({ ladderStep })], NOW);
+        combos++;
+        if (g.hidden === true) hiddenSeen++;
+        if (sess.recorded !== false) recordedSeen++;
+        if (m.ok) {
+          const jwt = await mintLiveKitToken(m.token, DEVKEY, DEVSECRET);
+          const claims = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString());
+          if (claims.video?.hidden === true) wireHidden++;
+          if (m.token.recorded !== false || m.token.disclosure !== null) recordedSeen++;
+        }
+      }
+    }
+  }
+  check('I6 no hidden join', '16 ladder x observer x child combinations were exercised', combos, 16);
+  check('I6 no hidden join', 'no grant is hidden, in any combination', hiddenSeen, 0);
+  check('I6 no hidden join', 'no minted LiveKit token carries hidden:true on the wire', wireHidden, 0);
+  check('I6 no recording claim', 'no session and no token says recorded, in any combination', recordedSeen, 0);
+
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  const srcDirs = [join(here, '..', 'src'), join(here, '..', '..', '..', 'server')];
+  const offenders = [];
+  for (const d of srcDirs) {
+    for (const f of readdirSync(d)) {
+      if (!/\.(ts|mjs)$/.test(f)) continue;
+      const text = readFileSync(join(d, f), 'utf8');
+      if (/hidden\s*:\s*true/.test(text) || /unannounced/i.test(text.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, ''))) offenders.push(f);
+    }
+  }
+  check('I6 no hidden join', 'no source under session-runtime/src or server/ can produce hidden:true or an unannounced join', offenders.join(','), '');
 }
 
 // ---------------------------------------------------------------------------

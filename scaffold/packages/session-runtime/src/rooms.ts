@@ -17,7 +17,21 @@ import { can, type Edge, type LadderStep } from '../../family-graph/src/authoriz
  *      child. Room membership is not authorization.
  *  I5  TTL is minutes, not hours. A defeated kiosk (§8.3) leaks whatever the
  *      token still allows.
+ *  I6  Nobody is ever in a room unseen. No grant is ever `hidden`, no step of the
+ *      ladder lets an adult (guardian, professional, observer) join without the
+ *      other people in the room being able to see that they are there, and no
+ *      session is marked `recorded` while there is nowhere to tell the people in
+ *      it. The client shows every join and leave and a persistent count of who is
+ *      present, observers included (call_roster.dart).
  */
+
+/**
+ * Whether there is a surface that tells everyone in a call it is being recorded, and a way to say no to it. There is not
+ * one yet, so nothing is recorded and no session claims to be: `recorded` is forced false in [createSession]. This
+ * constant is the single switch; flipping it is a deliberate change that has to arrive with the notice surface, its
+ * wording and the consent step, not before.
+ */
+export const RECORDING_NOTICE_SURFACE_EXISTS = false;
 
 export type SessionKind = 'call' | 'homework' | 'game' | 'canvas' | 'storybook';
 
@@ -44,7 +58,8 @@ export interface Grant {
   canSubscribe: boolean;
   canPublishData: boolean;
   canUpdateOwnMetadata: false;
-  hidden?: boolean;
+  /** Never true: there is no way to be present in a room unseen (I6). Absent or false only. */
+  hidden?: false;
 }
 
 export interface MintedToken {
@@ -112,9 +127,10 @@ export function createSession(input: {
     createdBy: input.createdBy,
     authorizedUserIds: [...new Set(input.authorizedUserIds)],
     ladderStep: input.ladderStep,
-    // §5.15 — `supervised` means the advancing professional reviews the session.
-    // `monitored` is explicitly NOT recorded; they may join unannounced instead.
-    recorded: input.ladderStep === 'supervised',
+    // §5.15 — `supervised` is the step that would be recorded, but nothing records and no notice surface exists to
+    // tell the people in the call, so the flag stays false until RECORDING_NOTICE_SURFACE_EXISTS is true. No step
+    // lets anyone join unseen: presence is visible to everyone in the room (I6).
+    recorded: RECORDING_NOTICE_SURFACE_EXISTS && input.ladderStep === 'supervised',
     createdAt: new Date().toISOString(),
     endedAt: null,
   };

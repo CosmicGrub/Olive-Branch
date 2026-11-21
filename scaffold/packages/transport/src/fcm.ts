@@ -286,7 +286,9 @@ export function toFcmRequestBody(payload: PushPayload): { message: Record<string
       priority: payload.android.priority === 'high' ? 'HIGH' : 'NORMAL',
     };
     if (payload.android.collapseKey) android.collapse_key = payload.android.collapseKey;
-    if (payload.notification) android.notification = { channel_id: payload.android.channelId };
+    // PRIVATE: on a locked screen Android shows the app name and a "contents hidden" placeholder, never the text.
+    // The text is generic already (push.ts GENERIC); this is the second lock on the same door (ISS-107).
+    if (payload.notification) android.notification = { channel_id: payload.android.channelId, visibility: 'PRIVATE' };
     message.android = android;
   }
   return { message };

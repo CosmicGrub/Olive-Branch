@@ -6,11 +6,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/collection_screen.dart';
+import 'package:olive_client/local_services.dart';
 import 'package:olive_client/showcase_logic.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
 
 void main() {
+  // The invented example collections are preview content and OFF by default: these tests are about them, so they ask.
+  setUp(() => LocalServices.install(LocalServices.memory(demoSeeds: true)));
+  tearDown(LocalServices.resetForTest);
+
   group('collection screen — §9.10, P2', () {
     testWidgets('seeds with realistic collections, not empty', (t) async {
       await t.pumpWidget(wrap(const CollectionScreen()));
