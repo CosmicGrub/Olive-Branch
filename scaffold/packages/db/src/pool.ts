@@ -863,7 +863,7 @@ export type SecurityEventKind =
   | 'account_recovered'
   | 'recovery_sheet_made' | 'recovery_helper_named' | 'recovery_helper_removed'
   | 'recovery_started' | 'recovery_approved' | 'recovery_stopped'
-  | 'device_lost' | 'device_found' | 'device_lost_final';
+  | 'device_lost' | 'device_found' | 'device_lost_final' | 'device_wipe_ordered' | 'device_wiped';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -899,6 +899,8 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   device_lost: 'A phone or tablet was marked as lost and cut off from new updates',
   device_found: 'A phone or tablet marked as lost was found and is back in use',
   device_lost_final: 'A phone or tablet marked as lost was removed from the family',
+  device_wipe_ordered: 'A lost phone was told to erase its copy of the family records the next time it connects',
+  device_wiped: 'A lost phone erased its copy of the family records',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -4672,7 +4674,7 @@ export interface PairedDevice {
   pairedAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
-  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0056. */
+  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0057. */
   state: DeviceStanding;
   pausedAt: string | null;
   /** When a paused device becomes revoked by itself (the notice ends). Null unless paused. */
@@ -5012,11 +5014,11 @@ export async function refreshPairedDeviceSession(
   opts: { pin?: string } = {},
 ): Promise<
   | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-  | { ok: false; reason: RefreshDeviceSessionError }
+  | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean }
 > {
   type First =
     | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-    | { ok: false; reason: RefreshDeviceSessionError; reproof?: { id: string; userId: string } };
+    | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean; reproof?: { id: string; userId: string } };
   const first = await withSystemSession<First>(pool, async (q) => {
     // `id::text = $1`, never casting the input to uuid: a garbage id must be a
     // clean not-found, not a Postgres cast error that surfaces as a 500.
@@ -5033,7 +5035,7 @@ export async function refreshPairedDeviceSession(
     const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
       presented.length === stored.length && timingSafeEqual(presented, stored);
     if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
-    // Migration 0056: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
+    // Migration 0057: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
     // they are on every other request, and only after the credential is proved (nobody learns a device's standing
     // without holding its credential).
     await settleDueLostDevice(q, row.id, now);
@@ -5117,7 +5119,7 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
 }
 
 // ===========================================================================
-// LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql.
+// LOST OR STOLEN DEVICE -- db/migrations/0057_lost_device.sql.
 //
 // "Mark as lost" pauses a device at once (its session and its refresh are
 // refused, so it receives nothing new), tells every grown-up, and starts a 72
@@ -5139,7 +5141,7 @@ export const LOST_MARK_LIMIT_PER_DAY = 3;
 
 export type LostFailure =
   | 'not_found' | 'already_revoked' | 'this_device' | 'rate_limited'
-  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only';
+  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only' | 'not_a_grown_up_phone';
 
 export type LostResult =
   | { ok: true; deviceId: string; state: DeviceStanding; incidentId: string | null;

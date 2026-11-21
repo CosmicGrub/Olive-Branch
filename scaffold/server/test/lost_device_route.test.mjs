@@ -1,5 +1,5 @@
 /**
- * A lost or stolen phone or tablet (db/migrations/0056_lost_device.sql), end to end against a REAL Postgres through
+ * A lost or stolen phone or tablet (db/migrations/0057_lost_device.sql), end to end against a REAL Postgres through
  * the REAL Api (strict ids ON, as in production). Every account comes from POST /v1/auth/signup, every extra device
  * from the real pairing routes.
  *

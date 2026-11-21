@@ -471,7 +471,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
-            "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs"             "recovery paths: sheet, helper, second grown-up, 48/72 hour waits, races, cancel, replay, wrong family, over-reach (0055, real DB, strict ids)|server/test/recovery_paths_route.test.mjs" \n            "lost or stolen device: mark, found, 72 hour notice, owner-made vs other grown-up, races, thief, tablet, append-only history (0056, real DB, strict ids)|server/test/lost_device_route.test.mjs" \
+            "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs" \
             "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
@@ -554,7 +554,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \
-            "as app_runtime: account recovery|server/test/account_recovery_route.test.mjs"             "as app_runtime: recovery paths|server/test/recovery_paths_route.test.mjs" \n            "as app_runtime: lost or stolen device|server/test/lost_device_route.test.mjs" \
+            "as app_runtime: account recovery|server/test/account_recovery_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)

@@ -1490,7 +1490,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         pool, deviceId, deviceCredential, new Date(),
         { pin: typeof c.body?.pin === 'string' ? c.body.pin : undefined });
       if (!result.ok) {
-        // 0056: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
+        // 0057: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
         // phone back from a pause must show its owner's PIN once (pin_required / pin_incorrect / pin_locked).
         const status = result.reason === 'account_deactivated' ? 403
           : (result.reason === 'pin_required' || result.reason === 'pin_incorrect' || result.reason === 'pin_locked') ? 403
@@ -1586,7 +1586,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
 
 
   // ===========================================================================
-  // LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql. A grown-up
+  // LOST OR STOLEN DEVICE -- db/migrations/0057_lost_device.sql. A grown-up
   // marks a phone or tablet as lost from ANOTHER device (their own other
   // phone, another grown-up's phone of the same family, a child's tablet of
   // the same family), behind their own PIN. The device is paused at once and
