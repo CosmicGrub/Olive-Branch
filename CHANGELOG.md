@@ -16,6 +16,17 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### A grown-up's phone updates the child's tablet (client; Android; no server change)
+The in-app update path for a tablet that is offline and locked. Full account in MASTERFILE 7.25.
+- **Transfer.** The grown-up's phone offers a verified update to the paired tablet over the existing authenticated LAN pairing transport; the tablet drives a strict, resumable, size-capped request-and-answer protocol, verifies the signed notice with the update engine before asking for any byte, hashes every manifest chunk as it completes, and stages the file only after size, whole-file hash, package, version and signing-certificate checks.
+- **Adults only.** A card inside Guardian mode on the tablet and a Settings row on the phone. The child's tablet shows nothing: no screen, error, count or prompt (P1 to P11).
+- **Kiosk-safe install.** After every check passed and a grown-up is proved again, the screen pin is released on purpose, Android's own installer is shown, and the pin is put back if the app was not replaced. Not a defeat; nobody is notified.
+- **Fallback.** A tablet that is online can take the update itself through the same checks.
+- **Interface.** The engine is an interface (`UpdateEnginePort`) because the client-updater lane had not landed; tests use a reference engine with real Ed25519. The feature is absent until the adapter is installed.
+- **New area.** `updatestage` (sealed, device): 51 areas, 31 sealed.
+- **Tests.** Transfer, wire, sender, service, store, screens, wiring over the real encrypted link, and hostile-peer suites (tampered chunks, wrong key, replay, rollback, a child trying to trigger it, interrupted transfer and resume).
+- **Not built / not run.** The adapter over the real engine; nothing has run on a device (the pin release and re-pin are compile-checked by CI only).
+
 ### Dev-only cleartext for release device builds (client + tooling; no server change)
 The device lane installs RELEASE builds and reaches the dev server over `adb reverse`, which is plain http on the phone's own loopback; release builds refuse cleartext by design, so the lane had no way to talk to the server. This adds a narrow, developer-only escape hatch and keeps the rule for every normal build.
 - **The define.** `--dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true` (read as `kAllowDevCleartext`, like `OLIVE_ALLOW_SCREENSHOTS`; `bool.fromEnvironment` accepts exactly `true`, so `1` or `trueish` do nothing). With it, `OliveTransportPolicy` lets a release build use `http://` to the literal hosts `127.0.0.1` and `::1` and to nothing else: not `localhost`, not `127.0.0.2` or other spellings, not `10.0.2.2`, a LAN address, a `.local` name or a public host; a query, fragment or credentials on the URL are still refused. Without it nothing changes, and debug builds are unchanged either way. The default constructor argument is the build-time value, so only tests pass it explicitly.
