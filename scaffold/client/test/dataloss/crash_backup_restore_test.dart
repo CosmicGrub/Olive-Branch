@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/family_sync_engine.dart' show LocalStoreSyncRepository;
 import 'package:olive_client/local_services.dart';
 import 'package:olive_client/local_snapshot.dart';
 import 'package:olive_client/local_store.dart';
@@ -227,8 +228,8 @@ void main() {
     final NamespaceSpec boxSpec = specOf('outbox');
     Map<String, Object?> doc(List<String> events, Map<String, Object?> peers, List<Object?> notes) =>
         <String, Object?>{'v': 1, 'e': events, 'p': peers, 'q': notes};
-    final Map<String, Object?> heldDoc = doc(<String>['w2', 'w3'], <String, Object?>{'peerB': <String, Object?>{'s': 2}}, <Object?>[<Object?>['s1', 'a1', 1]]);
-    final Map<String, Object?> backupDoc = doc(<String>['w1', 'w2'], <String, Object?>{'peerA': <String, Object?>{'s': 1}, 'peerB': <String, Object?>{'s': 9}}, <Object?>[<Object?>['s1', 'a1', 1], <Object?>['s2', 'a2', 4]]);
+    final Map<String, Object?> heldDoc = doc(<String>['AwQF', 'BgcI'], <String, Object?>{'peerB': <String, Object?>{'s': 2}}, <Object?>[<Object?>['s1', 'a1', 1]]);
+    final Map<String, Object?> backupDoc = doc(<String>['AAEC', 'AwQF'], <String, Object?>{'peerA': <String, Object?>{'s': 1}, 'peerB': <String, Object?>{'s': 9}}, <Object?>[<Object?>['s1', 'a1', 1], <Object?>['s2', 'a2', 4]]);
     Map<String, Object?> item(String id) => <String, Object?>{'id': id, 'kind': 'drawing', 'payload': <String, Object?>{'x': id}};
     final LocalSnapshot backup = LocalSnapshot(<String, AreaImage>{
       syncSpec.name: AreaImage(syncSpec.name, syncSpec.schema, <String, Object?>{'doc': backupDoc}),
@@ -253,13 +254,13 @@ void main() {
           final Object? mid = await w.store.open(syncSpec).get('doc');
           final Map<String, Object?> m = (mid! as Map<dynamic, dynamic>).cast<String, Object?>();
           if (canonicalJson(m) != heldJson) {
-            expect((m['e']! as List<dynamic>).cast<String>(), <String>['w2', 'w3', 'w1'], reason: 'a half-joined record');
+            expect((m['e']! as List<dynamic>).cast<String>(), <String>['AwQF', 'BgcI', 'AAEC'], reason: 'a half-joined record');
           }
           expect(await w.store.quarantined(), 0);
           final RestoreReport r = await restoreSnapshot(w.store, backup); // the restart finishes the job
           expect(r.refused, isEmpty);
           final Map<String, Object?> done = ((await w.store.open(syncSpec).get('doc'))! as Map<dynamic, dynamic>).cast<String, Object?>();
-          expect((done['e']! as List<dynamic>).cast<String>(), <String>['w2', 'w3', 'w1'], reason: 'an event from one side is missing');
+          expect((done['e']! as List<dynamic>).cast<String>(), <String>['AwQF', 'BgcI', 'AAEC'], reason: 'an event from one side is missing');
           final Map<String, Object?> peers = (done['p']! as Map<dynamic, dynamic>).cast<String, Object?>();
           expect(peers.keys.toSet(), <String>{'peerA', 'peerB'});
           expect(canonicalJson(peers['peerB']), canonicalJson(<String, Object?>{'s': 2}), reason: 'the held summary must win');
@@ -287,6 +288,53 @@ void main() {
       expect(canonicalJson(await w.store.open(syncSpec).get('doc')), canonicalJson(heldDoc));
       expect((await w.disk.quarantinedBlobs()).map((Uint8List b) => utf8.decode(b)).join(), contains('"v":2'));
     });
+    test('a snapshot whose event is not base64 never plants it: the held record stays readable, the whole value is parked, and a repeat parks nothing more', () async {
+      final W w = W(MemDisk(), CrashClock());
+      final LocalStoreSyncRepository repo = LocalStoreSyncRepository(w.store.open(syncSpec));
+      await w.store.open(syncSpec).put('doc', heldDoc);
+      final int heldWires = (await repo.load())!.wires.length;
+      for (final String bad in <String>['!!!not base64!!!', 'a', 'ab=cd', ' x', '']) {
+        final LocalSnapshot hostile = LocalSnapshot(<String, AreaImage>{
+          syncSpec.name: AreaImage(syncSpec.name, syncSpec.schema, <String, Object?>{'doc': doc(<String>['AAEC', bad], <String, Object?>{}, <Object?>[])}),
+        });
+        final RestoreReport r = await restoreSnapshot(w.store, hostile);
+        expect(r.keysJoined, 0, reason: 'a malformed event was joined: "$bad"');
+        expect(r.valuesKept, 1);
+        expect(canonicalJson(await w.store.open(syncSpec).get('doc')), canonicalJson(heldDoc));
+        expect((await repo.load())!.wires.length, heldWires, reason: 'the held record became unreadable');
+      }
+      expect(await w.store.quarantined(), 5);
+    });
+
+    test('a record already holding one bad entry still loads the readable ones', () async {
+      final W w = W(MemDisk(), CrashClock());
+      await w.store.open(syncSpec).put('doc', doc(<String>['AAEC', '!!!bad!!!', 'AwQF'], <String, Object?>{}, <Object?>[]));
+      expect((await LocalStoreSyncRepository(w.store.open(syncSpec)).load())!.wires.length, 2);
+    });
+
+    for (final bool real in <bool>[false, true]) {
+    test('on ${real ? 'real files' : 'the in-memory disk'}: restoring again, even many times, keeps one parked copy of the same conflicting value', () async {
+      final Disk d = real ? await DirDisk.make(tear: false) : MemDisk();
+      final LocalStore s = LocalStore(backend: d.open(CrashClock()), cipher: AesGcmStoreCipher(_newKey));
+      await s.open(specOf('lists')).put('want:1', rich('HELD'));
+      final LocalSnapshot other = LocalSnapshot(<String, AreaImage>{
+        'child.ivy.lists': AreaImage('child.ivy.lists', localDataEntry('lists').schema, <String, Object?>{'want:1': rich('BACKUP')}),
+      });
+      await restoreSnapshot(s, other);
+      expect(await s.quarantined(), 1);
+      for (int i = 0; i < 3; i++) {
+        await restoreSnapshot(s, other);
+      }
+      expect(await s.quarantined(), 1, reason: 'a repeat parked the same value again');
+      expect(await s.open(specOf('lists')).get('want:1'), rich('HELD'));
+      // A DIFFERENT conflicting value is still kept.
+      final LocalSnapshot third = LocalSnapshot(<String, AreaImage>{
+        'child.ivy.lists': AreaImage('child.ivy.lists', localDataEntry('lists').schema, <String, Object?>{'want:1': rich('THIRD')}),
+      });
+      await restoreSnapshot(s, third);
+      expect(await s.quarantined(), 2);
+    });
+    }
   });
 
   group('the restore-equivalence check', () {
