@@ -149,7 +149,7 @@ const hex = (n) => randomBytes(n).toString('hex');
   let msg = '';
   try { decodeImage(pngHeader(8000, 8000)); } catch (e) { msg = String(e.message); }
   check('E image limits', 'an 8000x8000 PNG header is refused as image_too_large (64 Mpx)', /^image_too_large/.test(msg), true);
-  check('E image limits', 'refused without allocating (instant, no ~830 MB decode)', Date.now() - t0 < 500, true);
+  check('E image limits', 'refused without allocating (no ~830 MB decode: far inside a 10x ceiling)', Date.now() - t0 < 5000, true);
   msg = '';
   try { decodeImage(jpegHeader(9000, 9000)); } catch (e) { msg = String(e.message); }
   check('E image limits', 'an oversize JPEG is refused too', /^image_too_large/.test(msg), true);

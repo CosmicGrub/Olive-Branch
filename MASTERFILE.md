@@ -83,9 +83,9 @@ prohibition must update MARKUP in the same turn.
 | C4 | Every screen carries `data-since` (and `data-amended` where altered); every declared version exists in the CHANGELOG; every visual-era CHANGELOG version appears in MARKUP |
 | C5 | Every §ref in MARKUP resolves to a real section here |
 | C6 | Every prohibition ref resolves to a live §2.1 entry — so deleting a prohibition while a screen still honours it fails the build |
-| C7 | The assertion count MARKUP quotes equals what `verify.sh` computes |
+| C7 | The assertion count MARKUP quotes equals what `verify.sh` computes (reported SKIP, not FAIL, when a suite failed, because the total is then not final; §7.22) |
 | D1 | `DEMO.html`'s manifest version equals the newest CHANGELOG version |
-| D2 | The demo's declared assertion count equals what `verify.sh` computes |
+| D2 | The demo's declared assertion count equals what `verify.sh` computes (SKIP when a suite failed, as C7; `tools/apply-total.mjs` writes both figures; §7.22) |
 | D3 | Every MARKUP screen slug is accounted for in the demo manifest — mapped to a demo screen, or listed in `notDemoed` with a reason. **A new MARKUP screen fails the build until someone decides whether it is demoable.** |
 | D4 | Every mapped target exists among the demo's actual screens |
 | D5 | Under-construction areas are referenced and non-empty |
@@ -2075,8 +2075,8 @@ date". A malformed percent escape in a path (`/media/%zz`, a route param) is a
 (`npm ci --omit=dev` runtime deps, no tests/demo/client, `USER node`,
 PGDG `postgresql-client-16`); `livekit-server-sdk` moved from
 `devDependencies` to `dependencies` because the server imports it at runtime.
-`verify.yml` gains `timeout-minutes`, a per-ref `concurrency` group that cancels
-superseded PR runs, npm and pub caches, a strict `npm ci`, and an `image` job
+`verify.yml` gains `timeout-minutes`, a `concurrency` group that cancels
+superseded PR runs (per ref for a pull request, per commit for a push; §7.22), npm and pub caches, a strict `npm ci`, and an `image` job
 that builds the Dockerfile and SIGTERMs the running container on every PR.
 `tools/verify.sh` runs a strict `npm ci` instead of swallowing install failure.
 
@@ -2708,6 +2708,30 @@ POST   /v1/auth/recover                no session. Recovery code (operator-issue
 **Not built, said plainly.** (1) **Nothing here has run on a device.** The player is proved against a fake player and a fake file; the `video_player` plugin has not been compiled into an APK by this change (CI's Android job is the first build), no real video, voice note or picture has been played, and the recovery screens were proved headless against an in-memory server that checks every request against the real route table. (2) **The server has no "played through" state.** It records `opened` (first play); the sender's receipt phrase ("Watched at ...") and the child's receipt screen therefore speak at first play, not at the end. A separate `played_through_at` would need a migration (OPEN-DECISIONS 54). (3) **Recovery signs out every other phone and leaves passkeys alone**, gives the other grown-ups no waiting period and no push, only the history line; an account with no PIN cannot be recovered; a sole grown-up who loses their phone AND forgets the PIN still re-founds the family (OPEN-DECISIONS 52). (4) The operator finds the account by the sign-up note or the account id; an account made from an invite has no note, so the operator needs the id. (5) No QR or deep link for the recovery code: it is read out or pasted. (6) A decline ends an invite a squatter claimed (OPEN-DECISIONS 53).
 
 **Tests.** `server/test/account_recovery_route.test.mjs` (real Postgres through the real `Api` with strict ids, as `app_owner` and as `app_runtime`, wired in `tools/verify.sh`): the operator tool (ambiguous note, unknown account, no PIN, an email in a note, one live code, cancel), every malformed body, the global budget (and the real code waiting while blocked), the happy path in detail (new device, same account, old session and old credential and the account's second phone all cut off, the other grown-up sees one content-free event, the spent code, the PIN unchanged), expired, cancelled, superseded, wrong PIN (code survives, five burn it and lock the PIN, a new code waits for the lockout), another family's PIN, a code never touching another family, a closed account, six simultaneous redemptions, a code that is not a session or a credential or an allowance, and the table's own RLS and constraints. `identity_chain_route.test.mjs` now asserts the new claim rule (no-email account claims, different-email account refused, the squatter turned away). Client: `family_account_service_test.dart`, `family_account_screens_test.dart`, `family_account_contract_test.dart` (recovery against the real route table and reason list), `message_player_test.dart` (address vetting, the capped download, the screen with a fake player in every failure, big text and five widths, opened-on-first-play through the inbox, the preview build) and `inbox_screen_test.dart` (the live flow now goes through the player).
+
+### 7.22 CI reliability — as shipped (workstream "CI reliability", issues ISS-023 to ISS-038)
+
+**Why.** CI had become something people worked around: a second 18 to 23 minute round on nearly every PR just to retype two numbers, a smoke job that reported green when both variants failed, red runs on main that named no test, and three suites that never ran. Every item here replaces a workaround with a mechanism. Nothing in this section changes what the app does; no child-facing screen, no server route and no migration is touched.
+
+**The exact-total gate no longer cascades (ISS-023).** `tools/verify.sh` ends by handing its counts to `tools/verify-finish.sh`. When every suite passed, the total is final: C7 and D2 compare MARKUP's figure and the demo manifest's figure against it, strictly, on every branch and on main, and the log prints `APPLY  node tools/apply-total.mjs <total>`. When a suite failed or ran nothing, the total is not final (a failed suite pulls it down), so C7 and D2 are reported SKIP and no APPLY command is offered; the run is still NOT GREEN. One failing suite is therefore one failure, not three. `tools/apply-total.mjs <total>` rewrites exactly the two quoted figures (`<strong>N assertions</strong>` in `MARKUP.html`, `"assertions": N,` in `scaffold/demo/shell.html`), leaves every other byte alone (CRLF and LF alike), refuses and writes nothing unless each file holds exactly one figure, and accepts only a plain positive integer. `npm run check:markup` no longer carries a third hand-typed copy of the total (it skips C7 and D2; CI's own run is the strict one).
+
+**The smoke job is honest (ISS-024, ISS-025).** `release-smoke.yml` has no job-level `continue-on-error`, so a failing smoke run is red; it stays out of the required checks, which is a branch-protection setting. A manual dispatch with `force_fail` fails in its first step to show that. The install in `tools/release-smoke.sh` logs the answer to every uninstall, and on `INSTALL_FAILED_UPDATE_INCOMPATIBLE` runs `pm uninstall` and `pm clear` and installs once more; the app is uninstalled again on exit (an EXIT trap, so a failed run cleans up too). The AVD cache is restored, then saved only right after the AVD is created, never in a post step that runs after the app was installed (which is how a cached emulator came to carry a differently signed copy of the app).
+
+**Failures are named (ISS-026).** `verify.sh` runs `flutter test` with a JSON file reporter beside the compact one, keeps the analyzer output, and keeps the full output of any failing Node suite; the workflow uploads that directory as the `verify-test-reports` artifact whether or not the run passed. A failing Node suite now prints its last lines instead of only a count.
+
+**Flakes fixed at the root (ISS-027, ISS-028, ISS-035, ISS-038).** The storyteller screen takes an optional `random` and `storyCode` (null in the app), so a test reads the same story every run; the tests scroll a control into view before tapping it; a sweep walks 50 seeds at 390x900 and 2.0x text scale and asserts every control is reachable and nothing overflows. `expiry_digest_route.test.mjs` asserts on the parsed key set and the list of artifact ids, not on a substring of JSON that carries random UUIDs. The wall-clock assertions in `lifecycle`, `privacy_gate`, `live_chain_pure` and `security_round2` assert behaviour (the deadline path ran or did not) or use a ceiling ten times the old one. Chess, checkers, dots and boxes, Connect 4 and Uno take an optional `random` (null in the app).
+
+**Concurrency (ISS-029).** In `verify.yml` and `release-smoke.yml` the group for a push is the commit, so two quick merges each keep their own run; a pull request keeps the per-ref group and its cancellation.
+
+**Nothing silently unrun (ISS-030).** The game-sync table suite, the game-tables wiring suite and the family-ledger vectors are now run by `verify.sh`. `tools/test/test_files_listed.test.mjs` fails when any `*.test.mjs`, `*_test.mjs` or `*.test.sql` under `scaffold/` is neither named in `verify.sh` nor listed, with a reason, in its allow-list (empty today).
+
+**Release-only build failures (ISS-032).** The Android step of `verify.sh` also runs `:app:checkReleaseDuplicateClasses`, the task that refused the release APK when two libraries bundled the same media3 rtsp classes (the exclude in `app/build.gradle.kts`). Re-adding that dependency makes this step fail and print the class and both modules.
+
+**Quiet logs (ISS-036).** `setup-android` is told not to echo the licence texts it accepts (about 2,000 lines); the `sdkmanager --install` output goes to a file shown only on failure.
+
+**Tests.** `tools/test/apply_total.test.mjs`, `verify_finish.test.mjs`, `test_files_listed.test.mjs`, `ci_workflows.test.mjs`, `release_smoke_install.test.mjs` (a fake `adb`), `client/test/game_cpu_random_test.dart`, and the storyteller sweep in `client/test/storyteller_screen_test.dart`; all wired in `tools/verify.sh`.
+
+**Not built, said plainly.** (1) The release duplicate-class step was written without running Gradle on the machine that wrote it; it is exercised by CI. (2) A forced smoke failure and an uninstall retry on a real emulator have not been run; the install logic is proved against a fake `adb`. (3) Splitting the serial verify step into parallel jobs (ISS-033), the client-against-real-server test (ISS-031) and path-filtered docs-only runs (ISS-034) are not part of this change.
 
 ## §8 UI architecture
 

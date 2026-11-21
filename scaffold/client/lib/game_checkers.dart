@@ -247,10 +247,14 @@ class GameCheckers extends StatefulWidget {
     this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
     this.network,
+    this.random,
   });
 
   final String childName;
   final String parentName;
+  /// The source of the simulated opponent's choices. Null in the app (a fresh Random); a test passes a seeded or
+  /// scripted one so a game is reproducible.
+  final Random? random;
   /// How long the simulated opponent "thinks" before replying. Exposed so
   /// tests can keep it short rather than because a real product setting
   /// belongs here — there is no settings affordance on this screen.
@@ -269,6 +273,7 @@ class GameCheckers extends StatefulWidget {
 }
 
 class _GameCheckersState extends State<GameCheckers> {
+  late final Random _rand = widget.random ?? Random();
   CheckersState _state = newCheckers();
   final List<CheckersState> _history = [];
   CkCell? _selected;
@@ -434,7 +439,7 @@ class _GameCheckersState extends State<GameCheckers> {
       if (!mounted) return;
       final moves = checkersMoves(_state, CkSide.parent);
       if (moves.isEmpty) return; // outcome already resolved by the engine
-      final pick = moves[Random().nextInt(moves.length)];
+      final pick = moves[_rand.nextInt(moves.length)];
       _applyBotMove(pick);
     });
   }

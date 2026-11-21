@@ -77,6 +77,16 @@ await addDigest(CHILD, 'b', 1 * day, newer);
 await addDigest(CHILD, 'c', 3 * day, gone);
 await addDigest(OTHER_CHILD, 'd', 1 * day, older);
 
+// Structured readers over the response. Never a substring search over serialised JSON: the body carries generated
+// UUIDs, and a UUID that happens to contain 'a-0' or 'caption' (about 3% of runs for the former) failed the absence
+// checks for a reason that had nothing to do with the route (ISS-028).
+const keysOf = (v, out = new Set()) => {
+  if (Array.isArray(v)) v.forEach((x) => keysOf(x, out));
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); keysOf(x, out); }
+  return out;
+};
+const artifactIdsOf = (body) => (body?.digests ?? []).flatMap((d) => (d.items ?? []).map((i) => i.artifactId));
+
 const SECRET = Buffer.from('e'.repeat(32), 'utf8');
 const api = new Api(SECRET, dbPort(pool), () => t0);
 registerRoutes(api, pool);
@@ -95,18 +105,22 @@ const get = (childId, t) => api.handle('GET', `/v1/children/${childId}/expiry-di
   check('A guardian', 'the older digest follows', r.body.digests[1].items.length, 1);
   check('A guardian', 'item ids and kinds round-trip',
     r.body.digests[0].items.map((i) => `${i.artifactId}:${i.kind}`).join(','), 'a-1:call_clip,a-2:screen_frame');
-  const wire = JSON.stringify(r.body);
-  check('B shape', 'no caption key on the wire', wire.includes('caption'), false);
-  check('B shape', 'no capturedAt on the wire', wire.includes('capturedAt'), false);
+  const keys = keysOf(r.body);
+  check('B shape', 'no caption key on the wire', keys.has('caption'), false);
+  check('B shape', 'no capturedAt on the wire', keys.has('capturedAt'), false);
   check('B shape', 'item keys are exactly artifactId, kind, expiresAt',
     Object.keys(r.body.digests[0].items[0]).sort().join(','), 'artifactId,expiresAt,kind');
-  check('B shape', 'the expired set is absent', wire.includes('a-0'), false);
+  check('B shape', 'the expired set is absent (its artifact id is in no digest)',
+    artifactIdsOf(r.body).includes('a-0'), false);
+  check('B shape', 'the artifact ids returned are exactly those of the two live digests',
+    artifactIdsOf(r.body).join(','), 'a-1,a-2,a-1');
 }
 {
   const r = await get(CHILD, childTok);
   check('D child', 'a child session is refused', r.status, 403);
   check('D child', 'with the named reason', r.body.error, 'not_a_child_surface');
-  check('D child', 'and nothing of the digest leaks into the refusal', JSON.stringify(r.body).includes('a-1'), false);
+  check('D child', 'and nothing of the digest leaks into the refusal',
+    r.body.digests === undefined && artifactIdsOf(r.body).length === 0, true);
 }
 {
   const r = await get(CHILD, strangerTok);
