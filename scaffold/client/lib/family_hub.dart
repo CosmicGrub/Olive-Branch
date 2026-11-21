@@ -260,7 +260,12 @@ class FamilyHub extends ChangeNotifier {
 
   /// Starts the service and the advertisement if this phone has a reason to. Safe to call again.
   Future<RoadStart> startRoad() => _serial(() async {
-    if (!await _wantRoad()) return RoadStart.notNeeded;
+    if (!await _wantRoad()) {
+      // The reason is gone (the add window closed or timed out and nobody else is in the family): the road comes down
+      // with it, so a phone with nothing to share is not listening.
+      if (_server != null) await _stopRoadNow();
+      return RoadStart.notNeeded;
+    }
     final FamilyRoadServer srv = _server ??= FamilyRoadServer(
       backend: _serve,
       bindAddresses: bindAddresses,
@@ -305,7 +310,9 @@ class FamilyHub extends ChangeNotifier {
     }
   }
 
-  Future<void> stopRoad() => _serial(() async {
+  Future<void> stopRoad() => _serial(_stopRoadNow);
+
+  Future<void> _stopRoadNow() async {
     _readvertise?.cancel();
     _readvertise = null;
     await _foundSub?.cancel();
@@ -321,7 +328,7 @@ class FamilyHub extends ChangeNotifier {
     _server = null;
     await s?.stop();
     notifyListeners();
-  });
+  }
 
   /// The port the road listens on (for tests that talk to it directly).
   int? get port => _server?.port;
