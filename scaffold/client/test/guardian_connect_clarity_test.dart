@@ -265,6 +265,14 @@ void main() {
       expect(seen, isEmpty);
     });
 
+    testWidgets('the grown-up scanner says plainly it is for a family account code, and the child one says nothing', (t) async {
+      await pumpScanner(t, counting(<http.Request>[]));
+      expect(find.byKey(const Key('pairingScannerCaption')), findsOneWidget);
+      expect(find.textContaining('family account'), findsWidgets);
+      await pumpScanner(t, counting(<http.Request>[]), closing: true);
+      expect(find.byKey(const Key('pairingScannerCaption')), findsNothing);
+    });
+
     testWidgets('an unrecognised QR is not submitted either', (t) async {
       final List<http.Request> seen = <http.Request>[];
       await pumpScanner(t, counting(seen));

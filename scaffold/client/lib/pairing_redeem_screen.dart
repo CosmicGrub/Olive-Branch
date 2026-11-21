@@ -265,6 +265,13 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
           errorBuilder: (_, _) => CalmTryAgainCard(onOk: () => setState(() { _scanning = false; _scanHandledOnce = false; })),
         ),
       )),
+      const SizedBox(height: 8),
+      // Plain words on the grown-up's screen only: this scanner is for a code from a family account, not for a tablet.
+      if (!widget.closingStep)
+        Text(
+          'This scans a code from your family account on another device. To pair a tablet on this wifi, open "Her tablet" in More.',
+          key: const Key('pairingScannerCaption'), textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 12),
       TextButton(
         key: const Key('pairingCancelScanButton'),

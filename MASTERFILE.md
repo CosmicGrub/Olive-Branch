@@ -5434,7 +5434,7 @@ not an account code. Open "Her tablet" in More to pair one." and the child's ste
 doesn't match anything" without a request. A failure after a submit is split: a lost connection (refused, dropped, timed out)
 reads "Couldn't reach the server. Check your connection and try again." (the child build's picture-only offline state), while a
 server answer that is not an Olive answer reads "Couldn't complete that. Check the code and try again." (the child build's
-calm card), so a wrong server is no longer reported as a dead network. On a grown-up's phone the screen's title is "Join your family
+calm card), so a wrong server is no longer reported as a dead network. The grown-up's scanner also says, under the camera, in plain words: "This scans a code from your family account on another device. To pair a tablet on this wifi, open \"Her tablet\" in More." (the child's step says nothing). On a grown-up's phone the screen's title is "Join your family
 account"; the child's build keeps "Connect this device" (8.5.6).
 
 ### 8.5.10 Her locked age, and "My people"
