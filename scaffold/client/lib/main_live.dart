@@ -53,6 +53,7 @@
 // account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'dev_first_run_preview.dart';
 import 'font_licences.dart';
 import 'keypad_prefs.dart';
 import 'access_shell.dart';
@@ -377,6 +378,13 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   // try/catch inside (a missing google-services.json must never crash the build before its first
   // frame). See live_common.dart.
   await initFirebaseForLive();
+
+  // DEVELOPMENT BUILDS ONLY (dev_first_run_preview.dart): show the grown-up's first run over an in-memory store.
+  // A constant false in every store or release build, so this branch and the screen are removed from them.
+  if (kDevGuardianFirstRunPreview) {
+    runApp(const DevGuardianFirstRunPreviewApp());
+    return;
+  }
 
   // The dev defines decide first and read NOTHING from the device: `DeviceIdentityStore().load()`
   // and the role are never touched when OLIVE_CHILD_ID / OLIVE_GUARDIAN_ID is set, matching the

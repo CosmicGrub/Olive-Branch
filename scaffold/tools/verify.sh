@@ -645,6 +645,18 @@ else
 fi
 
 echo ""
+echo "── Dev-only first-run preview define ──────────────────────────"
+# Not counted into TOTAL_PASS. The dev-only first-run preview (see tools/check-dev-first-run.mjs) opens the grown-up's first run
+# over an in-memory store on an already set-up phone. Only tools/device-sync.sh may pass it, and only behind its
+# OLIVE_DEV_FIRST_RUN_PREVIEW=1 opt-in; this fails if any other file does (a store build must never carry it).
+if node tools/test/dev_first_run_guard.test.mjs >/tmp/fr.out 2>&1 && node tools/check-dev-first-run.mjs >>/tmp/fr.out 2>&1; then
+  echo "  dev first-run preview      $(grep -c 'PASS' /tmp/fr.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/fr.out
+  echo "  DEV FIRST-RUN GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually
