@@ -32,7 +32,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          createGuardianInvite, getGuardianInvite,
          acceptGuardianInvite, revokeGuardianInvite, bootstrapGuardianInvite,
          takeAndGo, themeFor, setChildTheme,
-         recordCallStart, recordCallEnd, callSessionFor, recordCallRang, markCallAnswered,
+         recordCallStart, recordCallEnd, callSessionFor, recordCallRang, markCallAnswered, pendingCallsFor,
          cleanDisplayName,
          appendHandoverNote, handoverNotesFor,
          expensesFor, proposeExpense, resolveExpense,
@@ -71,6 +71,8 @@ import { CHANNELS } from '../packages/devices/src/devices.mjs';
 import { createSession, mintToken } from '../packages/session-runtime/src/rooms.mjs';
 import { resolveCallConfig } from './call_config.mjs';
 import { buildCallGrant, callUnavailable } from './call_grant.mjs';
+import { createSignalHub } from './call_signal.mjs';
+import { can } from '../packages/family-graph/src/authorize.mjs';
 import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, SIGNED_URL_TTL_SECONDS } from '../packages/storage/src/storage.mjs';
 import { AVAILABILITY_NOTE_BANNED } from '../packages/guardian/src/guardian.mjs';
@@ -496,6 +498,16 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     catch (e) { console.error(`security_event(${kind}) not recorded:`, e?.message ?? e); }
   };
   const principalKey = (p) => (p.userId ? `u:${p.userId}` : `c:${p.childId}`);
+  // The 'lan-p2p' call provider's signalling mailbox (server/call_signal.mjs): in memory, bounded, never media.
+  const signalHub = opts.signalHub ?? createSignalHub();
+  /** True when the child's own quiet hours (the recipient gate, 6.4) say a call must not reach her right now. */
+  const childInQuietHours = async (childId) => {
+    try {
+      const ctx = await childCtxFor(pool, childId);
+      const g = ctx ? gate(ctx, DateTime.utc(), 'normal') : null;
+      return !!(g && !g.allow);
+    } catch (e) { console.error('[call] quiet-hours check failed:', e?.message ?? e); return false; }
+  };
   api.register({
     method: 'GET', path: '/v1/me', action: null,
     // Holds no outer pooled connection: this handler reaches Postgres only through
@@ -1596,9 +1608,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // whole shape is "a guardian STARTS a call, rings the child"; a child
       // hitting this route herself doesn't correspond to anything this app
       // does, so that business rule is still this handler's own to enforce.
-      if (c.principal.roleName === 'child') {
-        return { status: 403, body: { error: 'child_cannot_start_call' } };
-      }
+      if (c.principal.roleName === 'child') return startCallAsChild(c);
       if (!c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
 
       // Jitsi: refuse BEFORE ringing anyone if the provider cannot mint.
@@ -1691,7 +1701,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           // The real, full session.authorizedUserIds -- the join route below
           // re-mints the child's (or a second guardian's) token from this list.
           participantIds: session.authorizedUserIds, roomName: session.roomName,
-          ladderStep: realLadderStep, recorded: minted.token.recorded, rang: false,
+          // 'lan-p2p' never records anything (the media does not touch the server), so it is never flagged recorded.
+          ladderStep: realLadderStep, recorded: callCfg.provider === 'lan-p2p' ? false : minted.token.recorded, rang: false,
         });
       } catch (e) {
         console.error(`[call_log] failed to record call start for session ${session.id}:`, e);
@@ -1710,12 +1721,22 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       } catch (e) {
         console.error(`[call] ring failed for session ${session.id}:`, e?.message ?? e);
       }
-      const rang = pushResults.some((r) => r.ok);
+      // 'lan-p2p' has no push service in the dev stack: the tablet rings from its foreground poll of
+      // GET .../calls/pending. So "did it ring" is: not in her quiet hours, and her tablet has asked this server
+      // in the last few seconds (or a real push went out). The word is for the grown-up only.
+      let ringState = ringStateFrom(pushResults);
+      let rang = pushResults.some((r) => r.ok);
+      if (callCfg.provider === 'lan-p2p') {
+        if (await childInQuietHours(c.childId)) { ringState = 'quiet_hours'; rang = false; }
+        else if (rang || signalHub.childRecentlySeen(c.childId)) { ringState = 'rang'; rang = true; }
+        else { ringState = 'tablet_unreachable'; rang = false; }
+      }
       try { await recordCallRang(pool, c.childId, session.id, rang); }
       catch (e) { console.error(`[call_log] failed to record rang for session ${session.id}:`, e); }
 
       const grant = await buildCallGrant(callCfg, minted,
-        { displayName: guardianName, isChild: false, observerOnly: realObserverOnly });
+        { displayName: guardianName, isChild: false, observerOnly: realObserverOnly,
+          role: 'caller', sessionId: session.id });
 
       return {
         status: 201,
@@ -1724,8 +1745,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           rang,
           // WHY it did or did not ring, from notify.ts's per-device result codes
           // (the safe field; `message` is never returned). One of: rang,
-          // quiet_hours, no_devices, no_push_capability, send_failed.
-          ringState: ringStateFrom(pushResults),
+          // quiet_hours, no_devices, no_push_capability, send_failed (and, for lan-p2p, tablet_unreachable).
+          ringState,
           // Lets CallScreen's own hang-up path call the new end-call route
           // below on the exact session this response minted, without the
           // client needing to invent or track its own identifier.
@@ -1746,7 +1767,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
   api.register({
     method: 'GET', path: '/v1/children/:childId/calls/availability', action: 'call',
     skipOuterSession: true,
-    handler: async () => {
+    handler: async (c) => {
       const cfg = resolveCallConfig(opts.callEnv ?? process.env);
       const available = cfg.problems.length === 0 && cfg.unavailable.length === 0;
       return { status: 200, body: {
@@ -1755,7 +1776,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         // A private/LAN or single-label host only works on the same network as the
         // server; the app says so instead of letting a remote call just fail.
         sameNetworkOnly: available && cfg.provider === 'jitsi'
-          ? isLanOnlyHost(cfg.jitsi.serverURL) : false,
+          ? isLanOnlyHost(cfg.jitsi.serverURL)
+          : available && cfg.provider === 'lan-p2p'
+            // with no STUN or TURN configured the two devices can only find each other on one network
+            ? cfg.lanP2p.ice.stun.length === 0 && cfg.lanP2p.ice.turn.length === 0 : false,
+        // lan-p2p, asked by a grown-up: has her tablet asked this server in the last few seconds (a boolean only).
+        // null when not asked by a grown-up or not the lan-p2p provider.
+        tabletReachable: available && cfg.provider === 'lan-p2p' && c.principal?.roleName !== 'child'
+          ? signalHub.childRecentlySeen(c.childId) : null,
       } };
     },
   });
@@ -1789,13 +1817,20 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     // its own pool-scoped accessors / short-lived sessions (see api.ts P-01 note).
     skipOuterSession: true,
     handler: async (c) => {
-      const endedBy = c.principal.roleName === 'child' ? 'callee' : 'caller';
+      // Who is hanging up is decided by who STARTED the call, not by role: the child can start a call too.
+      const live = await callSessionFor(pool, c.childId, c.params.sessionId);
+      const me = c.principal.roleName === 'child' ? c.childId : c.principal.userId;
+      if (live && !live.authorizedUserIds.includes(me)) {
+        return { status: 403, body: { error: 'not_a_participant' } };
+      }
+      const endedBy = live && live.startedBy === me ? 'caller' : (live ? 'callee' : 'caller');
       const { ended, reason } = await recordCallEnd(pool, c.childId, c.params.sessionId, endedBy);
+      signalHub.close(c.params.sessionId);
       // A call that ended UNANSWERED may still be ringing on the child's device(s):
       // tell them to stop. Content-free and silent (data-only), and sent as
       // 'emergency' priority so the quiet-hours gate cannot strand a ring that
       // started a minute before bedtime. Best-effort: a failed push never fails the end.
-      if (ended && reason !== 'answered') {
+      if (ended && reason !== 'answered' && !(live?.startedByChild)) {
         try {
           await notifyDevices(pool, { childId: c.childId }, {
             kind: 'call_cancelled', ref: c.params.sessionId, priority: 'emergency',
@@ -1874,18 +1909,144 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const joinName = await inSession(c, async (q) => isChild
         ? (await q(`SELECT display_name FROM child WHERE id = $1`, [c.childId]))[0]?.display_name
         : (await q(`SELECT display_name FROM app_user WHERE id = $1`, [userId]))[0]?.display_name);
+      const isStarter = session.startedBy === userId;
       const grant = await buildCallGrant(callCfg, minted,
         { displayName: cleanDisplayName(joinName) ?? (isChild ? 'Child' : 'Grown-up'),
-          isChild, observerOnly: joinObserverOnly });
+          isChild, observerOnly: joinObserverOnly,
+          role: isStarter ? 'caller' : 'callee', sessionId: session.id });
 
-      // The child minting a join token IS the answer: the one moment the server
-      // genuinely sees it. Best-effort stamp for the call log.
-      if (isChild) {
+      // The CALLEE minting a join token IS the answer: the one moment the server genuinely sees it (the child
+      // for a grown-up's call, the grown-up for a call the child started). Best-effort stamp for the call log.
+      if (!isStarter) {
         try { await markCallAnswered(pool, c.childId, session.id); }
         catch (e) { console.error(`[call_log] failed to stamp answer for session ${session.id}:`, e); }
       }
 
       return { status: 200, body: grant };
+    },
+  });
+
+  // ===========================================================================
+  // CALLS, the pieces the 'lan-p2p' provider and the child-starts-a-call path need (2026-11-21).
+  //  - startCallAsChild: the CHILD calls an approved grown-up of hers.
+  //  - GET .../calls/pending: the foreground ring. A device with no push service asks "is anyone calling me?"
+  //    every couple of seconds; the answer is only ever a call addressed to THIS side of THIS child's family.
+  //  - POST/GET .../calls/:sessionId/signal: the handshake mailbox (offer, answer, ICE, bye) for a direct call.
+  //    Only the two participants of the call may use it; nothing in it is media.
+  // ===========================================================================
+  async function startCallAsChild(c) {
+    const callCfg = resolveCallConfig(opts.callEnv ?? process.env);
+    if (callCfg.unavailable.length || callCfg.problems.length) return callUnavailable(callCfg);
+    if (await childInQuietHours(c.childId)) return { status: 409, body: { error: 'quiet_hours' } };
+    const now = new Date();
+    const parents = await parentGuardiansOfChild(pool, c.childId);
+    const wanted = typeof c.body?.toUserId === 'string' ? c.body.toUserId : null;
+    const candidates = wanted ? parents.filter((g) => g.userId === wanted) : parents;
+    // Only an APPROVED grown-up of hers: a parent-role guardian whose own edge still passes can('call').
+    let target = null, targetEdges = [];
+    for (const g of candidates) {
+      const edges = await edgesFor(pool, g.userId);
+      if (can('call', edges, c.childId, now, 'guardian').allow) { target = g; targetEdges = edges; break; }
+    }
+    if (!target) return { status: 403, body: { error: 'no_approved_grownup' } };
+    const edge = targetEdges.find((e) => e.childId === c.childId);
+    const ladderStep = edge?.ladderStep ?? 'open';
+    let session;
+    try {
+      session = createSession({
+        childId: c.childId, kind: 'call', createdBy: c.childId,
+        authorizedUserIds: [c.childId, target.userId], ladderStep,
+      });
+    } catch { return { status: 403, body: { error: 'no_approved_grownup' } }; }
+    const minted = mintToken(session,
+      { userId: c.childId, observerOnly: false, isChild: true, roleName: 'child' }, [], now);
+    if (!minted.ok) return { status: 403, body: { error: minted.reason } };
+    const childName = cleanDisplayName(
+      (await inSession(c, (q) => q(`SELECT display_name FROM child WHERE id = $1`, [c.childId])))[0]?.display_name,
+    ) ?? 'Child';
+    try {
+      await recordCallStart(pool, {
+        id: session.id, childId: c.childId, startedBy: null, startedByChild: true,
+        participantIds: session.authorizedUserIds, roomName: session.roomName, ladderStep,
+        recorded: callCfg.provider === 'lan-p2p' ? false : minted.token.recorded, rang: false,
+      });
+    } catch (e) {
+      console.error(`[call_log] failed to record child call start for session ${session.id}:`, e);
+      return { status: 503, body: { error: 'call_unavailable' } };
+    }
+    const grant = await buildCallGrant(callCfg, minted,
+      { displayName: childName, isChild: true, observerOnly: false, role: 'caller', sessionId: session.id });
+    // What the child is told is only the grant: no ring word, no reason, nothing about who may be reachable.
+    return { status: 201, body: { ...grant, sessionId: session.id } };
+  }
+
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/calls/pending', action: 'call',
+    skipOuterSession: true,
+    handler: async (c) => {
+      const isChild = c.principal.roleName === 'child';
+      if (!isChild && !c.principal.userId) return { status: 400, body: { error: 'no_user_identity' } };
+      if (isChild) signalHub.touchChild(c.childId); // her tablet is awake and reaching this server
+      // A child's quiet hours: nothing rings her (the call itself still waits for the grown-up, who was told).
+      if (isChild && await childInQuietHours(c.childId)) return { status: 200, body: { calls: [] } };
+      const rows = await pendingCallsFor(pool, c.childId,
+        isChild ? { kind: 'child' } : { kind: 'guardian', userId: c.principal.userId });
+      let from = null;
+      if (rows.length && !isChild) {
+        from = cleanDisplayName((await inSession(c, (q) => q(
+          `SELECT display_name FROM child WHERE id = $1`, [c.childId])))[0]?.display_name);
+      }
+      const parents = isChild && rows.length ? await parentGuardiansOfChild(pool, c.childId) : [];
+      return { status: 200, body: { calls: rows.map((r) => ({
+        sessionId: r.id, startedAt: r.startedAt,
+        from: isChild ? (cleanDisplayName(parents.find((g) => g.userId === r.startedBy)?.name) ?? null) : from,
+      })) } };
+    },
+  });
+
+  /** The caller of a signalling route, proven to be one of the two participants of THIS child's live call. */
+  async function signalParty(c) {
+    const callCfg = resolveCallConfig(opts.callEnv ?? process.env);
+    if (callCfg.provider !== 'lan-p2p') return { error: { status: 404, body: { error: 'not_found' } } };
+    const session = await callSessionFor(pool, c.childId, c.params.sessionId);
+    if (!session) return { error: { status: 404, body: { error: 'call_not_found' } } };
+    const isChild = c.principal.roleName === 'child';
+    const userId = isChild ? c.childId : c.principal.userId;
+    if (!userId) return { error: { status: 400, body: { error: 'no_user_identity' } } };
+    const edges = isChild ? [] : await edgesFor(pool, userId);
+    const minted = mintToken(
+      { id: session.id, childId: session.childId, roomName: session.roomName, kind: 'call',
+        createdBy: session.startedBy, authorizedUserIds: session.authorizedUserIds,
+        ladderStep: session.ladderStep, recorded: false, createdAt: new Date().toISOString(), endedAt: session.endedAt },
+      { userId, observerOnly: false, isChild, roleName: c.principal.roleName }, edges, new Date());
+    if (!minted.ok) return { error: { status: 403, body: { error: minted.reason } } };
+    return { session, role: session.startedBy === userId ? 'caller' : 'callee' };
+  }
+
+  const SIGNAL_ERRORS = { bad_kind: 400, bad_payload: 400, bad_role: 400, too_large: 413, closed: 409, too_many: 429, busy: 429 };
+  api.register({
+    method: 'POST', path: '/v1/children/:childId/calls/:sessionId/signal', action: 'call',
+    skipOuterSession: true,
+    handler: async (c) => {
+      const party = await signalParty(c);
+      if (party.error) return party.error;
+      const kind = c.body?.kind;
+      if (typeof kind !== 'string') return { status: 400, body: { error: 'bad_kind' } };
+      const r = signalHub.post(party.session.id, party.role, kind, c.body?.payload);
+      if (!r.ok) return { status: SIGNAL_ERRORS[r.error] ?? 400, body: { error: r.error === 'closed' ? 'call_closed' : r.error } };
+      return { status: 200, body: { seq: r.seq } };
+    },
+  });
+  api.register({
+    method: 'GET', path: '/v1/children/:childId/calls/:sessionId/signal', action: 'call',
+    skipOuterSession: true,
+    handler: async (c) => {
+      const party = await signalParty(c);
+      if (party.error) return party.error;
+      const after = Math.max(0, Math.floor(Number(c.query.get('after')) || 0));
+      const wait = Math.max(0, Math.min(8000, Math.floor(Number(c.query.get('wait')) || 0)));
+      const r = await signalHub.read(party.session.id, party.role, after, wait);
+      return { status: 200, body: r };
     },
   });
 

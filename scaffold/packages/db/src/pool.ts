@@ -1347,15 +1347,17 @@ export async function setChildTheme(
  * not a second, redundant one minted here.
  */
 export async function recordCallStart(pool: pg.Pool, input: {
-  id: string; childId: string; startedBy: string; participantIds: string[];
+  id: string; childId: string;
+  /** The grown-up who started it, or null when the CHILD started it (then startedByChild is true; 0058). */
+  startedBy: string | null; startedByChild?: boolean; participantIds: string[];
   roomName: string; ladderStep: string; recorded: boolean; rang: boolean;
 }): Promise<void> {
   await withSystemSession(pool, async (q) => {
     await q(
       `INSERT INTO call_log
-         (id, child_id, started_by, participant_ids, room_name, ladder_step, recorded, rang)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [input.id, input.childId, input.startedBy, input.participantIds,
+         (id, child_id, started_by, started_by_child, participant_ids, room_name, ladder_step, recorded, rang)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [input.id, input.childId, input.startedBy, input.startedByChild === true, input.participantIds,
        input.roomName, input.ladderStep, input.recorded, input.rang],
     );
   });
@@ -1430,6 +1432,36 @@ export async function markCallAnswered(
   });
 }
 
+/**
+ * The calls waiting to be answered by ONE side, for the foreground poll that rings a device with no push service
+ * (the LAN path; MASTERFILE 5.25.2, 7.20). A call is pending while it is live, unanswered and younger than the
+ * knock's own ninety seconds. For the child: calls a grown-up started. For a grown-up: calls the child started
+ * that name this grown-up as the one being called. Metadata only; the caller decides who may ask.
+ */
+export async function pendingCallsFor(
+  pool: pg.Pool, childId: string,
+  side: { kind: 'child' } | { kind: 'guardian'; userId: string },
+  maxAgeSeconds = 90,
+): Promise<{ id: string; startedAt: string; startedBy: string | null }[]> {
+  return withSystemSession(pool, async (q) => {
+    const rows = side.kind === 'child'
+      ? await q(
+        `SELECT id, started_at, started_by FROM call_log
+          WHERE child_id = $1 AND ended_at IS NULL AND answered_at IS NULL
+            AND started_by_child = false
+            AND started_at > now() - make_interval(secs => $2::int)
+          ORDER BY started_at DESC LIMIT 5`, [childId, maxAgeSeconds])
+      : await q(
+        `SELECT id, started_at, started_by FROM call_log
+          WHERE child_id = $1 AND ended_at IS NULL AND answered_at IS NULL
+            AND started_by_child = true AND $3::uuid = ANY(participant_ids)
+            AND started_at > now() - make_interval(secs => $2::int)
+          ORDER BY started_at DESC LIMIT 5`, [childId, maxAgeSeconds, side.userId]);
+    return rows.map((r: any) => ({
+      id: r.id, startedAt: new Date(r.started_at).toISOString(), startedBy: r.started_by ?? null }));
+  });
+}
+
 /** Free text that ends up on a lock screen or in a JWT: no control chars, collapsed, capped. */
 export function cleanDisplayName(raw: unknown, max = 40): string | null {
   if (typeof raw !== 'string') return null;
@@ -1486,13 +1518,15 @@ export async function endStaleCalls(
 export async function callSessionFor(
   pool: pg.Pool, childId: string, sessionId: string,
 ): Promise<{
-  id: string; childId: string; roomName: string; startedBy: string;
+  id: string; childId: string; roomName: string;
+  /** The grown-up who started it, or the child id when the child did (see startedByChild). */
+  startedBy: string; startedByChild: boolean;
   authorizedUserIds: string[]; ladderStep: string; recorded: boolean;
   endedAt: string | null;
 } | null> {
   return withSystemSession(pool, async (q) => {
     const rows = await q(
-      `SELECT id, child_id, room_name, started_by, participant_ids, ladder_step, recorded, ended_at,
+      `SELECT id, child_id, room_name, started_by, started_by_child, participant_ids, ladder_step, recorded, ended_at,
               (started_at < now() - make_interval(mins => $3::int)) AS too_old
          FROM call_log WHERE id = $1 AND child_id = $2`,
       [sessionId, childId, callMaxAgeMinutes()],
@@ -1503,7 +1537,8 @@ export async function callSessionFor(
     // client never ends its call), is no longer joinable.
     if (row.ended_at || row.too_old) return null;
     return {
-      id: row.id, childId: row.child_id, roomName: row.room_name, startedBy: row.started_by,
+      id: row.id, childId: row.child_id, roomName: row.room_name,
+      startedBy: row.started_by ?? row.child_id, startedByChild: row.started_by_child === true,
       authorizedUserIds: row.participant_ids, ladderStep: row.ladder_step,
       recorded: row.recorded, endedAt: row.ended_at,
     };

@@ -13,14 +13,18 @@
 // unavailable, honestly (calls are switched on on demand, the rest of the
 // stack must run without them).
 import { parseHexSecret, looksLikePlaceholder } from './secrets.mjs';
+import { resolveIceConfig, describeIceConfig } from './call_ice.mjs';
 
-export const CALL_PROVIDERS = ['jitsi', 'livekit'];
+// 'lan-p2p' (2026-11-21): a direct device-to-device WebRTC call, set up through this server's authenticated call
+// routes (server/call_signal.mjs). It needs no media server and no account: with no ICE servers configured it works
+// on the home Wi-Fi alone (host candidates); CALL_ICE_* (server/call_ice.mjs) adds STUN and TURN for other networks.
+export const CALL_PROVIDERS = ['jitsi', 'livekit', 'lan-p2p'];
 export const DEFAULT_CALL_PROVIDER = 'jitsi';
 const RELAXED = new Set(['development', 'test']);
 const APP_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const DOMAIN_RE = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
 
-/** Returns { provider, problems, jitsi|null, livekit|null, unavailable: string[] } */
+/** Returns { provider, problems, jitsi|null, livekit|null, lanP2p|null, unavailable: string[] } */
 export function resolveCallConfig(env = process.env) {
   const problems = [];
   const relaxed = RELAXED.has(env.NODE_ENV ?? '');
@@ -73,17 +77,24 @@ export function resolveCallConfig(env = process.env) {
   const lk = { url: env.LIVEKIT_URL, apiKey: env.LIVEKIT_API_KEY, apiSecret: env.LIVEKIT_API_SECRET };
   const livekit = lk.url && lk.apiKey && lk.apiSecret ? lk : null;
 
-  const unavailable = provider === 'jitsi'
+  // --- lan-p2p: always available once its (optional) ICE settings are well formed --------------------------
+  const ice = resolveIceConfig(env);
+  if (provider === 'lan-p2p') problems.push(...ice.problems);
+  const lanP2p = provider === 'lan-p2p' ? { ice } : null;
+
+  const unavailable = provider === 'lan-p2p' ? []
+    : provider === 'jitsi'
     ? (jitsi ? [] : jitsiMissing)
     : (livekit ? [] : ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'].filter((k) => !env[k]));
-  return { provider, problems, jitsi, livekit, unavailable };
+  return { provider, problems, jitsi, livekit, lanP2p, unavailable };
 }
 
 /** Safe to log: names and booleans only, never a value. */
 export function describeCallConfig(cfg) {
   return {
     provider: cfg.provider,
-    configured: cfg.provider === 'jitsi' ? !!cfg.jitsi : !!cfg.livekit,
+    configured: cfg.provider === 'jitsi' ? !!cfg.jitsi : cfg.provider === 'lan-p2p' ? !!cfg.lanP2p : !!cfg.livekit,
     missing: cfg.unavailable,
+    ...(cfg.lanP2p ? { ice: describeIceConfig(cfg.lanP2p.ice) } : {}),
   };
 }
