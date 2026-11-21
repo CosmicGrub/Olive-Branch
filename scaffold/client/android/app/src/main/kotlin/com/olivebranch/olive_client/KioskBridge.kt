@@ -36,6 +36,10 @@ object KioskBridge {
     // §16.2 #6 / §5.20 — see kiosk_channel.dart's beginCallHandoff doc comment
     // for why this exists. Android-only; no Windows/dart-contract check.
     const val M_BEGIN_CALL_HANDOFF = "beginCallHandoff"
+    // MASTERFILE section 7.25 -- a grown-up at the tablet installs an update. See kiosk_channel.dart's
+    // beginInstallHandoff doc comment. Android-only; no Windows/dart-contract check.
+    const val M_BEGIN_INSTALL_HANDOFF = "beginInstallHandoff"
+    const val M_END_INSTALL_HANDOFF   = "endInstallHandoff"
 
     // Event names. Each maps to a §5.20 state-machine transition.
     const val E_EXITED     = "lockTaskExited"     // -> onLockTaskExited()
@@ -101,6 +105,61 @@ object KioskBridge {
     /// receiver — the one signal that actually means the call Activity is
     /// gone for good, not just backgrounded behind a PiP window.
     fun clearCallHandoff(ctx: Context) = setExpectingCallHandoff(ctx, false)
+
+    // ------------------------------------------------------------------
+    // Install handoff (section 7.25). Android's package installer cannot come up over a pinned app (screen pinning
+    // allows one task on screen), so when a grown-up asks to install an update the pin is released ON PURPOSE and
+    // the mode it was in is remembered here, with the time. Two things bring the pin back: the Dart side calling
+    // M_END_INSTALL_HANDOFF when the installer reports the update did not go in, and MainActivity.onResume when the
+    // app comes forward again after having been stopped (the installer was cancelled or closed). A successful
+    // install replaces the app and ends this process, so nothing here runs; the new version pins itself at start as
+    // it always does. The record goes stale after fifteen minutes so it can never re-pin a device hours later.
+    // ------------------------------------------------------------------
+    private const val INSTALL_HANDOFF_MODE_KEY = "install_handoff_mode"
+    private const val INSTALL_HANDOFF_AT_KEY   = "install_handoff_at"
+    private const val INSTALL_HANDOFF_MAX_MS   = 15L * 60L * 1000L
+
+    /// The lock mode ("pinned" or "locked") that an outstanding install handoff released, or "" when there is none
+    /// (or the record is stale or the lock was never on).
+    fun pendingInstallHandoffMode(ctx: Context): String {
+        val p = ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+        val at = p.getLong(INSTALL_HANDOFF_AT_KEY, 0L)
+        if (at == 0L) return ""
+        if (System.currentTimeMillis() - at > INSTALL_HANDOFF_MAX_MS) {
+            clearInstallHandoff(ctx)
+            return ""
+        }
+        val mode = p.getString(INSTALL_HANDOFF_MODE_KEY, "") ?: ""
+        return if (mode == "pinned" || mode == "locked") mode else ""
+    }
+
+    fun clearInstallHandoff(ctx: Context) {
+        ctx.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE)
+            .edit().remove(INSTALL_HANDOFF_AT_KEY).remove(INSTALL_HANDOFF_MODE_KEY).apply()
+    }
+
+    /// Releases the lock for the install and remembers what it was. Returns the mode it was in.
+    private fun beginInstallHandoff(activity: Activity): String {
+        val mode = currentMode(activity)
+        activity.getSharedPreferences(HANDOFF_PREFS, Context.MODE_PRIVATE).edit()
+            .putLong(INSTALL_HANDOFF_AT_KEY, System.currentTimeMillis())
+            .putString(INSTALL_HANDOFF_MODE_KEY, mode)
+            .apply()
+        if (mode != "none") activity.stopLockTask()
+        return mode
+    }
+
+    /// Puts the lock back if an install handoff released it and nothing has put it back yet. Idempotent: with no
+    /// outstanding record it only calls onDone.
+    fun repinAfterInstallHandoff(activity: Activity, onDone: () -> Unit) {
+        val prior = pendingInstallHandoffMode(activity)
+        clearInstallHandoff(activity)
+        if (prior.isNotEmpty() && currentMode(activity) == "none") {
+            startLockTaskVerified(activity) { onDone() }
+        } else {
+            onDone()
+        }
+    }
 
     fun currentMode(ctx: Context): String =
         when ((ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
@@ -236,6 +295,18 @@ object KioskBridge {
                 // might still be in flight" — clearing here is always safe.
                 M_STOP  -> { activity.stopLockTask(); clearCallHandoff(activity); result.success(null) }
                 M_MODE  -> result.success(currentMode(activity))
+                // Section 7.25 -- a grown-up is installing an update. The mode the lock was in goes back to Dart so
+                // it can say so plainly; MainActivity is told the lock was released on purpose so the stop that
+                // follows is a plain backgrounding, not a lock-task exit (no defeat is counted, nobody is notified).
+                M_BEGIN_INSTALL_HANDOFF -> {
+                    val prior = beginInstallHandoff(activity)
+                    (activity as? MainActivity)?.noteLockReleasedByApp()
+                    result.success(prior)
+                }
+                M_END_INSTALL_HANDOFF -> repinAfterInstallHandoff(activity) {
+                    (activity as? MainActivity)?.noteLockMode()
+                    result.success(null)
+                }
                 // Reported honestly at setup (§5.20): a parent who believes the
                 // tablet is sealed makes worse decisions than one who knows it
                 // is not.

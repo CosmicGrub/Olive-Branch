@@ -37,6 +37,19 @@ class MainActivity : FlutterActivity() {
     private var eventSink: EventChannel.EventSink? = null
     private var lastKnownMode: String = "none"
 
+    // Section 7.25 -- set in onStop while an adult-requested install handoff is outstanding, so the next onResume
+    // knows the app was really left (the installer was shown) and can put the lock back. See KioskBridge.
+    private var installHandoffSawStop = false
+
+    /// A grown-up's install released the lock on purpose: the next onStop is a plain backgrounding, not a defeat.
+    fun noteLockReleasedByApp() {
+        lastKnownMode = "none"
+    }
+
+    fun noteLockMode() {
+        lastKnownMode = KioskBridge.currentMode(this)
+    }
+
     // §16.2 #6 — WrapperJitsiMeetActivity (a different Gradle module; see
     // KioskBridge.ACTION_CALL_LOCK_TASK_EXITED's own doc comment for why this
     // can't just be a direct method call) broadcasts this when ITS pin gets
@@ -107,6 +120,9 @@ class MainActivity : FlutterActivity() {
         // Gated on currentMode()=="none": a genuinely-pinned fresh start
         // (Android CAN recreate an Activity within an already-pinned task)
         // must not have this cleared out from under it.
+        // Likewise an install handoff record never survives into a new process: whatever the install did, this
+        // process starts afresh and the kiosk shell pins it itself.
+        KioskBridge.clearInstallHandoff(this)
         if (KioskBridge.currentMode(this) == "none" && KioskBridge.stillExpectingCallHandoff(this)) {
             android.util.Log.w("MainActivity",
                 "clearing an orphaned call-handoff flag at fresh process start")
@@ -169,10 +185,23 @@ class MainActivity : FlutterActivity() {
             KioskBridge.emitBackgrounded(eventSink)
         }
         lastKnownMode = current
+        if (KioskBridge.pendingInstallHandoffMode(this).isNotEmpty()) installHandoffSawStop = true
     }
 
     override fun onResume() {
         super.onResume()
+        // Section 7.25 -- back from the installer without having been replaced (cancelled, declined, closed): the
+        // lock the grown-up's install released goes back on.
+        if (installHandoffSawStop) {
+            installHandoffSawStop = false
+            if (KioskBridge.pendingInstallHandoffMode(this).isNotEmpty()) {
+                KioskBridge.repinAfterInstallHandoff(this) {
+                    lastKnownMode = KioskBridge.currentMode(this)
+                    KioskBridge.emitResumed(eventSink)
+                }
+                return
+            }
+        }
         // §16.2 #6, revised 2026-08-24 for real child PiP — see KioskBridge
         // .stillExpectingCallHandoff()'s own doc comment for exactly why
         // this peeks rather than consumes now. stillExpectingCallHandoff()

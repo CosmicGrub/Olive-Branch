@@ -46,6 +46,7 @@ import 'lock_controller.dart' as lock;
 import 'adult_gate.dart';
 import 'daily_time_gate.dart' show GrownUpProofScope;
 import 'local_pin.dart' show kLocalPinMaxDigits;
+import 'tablet_update_service.dart' show TabletUpdateService;
 import 'unlock_challenge.dart' show kPhoneProof;
 
 class KioskShell extends StatefulWidget {
@@ -148,6 +149,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   // delayed or (on a non-Android platform, once one exists) never arrives.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Section 7.25: coming forward again after Android's installer was shown means the app was not replaced.
+    if (state == AppLifecycleState.resumed) TabletUpdateService.current?.appResumed();
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       setState(() => _state = lock.onBackgrounded(_state, DateTime.now()).state);
     }

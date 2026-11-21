@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'app_lock_screen.dart';
 import 'screen_share_ui.dart';
+import 'tablet_update_screens.dart' show ShareUpdateScreen;
+import 'tablet_update_service.dart' show TabletUpdateService;
 import 'family_structure_logic.dart' show FamilyPrincipal;
 import 'family_structure_screens.dart';
 import 'family_structure_store.dart';
@@ -802,6 +804,11 @@ class GuardianMoreScreen extends StatelessWidget {
             ? _open(context, PairedDevicesListScreen(baseUrl: baseUrl!, guardianId: guardianId!,
                 childId: childId, httpClient: availabilityHttpClient))
             : _needsLive(context, 'Paired devices')),
+        // Section 7.25: only on a build that has the update machinery; draws nothing otherwise.
+        if (TabletUpdateService.current?.available ?? false)
+          SettingsRow(id: 'tabletupdate', icon: Icons.system_update_outlined, title: 'Share an update with $childName’s tablet',
+            subtitle: 'Hand a checked update to the tablet over the room’s Wi-Fi. No internet needed on the tablet',
+            onTap: () => _open(context, ShareUpdateScreen(tabletName: '$childName’s tablet'))),
         SettingsRow(id: 'addtablet', icon: Icons.qr_code_outlined, title: 'Add $childName’s tablet',
           subtitle: live ? 'Make a 6-digit code' : 'Needs a live session',
           onTap: () => live

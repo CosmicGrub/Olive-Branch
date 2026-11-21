@@ -34,6 +34,15 @@ class KioskChannel {
   // (§8.3 kiosk lock-task) just as much as it applies to shipping it.
   static const mBeginCallHandoff = 'beginCallHandoff';
 
+  // Android-only. A grown-up at the tablet is about to install an update: Android's installer cannot appear over a
+  // pinned app, so the pin is released for the moment (and ONLY on purpose, by a grown-up, never by a child). The
+  // native side remembers what the lock was and puts it back when the app comes forward again without having been
+  // replaced (the grown-up cancelled, or Android said no). On a successful install the app is replaced, the process
+  // ends, and the new version pins itself at start as it always does. Not a defeat: it is not counted and does not
+  // notify the other grown-up. MASTERFILE section 7.25.
+  static const mBeginInstallHandoff = 'beginInstallHandoff';
+  static const mEndInstallHandoff = 'endInstallHandoff';
+
   static const eExited     = 'lockTaskExited';
   static const eBackground = 'backgrounded';
   static const eResumed    = 'resumed';
@@ -55,6 +64,26 @@ class KioskChannel {
     } on MissingPluginException {
       // No native kiosk bridge (Windows without the bridge wired, `flutter
       // test`) — nothing was locked to begin with from this channel's view.
+    }
+  }
+
+  /// Releases the lock for an install a grown-up asked for and returns the mode it was in ('pinned', 'locked' or
+  /// 'none'; 'none' where there is no native bridge). Never throws.
+  Future<String> beginInstallHandoff() async {
+    try {
+      return await methodChannel.invokeMethod<String>(mBeginInstallHandoff) ?? 'none';
+    } on MissingPluginException {
+      return 'none';
+    }
+  }
+
+  /// Puts the lock back after an install that did not replace the app (declined, failed, or abandoned). A no-op
+  /// where there is nothing to put back.
+  Future<void> endInstallHandoff() async {
+    try {
+      await methodChannel.invokeMethod<void>(mEndInstallHandoff);
+    } on MissingPluginException {
+      // No native kiosk bridge: nothing was released.
     }
   }
 
