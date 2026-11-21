@@ -31,6 +31,7 @@
 //    characters; empty rows are dropped.
 import 'dart:convert';
 
+import 'allergy_field.dart';
 import 'family_structure_logic.dart' show FamilyPrincipal, canEditStructure;
 import 'local_services.dart';
 import 'local_store.dart';
@@ -78,6 +79,7 @@ String ecRefusalText(String reason) => switch (reason) {
       'too_many' => 'There are more rows than fit. Remove one to make room.',
       'too_long' => 'One of those is longer than fits here. Please shorten it.',
       'empty' => 'A name is needed for that row.',
+      'none_needs_name' => 'To say there are no known allergies, add your name above so the card shows who confirmed it.',
       'full' => "This device's box for the emergency card is full.",
       'not_saved' => 'That did not save. Please try again.',
       _ => 'That could not be saved.',
@@ -125,24 +127,34 @@ class LocalEmergencyCard {
   const LocalEmergencyCard({
     this.allergies = const <String>[], this.conditions = const <String>[],
     this.medicines = const <EcMedicine>[], this.doctor = const EcDoctor(),
-    this.contacts = const <EcContact>[],
+    this.contacts = const <EcContact>[], this.allergyNone,
   });
 
   /// Written by a guardian.
   final List<String> allergies;
+
+  /// "No known allergies", confirmed by a named guardian on a date (allergy_field.dart). Null = not confirmed.
+  /// With any [allergies] entry this is dropped on save: the three states never contradict each other.
+  final AllergyNone? allergyNone;
   final List<String> conditions;
   final List<EcMedicine> medicines;
   final EcDoctor doctor;
   final List<EcContact> contacts;
 
   bool get isEmpty =>
-      allergies.isEmpty && conditions.isEmpty && medicines.isEmpty && doctor.isEmpty && contacts.isEmpty;
+      allergies.isEmpty && conditions.isEmpty && medicines.isEmpty && doctor.isEmpty && contacts.isEmpty &&
+      allergyNone == null;
+
+  /// Unknown / confirmed none / entries (allergy_field.dart).
+  AllergyState get allergyKind => allergyState(allergies, allergyNone);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'allergies': allergies, 'conditions': conditions,
         'medicines': <Object?>[for (final EcMedicine m in medicines) m.toJson()],
         'doctor': doctor.toJson(),
         'contacts': <Object?>[for (final EcContact c in contacts) c.toJson()],
+        // Written only when a guardian confirmed "none", so a card without one is byte for byte what it always was.
+        if (allergyNone != null) 'allergyNone': allergyNone!.toJson(),
       };
 
   /// Tolerant: unreadable rows are dropped, counts are capped. Never throws.
@@ -153,8 +165,11 @@ class LocalEmergencyCard {
             for (final Object? x in v.take(max))
               if (_t(x).isNotEmpty) _t(x),
         ];
+    final List<String> allergyLines = lines(j['allergies'], ecMaxAllergies);
     return LocalEmergencyCard(
-      allergies: lines(j['allergies'], ecMaxAllergies),
+      allergies: allergyLines,
+      // A confirmation of "none" next to entries is contradictory; the entries win.
+      allergyNone: allergyLines.isEmpty ? AllergyNone.tryFromJson(j['allergyNone']) : null,
       conditions: lines(j['conditions'], ecMaxConditions),
       medicines: <EcMedicine>[
         if (j['medicines'] is List)
@@ -176,7 +191,8 @@ class LocalEmergencyCard {
   /// the words the guardian wrote. No word is added except the section names.
   String spokenText() {
     final StringBuffer b = StringBuffer();
-    b.write(allergies.isEmpty ? 'No allergies written down. ' : 'Allergies: ${allergies.join('. ')}. ');
+    // Three states (allergy_field.dart): an empty list is "not recorded", never "none".
+    b.write(allergySpoken(allergies, allergyNone));
     if (conditions.isNotEmpty) b.write('Conditions: ${conditions.join('. ')}. ');
     if (medicines.isNotEmpty) {
       b.write('Medicines: ');
@@ -235,8 +251,15 @@ LocalEmergencyCard checkedCard(LocalEmergencyCard c) {
   if (d.name.length > ecMaxNameChars || d.practice.length > ecMaxNameChars || d.phone.length > ecMaxPhoneChars) {
     throw const EcRefused('too_long');
   }
+  final List<String> allergyLines = lines(c.allergies, ecMaxAllergies);
+  // "None" is a statement somebody made: it needs a name and a date, and it never sits beside entries.
+  final AllergyNone? none = c.allergyNone;
+  if (none != null && allergyLines.isEmpty && !none.isComplete) throw const EcRefused('none_needs_name');
+  if (none != null && (none.by.length > ecMaxNameChars)) throw const EcRefused('too_long');
   return LocalEmergencyCard(
-      allergies: lines(c.allergies, ecMaxAllergies), conditions: lines(c.conditions, ecMaxConditions),
+      allergies: allergyLines,
+      allergyNone: none != null && allergyLines.isEmpty ? AllergyNone(by: _t(none.by), on: _t(none.on)) : null,
+      conditions: lines(c.conditions, ecMaxConditions),
       medicines: meds, doctor: d, contacts: cons);
 }
 

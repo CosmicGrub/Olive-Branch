@@ -26,6 +26,7 @@
 //    directory-backed one with [LocalServices.boot].
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:path_provider/path_provider.dart';
 
 import 'device_identity.dart';
@@ -361,9 +362,9 @@ class LocalServices {
     required this.childId,
     this.guardianId = 'local-guardian',
     this.isLive = false,
-    this.demoSeeds = true,
+    bool demoSeeds = false,
     this.keyring,
-  }) {
+  }) : _demoSeeds = demoSeeds {
     scopeChild(childId); // fails fast on an illegal live scope
   }
 
@@ -374,7 +375,7 @@ class LocalServices {
     String childId = 'demo-child',
     String guardianId = 'local-guardian',
     bool isLive = false,
-    bool demoSeeds = true,
+    bool demoSeeds = false,
     MemoryStoreBackend? backend,
   }) =>
       LocalServices(
@@ -398,9 +399,13 @@ class LocalServices {
   final bool isLive;
 
   /// Whether screens may show their invented example content (the preview
-  /// build's sample list items and collections) when nothing is stored yet.
-  /// Live builds set this false: a real family never sees invented content.
-  final bool demoSeeds;
+  /// build's sample list items and collections, demo_fixtures.dart's medicines
+  /// and card) when nothing is stored yet. OFF by default: a real family never
+  /// sees invented content, and only the offline preview and tests ask for it.
+  /// Even when asked for, it is false outside a debug build (the same guard the
+  /// demo content itself sits behind), so no build a family installs can show it.
+  bool get demoSeeds => _demoSeeds && kDebugMode;
+  final bool _demoSeeds;
 
   /// Held only to drop the encryption key on a wipe.
   final StoreCipherKeyring? keyring;
@@ -431,7 +436,6 @@ class LocalServices {
       childId: childId,
       guardianId: guardianId,
       isLive: isLive,
-      demoSeeds: !isLive,
       keyring: keyring,
     );
     install(s);

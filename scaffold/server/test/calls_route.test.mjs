@@ -243,8 +243,9 @@ const join = (childId, sessionId, tok) => api.handle(
   const supRow = await admin.query(`SELECT * FROM call_log WHERE id = $1`, [supervised.body.sessionId]);
   check('F call_log', 'the REAL supervised ladder step reaches call_log — not the old hardcoded open',
     supRow.rows[0]?.ladder_step, 'supervised');
-  check('F call_log', 'recorded is true — rooms.ts\'s own tested rule, finally reachable',
-    supRow.rows[0]?.recorded, true);
+  // ISS-106: no recording pipeline and no notice surface exist, so even a supervised call is not recorded.
+  check('F call_log', 'recorded is false for a supervised call (no recording pipeline or notice surface exists yet)',
+    supRow.rows[0]?.recorded, false);
 }
 
 // ===========================================================================

@@ -21,6 +21,8 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'call_modes.dart' show CallMode;
+import 'call_roster.dart';
+export 'call_roster.dart';
 import 'degradation_banner.dart' show Condition, Quality;
 
 enum CallProviderKind { jitsi, livekit }
@@ -125,7 +127,7 @@ enum CallPhase { connecting, connected, reconnecting, ended }
 class CallViewState {
   const CallViewState({
     this.phase = CallPhase.connecting,
-    this.remoteName,
+    this.participants = const <CallParticipant>[],
     this.remoteMode = CallMode.video,
     this.micEnabled = true,
     this.cameraEnabled = true,
@@ -137,7 +139,18 @@ class CallViewState {
   });
 
   final CallPhase phase;
-  final String? remoteName;
+  /// Everyone else on the call, in the order they arrived (call_roster.dart). A second person joining adds to this list;
+  /// it never overwrites the first. Observers are in it, marked [CallParticipant.observer], so the count includes them.
+  final List<CallParticipant> participants;
+  /// The first person who is taking part (not just watching), or the first observer when only observers are here; null
+  /// when nobody else is. Kept for the one-line "who am I talking to" uses; the roster is [participants].
+  String? get remoteName {
+    if (participants.isEmpty) return null;
+    for (final CallParticipant p in participants) {
+      if (!p.observer) return p.label;
+    }
+    return participants.first.label;
+  }
   /// What the OTHER side chose, as far as this device knows. Assumed video
   /// until told otherwise (never blame an unreported state).
   final CallMode remoteMode;
@@ -160,8 +173,7 @@ class CallViewState {
 
   CallViewState copyWith({
     CallPhase? phase,
-    String? remoteName,
-    bool clearRemoteName = false,
+    List<CallParticipant>? participants,
     CallMode? remoteMode,
     bool? micEnabled,
     bool? cameraEnabled,
@@ -171,7 +183,7 @@ class CallViewState {
     bool? hasLocalVideo,
   }) => CallViewState(
         phase: phase ?? this.phase,
-        remoteName: clearRemoteName ? null : (remoteName ?? this.remoteName),
+        participants: participants ?? this.participants,
         remoteMode: remoteMode ?? this.remoteMode,
         micEnabled: micEnabled ?? this.micEnabled,
         cameraEnabled: cameraEnabled ?? this.cameraEnabled,

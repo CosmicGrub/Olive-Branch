@@ -145,7 +145,12 @@ void main() {
     expect(p.state.phase, CallPhase.connected);
     platform.listener!.participantJoined!(null, 'Dad', null, 'p1');
     expect(p.state.remoteName, 'Dad');
+    // A second person joining ADDS to the roster; it does not replace the first (ISS-099).
+    platform.listener!.participantJoined!(null, 'Mum', null, 'p2');
+    expect(p.state.participants.map((x) => x.label).toList(), <String>['Dad', 'Mum']);
     platform.listener!.participantLeft!('p1');
+    expect(p.state.participants.map((x) => x.label).toList(), <String>['Mum']);
+    platform.listener!.participantLeft!('p2');
     expect(p.state.remoteName, isNull);
     platform.listener!.readyToClose!();
     expect(p.state.phase, CallPhase.ended);

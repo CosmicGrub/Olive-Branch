@@ -166,10 +166,12 @@ class JitsiCallProvider implements CallProvider {
         if (error != null) debugPrint('[olive.call] jitsi conference terminated: $error');
       },
       readyToClose: () => _set(_state.copyWith(phase: CallPhase.ended)),
+      // Every join and leave changes the roster; nobody replaces anybody, and an unnamed person is still counted.
       participantJoined: (email, name, role, id) {
-        if (name != null && name.isNotEmpty) _set(_state.copyWith(remoteName: name));
+        final String key = (id != null && id.isNotEmpty) ? id : (name ?? 'unknown');
+        _set(_state.copyWith(participants: rosterWith(_state.participants, CallParticipant(id: key, name: name ?? ''))));
       },
-      participantLeft: (_) => _set(_state.copyWith(clearRemoteName: true)),
+      participantLeft: (id) => _set(_state.copyWith(participants: rosterWithout(_state.participants, id ?? ''))),
       audioMutedChanged: (muted) => _set(_state.copyWith(micEnabled: !muted)),
       videoMutedChanged: (muted) => _set(_state.copyWith(cameraEnabled: !muted)),
     );

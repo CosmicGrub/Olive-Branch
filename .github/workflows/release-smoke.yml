@@ -6,6 +6,9 @@ name: release-smoke
 # (tools/check-release-shrink.mjs) runs inside `verify`; this is the real-launch half. How to read the artifacts:
 # docs/planning/OPERATIONS-RUNBOOK.md, "Release launch smoke test".
 #
+# The build step is followed by a demo-literal scan of the built release (tools/check-release-literals.mjs, ISS-092): a hit fails
+# the step and so this workflow's run, whatever the emulator says afterwards.
+#
 # STATUS: written without being able to run an emulator locally. Treat the first runs as calibration.
 on:
   workflow_dispatch:
@@ -85,6 +88,12 @@ jobs:
             --android-project-arg=olive.allowDebugSignedRelease=true
           mkdir -p "$RUNNER_TEMP/smoke"
           cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/smoke/${{ matrix.variant }}.apk"
+
+      # ISS-092: the invented demo medicines, demo emergency card and demo PIN must not be in a release build. This opens the
+      # built apk (libapp.so included) and fails the step if any literal in scaffold/tools/demo-literals.json is in it, before
+      # an emulator is even started. Unit-tested without an apk in the required verify job (tools/test/release_literals.test.mjs).
+      - name: release contains no demo literals (${{ matrix.variant }})
+        run: node scaffold/tools/check-release-literals.mjs "$RUNNER_TEMP/smoke/${{ matrix.variant }}.apk"
 
       - name: Enable KVM
         run: |

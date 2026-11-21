@@ -23,6 +23,10 @@ import android.content.Intent
 // app, and no button on the phone offers a word of refusal. Its words come from strings.xml and say nothing
 // about who or what. The launcher badge is switched off for both channels, because a badge is a count.
 //
+// LOCK SCREEN. Both channels and the ring are VISIBILITY_PRIVATE: on a locked phone Android shows only the app name and its
+// own "contents hidden" line, whatever the text is (ISS-107). The words are content-free anyway; this is the second lock.
+// The knock itself opens over the lock screen through the full-screen intent, which private visibility does not affect.
+//
 // WHAT IT NEVER DOES: read anything but the push's `kind` and `ref` (the receiver), carry a name or a body,
 // or post anything while the app is open on screen (the open app knocks itself; a banner over a pinned
 // kiosk would only be noise, and lock-task mode hides it anyway).
@@ -94,7 +98,7 @@ object OliveNotifications {
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = context.getString(R.string.olive_channel_calls_desc)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            lockscreenVisibility = Notification.VISIBILITY_PRIVATE
             setShowBadge(false)
         }
         val reminders = NotificationChannel(
@@ -103,7 +107,7 @@ object OliveNotifications {
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             description = context.getString(R.string.olive_channel_reminders_desc)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            lockscreenVisibility = Notification.VISIBILITY_PRIVATE
             setShowBadge(false)
         }
         nm.createNotificationChannels(listOf(calls, reminders))
@@ -148,7 +152,7 @@ object OliveNotifications {
             .setContentTitle(context.getString(R.string.olive_ring_title))
             .setContentText(context.getString(R.string.olive_ring_text))
             .setCategory(Notification.CATEGORY_CALL)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setTimeoutAfter(RING_WINDOW_MS)
