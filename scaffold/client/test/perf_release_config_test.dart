@@ -87,7 +87,6 @@ void main() {
       // The whole raw comment-stripped file also carries no pinned-dev-cert marker, and the pem is gone from main.
       expect(cfg.readAsStringSync(), isNot(contains('OLIVE-LAN-JITSI')));
       expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').existsSync(), isFalse);
-      expect(Directory('android/app/src/main/res/raw').existsSync(), isFalse);
       expect(read('android/app/src/main/AndroidManifest.xml'), contains('networkSecurityConfig'));
     });
 

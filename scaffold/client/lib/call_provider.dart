@@ -231,8 +231,9 @@ typedef CallProviderFactory = CallProvider Function(CallGrant grant);
 /// Jitsi must be reached over https in a release build (the transport policy
 /// the whole app holds); debug builds may also use http for a local test
 /// server. Pure, so it is unit-tested; the LAN self-signed certificate is
-/// handled natively and narrowly (network_security_config.xml pins one cert
-/// for one LAN address), never by weakening this check.
+/// handled natively and narrowly, and only in a debug build (a gitignored overlay of
+/// network_security_config.xml pins one cert for one LAN address; a release build trusts
+/// the system authorities only), never by weakening this check.
 bool jitsiServerUrlAllowed(String url, {required bool release}) {
   final u = Uri.tryParse(url);
   if (u == null || !u.hasAuthority || u.host.isEmpty) return false;

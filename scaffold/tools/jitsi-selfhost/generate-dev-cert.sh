@@ -8,11 +8,13 @@
 #      meet's own /etc/s6-overlay/scripts/config: a cert already present
 #      there is reused as-is, never regenerated, so this only needs to run
 #      once unless you deliberately want a new cert).
-#   2. client/android/app/src/main/res/raw/jitsi_dev_cert.pem — the public
-#      cert only, committed to the repo (a self-signed cert's public half
-#      is not a secret; the private key is NOT committed anywhere and lives
-#      only in the gitignored/untracked CONFIG storage dir on the dev
-#      machine that generated it).
+#   2. client/android/app/src/debugLan/res/ — a GITIGNORED, debug-only overlay:
+#      raw/jitsi_dev_cert.pem (the public cert only) and a
+#      network-security-config rendered from network_security_config.debug.template.xml
+#      for the LAN address(es) passed. Nothing LAN-specific is committed and a
+#      release build never includes it. The private key is NOT written anywhere
+#      in the repo and lives only in the CONFIG storage dir on the dev machine
+#      that generated it.
 #
 # WHY a SAN is required, not optional: docker-jitsi-meet's own self-signed
 # cert generation (`openssl req -new -x509 ... -subj "/CN=*"`) produces a
