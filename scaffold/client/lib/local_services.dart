@@ -133,8 +133,9 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
   LocalDataEntry(
       area: 'outbox', scope: LocalScope.child, maxBytes: 2 * _mib,
       what: 'Things she made while offline that are waiting to go, so a restart does not lose '
-          'them, and the notes that she opened a message, waiting to tell the sender (just the message id). '
-          'Never shown to her as a queue.'),
+          'them (a video she recorded for a grown-up is kept as a file in the app\'s own storage, with one row here '
+          'that points at it, until the server has it), and the notes that she opened a message, waiting to tell '
+          'the sender (just the message id). Never shown to her as a queue.'),
   LocalDataEntry(
       area: 'growing', scope: LocalScope.child, encrypted: true, maxBytes: 8 * _mib,
       what: 'Growing (grown-up side): time capsules a guardian sealed (a note, the opening date, '
@@ -355,6 +356,9 @@ String scopeId(String raw) {
   return '$head-${sha256Hex(raw).substring(0, 10)}';
 }
 
+/// The folder, under the app's documents directory, that holds the copies of recordings waiting to be sent.
+const String kRecordingsFolderName = 'olive_outbox';
+
 class LocalServices {
   LocalServices({
     required this.store,
@@ -363,6 +367,7 @@ class LocalServices {
     this.isLive = false,
     this.demoSeeds = true,
     this.keyring,
+    this.recordingsRoot,
   }) {
     scopeChild(childId); // fails fast on an illegal live scope
   }
@@ -376,6 +381,7 @@ class LocalServices {
     bool isLive = false,
     bool demoSeeds = true,
     MemoryStoreBackend? backend,
+    Directory? recordingsRoot,
   }) =>
       LocalServices(
         store: LocalStore(
@@ -385,6 +391,7 @@ class LocalServices {
         guardianId: guardianId,
         isLive: isLive,
         demoSeeds: demoSeeds,
+        recordingsRoot: recordingsRoot,
       );
 
   final LocalStore store;
@@ -404,6 +411,22 @@ class LocalServices {
 
   /// Held only to drop the encryption key on a wipe.
   final StoreCipherKeyring? keyring;
+
+  /// Where the copies of the recordings she sent back wait for the server (send_back_outbox.dart), one folder per
+  /// child. They are files, not store documents, so the wipe and "forget this child" remove them here. Null where
+  /// there is no such folder (tests, the in-memory preview).
+  final Directory? recordingsRoot;
+
+  /// The folder name a child's recordings use under the recordings root.
+  static String recordingsFolderFor(String childId) => childId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+
+  Future<void> _removeRecordings({String? childId}) async {
+    final Directory? root = recordingsRoot;
+    if (root == null) return;
+    final Directory target =
+        childId == null ? root : Directory('${root.path}${Platform.pathSeparator}${recordingsFolderFor(childId)}');
+    if (await target.exists()) await target.delete(recursive: true);
+  }
 
   static LocalServices _current = LocalServices.memory();
   static LocalServices get current => _current;
@@ -433,6 +456,7 @@ class LocalServices {
       isLive: isLive,
       demoSeeds: !isLive,
       keyring: keyring,
+      recordingsRoot: Directory('${docs.path}${Platform.pathSeparator}$kRecordingsFolderName'),
     );
     install(s);
     return s;
@@ -467,7 +491,10 @@ class LocalServices {
   }
 
   /// Everything this device holds for one child profile.
-  Future<void> forgetChild(String id) => store.deleteWithPrefix('child.${scopeChild(id)}.');
+  Future<void> forgetChild(String id) async {
+    await store.deleteWithPrefix('child.${scopeChild(id)}.');
+    await _removeRecordings(childId: id);
+  }
 
   /// The device wipe: every document, every quarantined copy, and the
   /// encryption key. Pairing credentials in secure storage are NOT touched;
@@ -475,6 +502,7 @@ class LocalServices {
   Future<void> wipeAll() async {
     await store.wipe();
     await keyring?.erase();
+    await _removeRecordings();
   }
 }
 

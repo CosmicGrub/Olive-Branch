@@ -8,8 +8,14 @@ import 'package:http/testing.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:olive_client/offline_outbox.dart' show offlineForbidden;
 import 'package:olive_client/receipt_screen.dart';
+import 'package:olive_client/send_back_outbox.dart';
+
+import 'send_back_fakes.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
+
+/// A send-back queue over in-memory fakes, so a widget test never touches app storage.
+SendBackQueue _q() => queueOver(FakeOutboxDisk(), FakeRecordings(), FakeClock(DateTime.utc(2026, 11, 21, 12)));
 
 /// A fake recorded clip — no real file I/O, no platform channel.
 XFile _fakeClip() => XFile.fromData(Uint8List(0), name: 'clip.mp4');
@@ -70,7 +76,8 @@ void main() {
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school')));
       await tester.tap(find.text('Send one back'));
       await tester.pump();
-      expect(find.textContaining("isn't connected to a server yet"), findsOneWidget);
+      expect(find.text("That didn't go. Let's try again."), findsOneWidget);
+      expect(find.textContaining('server'), findsNothing);
       expect(find.textContaining('Sent!'), findsNothing);
     });
 
@@ -161,7 +168,7 @@ void main() {
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q(),
       )));
 
       await tester.tap(find.text('Send one back'));
@@ -199,17 +206,19 @@ void main() {
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q(),
       )));
 
       await tester.tap(find.text('Send one back'));
       await tester.pumpAndSettle();
 
       expect(find.text('Sent!'), findsNothing);
-      expect(find.textContaining('403'), findsOneWidget);
-      expect(find.textContaining('not_authorized'), findsOneWidget);
-      // Recoverable — a real retry affordance, not a dead end.
-      expect(find.text('Try again'), findsOneWidget);
+      // The recording is on the device and stays there: a refusal is never a reason to lose it. She is told only
+      // the one calm kept-safe line, never the status code or the server's word for it.
+      expect(find.textContaining('403'), findsNothing);
+      expect(find.textContaining('not_authorized'), findsNothing);
+      expect(find.text('Kept safe'), findsOneWidget);
+      expect(find.text(kSendBackTryAgainLine), findsNothing);
     });
 
     testWidgets('cancelling the camera picker returns to idle, no request sent', (tester) async {
@@ -223,7 +232,7 @@ void main() {
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => null,
+        httpClient: mock, pickVideo: () async => null, sendBackQueue: _q(),
       )));
 
       await tester.tap(find.text('Send one back'));
@@ -248,7 +257,7 @@ void main() {
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q(),
         // Real backoff is minutes-to-hours; overridden to something that
         // will not fire during this test, which only asserts the FIRST
         // honest state a connectivity gap lands on.
@@ -299,7 +308,7 @@ void main() {
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q(),
         // Real backoff is offline_outbox.dart's own backoffMs (minutes to
         // hours); overridden here only so this test can observe a real
         // automatic retry firing without actually waiting.
@@ -323,42 +332,185 @@ void main() {
     });
 
     testWidgets(
-        'a genuine server rejection is never mistaken for a connectivity '
-        'gap -- no queued-safe copy, no silent auto-retry, the same real '
-        'error as always', (tester) async {
-      // A rejection this early (the upload half, the FIRST of the two real
-      // calls _attemptSend now makes) never even reaches the send half —
-      // `attempts` stays at 1 for the whole test, same as when this test
-      // predates the upload step, because the same-403-for-any-request mock
-      // below never distinguishes which call it was.
+        'a server refusal keeps the recording and asks again later, silently (never deleted for a refusal)',
+        (tester) async {
       int attempts = 0;
       final MockClient mock = MockClient((http.Request req) async {
         attempts += 1;
         return http.Response(jsonEncode({'error': 'not_authorized'}), 403);
       });
+      final SendBackQueue q = _q();
 
       await tester.pumpWidget(wrap(ReceiptScreen(
         childName: 'Ivy', senderName: 'Dad',
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school',
         baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
-        httpClient: mock, pickVideo: () async => _fakeClip(),
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: q,
         retryBackoff: (_) => const Duration(milliseconds: 20),
       )));
 
       await tester.tap(find.text('Send one back'));
       await tester.pump();
 
-      expect(find.text('Kept safe'), findsNothing);
-      expect(find.text('It will go when you have internet again. It is safe.'),
-          findsNothing);
-      expect(find.textContaining('403'), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
-
-      // No silent background retry for a genuine rejection -- waiting past
-      // where a connectivity retry would have fired must not call the
-      // server again on its own.
-      await tester.pump(const Duration(milliseconds: 30));
+      expect(find.text('Kept safe'), findsOneWidget);
+      expect(find.textContaining('403'), findsNothing);
+      expect(find.text(kSendBackTryAgainLine), findsNothing);
       expect(attempts, 1);
+
+      // Waiting past the backoff asks again on its own: the recording was never given up on.
+      await tester.pump(const Duration(milliseconds: 30));
+      await tester.pump();
+      expect(attempts, greaterThan(1));
+      expect(find.text('Kept safe'), findsOneWidget);
+    });
+  });
+
+  group('Receipt — what she may read when "Send one back" does not go (ISS-040)', () {
+    /// Every string drawn by any Text on screen.
+    List<String> allText(WidgetTester tester) => <String>[
+          for (final Text t in tester.widgetList<Text>(find.byType(Text))) t.data ?? t.textSpan?.toPlainText() ?? '',
+        ];
+
+    void expectNoLeak(WidgetTester tester) {
+      for (final String t in allText(tester)) {
+        final String low = t.toLowerCase();
+        for (final String bad in <String>[
+          'exception', 'socket', 'timeout', 'http', 'status', 'server', 'connected', '403', '500', '404',
+          'not_authorized', 'platformexception', 'camera_access', 'null', 'instance of',
+        ]) {
+          expect(low.contains(bad), isFalse, reason: '"$t" must not carry "$bad"');
+        }
+      }
+    }
+
+    void expectCalm(WidgetTester tester) {
+      expectNoLeak(tester);
+      expect(find.text(kSendBackTryAgainLine), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(find.byIcon(Icons.cloud_off_outlined), findsOneWidget);
+    }
+
+    testWidgets('a status code and a server error name reach no Text', (tester) async {
+      final MockClient mock = MockClient((http.Request req) async =>
+          http.Response(jsonEncode(<String, Object>{'error': 'not_authorized_500'}), 403));
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null,
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(), sendBackQueue: _q())));
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+      expectNoLeak(tester);
+      expect(find.text('Kept safe'), findsOneWidget);
+    });
+
+    testWidgets('a raw exception from the camera reaches no Text', (tester) async {
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null,
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        pickVideo: () async => throw Exception('PlatformException(camera_access_denied, 192.0.2.5)'),
+        sendBackQueue: _q())));
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+      expectCalm(tester);
+    });
+
+    testWidgets('a screen with no live session says the same calm line, not "isn\'t connected to a server"',
+        (tester) async {
+      await tester.pumpWidget(wrap(const ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null)));
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+      expectCalm(tester);
+    });
+
+    test('the try-again line passes the child-copy audit, and the audit really fails a leaky line', () {
+      expect(auditSendBackCopy(kSendBackTryAgainLine), isTrue);
+      expect(auditSendBackCopy('Error 403: not_authorized'), isFalse);
+      expect(auditSendBackCopy('Try again in 5 minutes'), isFalse);
+      expect(auditSendBackCopy('Your attempts failed'), isFalse);
+    });
+  });
+
+  group('Receipt — "Kept safe" only after the durable write (ISS-039)', () {
+    testWidgets('a copy that cannot be made is never promised: try-again, no "Kept safe", nothing sent',
+        (tester) async {
+      final FakeRecordings files = FakeRecordings()..failKeep = true;
+      int requests = 0;
+      final MockClient mock = MockClient((http.Request req) async {
+        requests++;
+        return http.Response('{}', 201);
+      });
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null,
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+        sendBackQueue: queueOver(FakeOutboxDisk(), files, FakeClock(DateTime.utc(2026, 11, 21))))));
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kept safe'), findsNothing);
+      expect(find.text(kSendBackTryAgainLine), findsOneWidget);
+      expect(requests, 0);
+    });
+
+    testWidgets('a row that cannot be written is never promised, and the copy is removed again', (tester) async {
+      final FakeRecordings files = FakeRecordings();
+      final FakeOutboxDisk disk = FakeOutboxDisk()..failSave = true;
+      final MockClient mock = MockClient((http.Request req) async => throw Exception('offline'));
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null,
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: mock, pickVideo: () async => _fakeClip(),
+        sendBackQueue: queueOver(disk, files, FakeClock(DateTime.utc(2026, 11, 21))))));
+      await tester.tap(find.text('Send one back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kept safe'), findsNothing);
+      expect(find.text(kSendBackTryAgainLine), findsOneWidget);
+      expect(files.files, isEmpty);
+    });
+
+    testWidgets('dispose the screen mid-retry, rebuild over the same store, and the send completes',
+        (tester) async {
+      final FakeRecordings files = FakeRecordings();
+      final FakeOutboxDisk disk = FakeOutboxDisk();
+      final FakeClock clock = FakeClock(DateTime.utc(2026, 11, 21, 8));
+
+      // 1. No signal: the screen keeps the recording and says so.
+      final MockClient down = MockClient((http.Request req) async => throw Exception('connection refused'));
+      await tester.pumpWidget(wrap(ReceiptScreen(
+        childName: 'Ivy', senderName: 'Dad', watchedAtLabel: '7:04 AM', dayPartKind: null,
+        baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1',
+        httpClient: down, pickVideo: () async => _fakeClip(),
+        retryBackoff: (_) => const Duration(minutes: 10),
+        sendBackQueue: queueOver(disk, files, clock))));
+      await tester.tap(find.text('Send one back'));
+      await tester.pump();
+      expect(find.text('Kept safe'), findsOneWidget);
+      expect(files.files, hasLength(1));
+      expect(disk.rows, hasLength(1));
+
+      // 2. The screen goes away mid-retry (back out, or the app is closed). Its timer goes with it.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pump(const Duration(minutes: 11));
+      expect(files.files, hasLength(1), reason: 'the recording outlives the screen');
+      expect(disk.rows, hasLength(1));
+
+      // 3. A new owner over the same store, later, with signal: the send completes.
+      clock.advance(const Duration(hours: 1));
+      final List<String> seen = <String>[];
+      final MockClient up = MockClient((http.Request req) async {
+        seen.add(req.url.path);
+        if (req.url.path.endsWith('/media')) {
+          return http.Response(jsonEncode(<String, Object>{'storageKey': 'children/child-a/messages/k1'}), 201);
+        }
+        expect((jsonDecode(req.body) as Map<String, dynamic>)['storageKey'], 'children/child-a/messages/k1');
+        return http.Response(jsonEncode(<String, Object>{'id': 'i1', 'artifactId': 'a1', 'state': 'pending'}), 201);
+      });
+      await tester.runAsync(() => drainSendBacks(
+          baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok-1', httpClient: up,
+          queue: queueOver(disk, files, clock)));
+      expect(seen, <String>['/v1/children/child-a/media', '/v1/children/child-a/messages']);
+      expect(disk.rows, isEmpty);
+      expect(files.files, isEmpty, reason: 'a sent recording is removed from app storage');
     });
   });
 }

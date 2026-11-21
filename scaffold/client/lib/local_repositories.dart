@@ -185,6 +185,8 @@ class OutboxRepository {
         id: id, kind: k, createdAt: created, payload: m['payload'],
         attempts: m['attempts'] is int ? m['attempts'] as int : 0,
         lastError: m['lastError'] is String ? m['lastError'] as String : null,
+        // Additive: items written before this field existed have none.
+        lastFailedAt: m['lastFailedAt'] is String ? DateTime.tryParse(m['lastFailedAt'] as String) : null,
       ));
     }
     return out;
@@ -202,6 +204,7 @@ class OutboxRepository {
         'payload': i.payload,
         'attempts': i.attempts,
         if (i.lastError != null) 'lastError': i.lastError,
+        if (i.lastFailedAt != null) 'lastFailedAt': i.lastFailedAt!.toUtc().toIso8601String(),
       };
       try {
         rows.add(jsonSafe(row));
