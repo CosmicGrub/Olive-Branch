@@ -21,13 +21,17 @@ String _everythingShown(WidgetTester t) {
   return out.join(' | ');
 }
 
-void _nothingToTypeOrRead(WidgetTester t) {
+/// [allowed]: wording the first run's own picture-only state already shows (its title and its refresh tooltip).
+void _nothingToTypeOrRead(WidgetTester t, {List<String> allowed = const <String>[]}) {
   expect(find.byType(TextField), findsNothing, reason: 'no field of any kind');
   expect(find.byType(EditableText), findsNothing);
   expect(find.byKey(const Key('pairingCodeField')), findsNothing);
   expect(find.byKey(const Key('pairingErrorMessage')), findsNothing);
   expect(find.byKey(const Key('pairingConnectButton')), findsNothing);
-  final String all = _everythingShown(t);
+  String all = _everythingShown(t);
+  for (final String a in allowed) {
+    all = all.replaceAll(a, '');
+  }
   expect(all, isNot(matches(RegExp(r'[0-9]'))), reason: 'no digit anywhere: $all');
   for (final String bad in <String>[
     'code', 'Code', 'Pairing', 'Connect', 'expired', 'already', 'Too many', 'wrong', 'rror', 'server', 'connection',
@@ -55,7 +59,7 @@ void main() {
   testWidgets('signed out, no connection: a picture-only state, still no field and no sentence', (WidgetTester t) async {
     await boot(t, MockClient((http.Request r) async => throw http.ClientException('no route to secret-host.internal')));
     expect(find.byKey(const Key('pairingOfflinePicture')), findsOneWidget);
-    _nothingToTypeOrRead(t);
+    _nothingToTypeOrRead(t, allowed: <String>['Connect this device', 'Check again']);
     expect(_everythingShown(t), isNot(contains('secret-host')));
   });
 

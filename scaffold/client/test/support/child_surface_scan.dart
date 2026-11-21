@@ -159,6 +159,11 @@ List<String> scanChildSurface(Map<String, String> sources, Iterable<String> root
           out.add('$f: a string interpolates the caught exception "$v": ${line.trim()}');
         }
       }
+    }
+    // A status code in a thrown exception's message is a developer log line, not something shown (a Text or a
+    // caught-exception interpolation above would be what shows it), so thrown statements are left out of this check.
+    for (final String line in code.replaceAll(RegExp(r'throw\s+[^;]*;'), '').split('\n')) {
+      if (line.contains('debugPrint') || line.contains('developer.log')) continue;
       if (RegExp(r'\$\{?\w+\.statusCode').hasMatch(line)) {
         out.add('$f: a string interpolates a status code: ${line.trim()}');
       }
