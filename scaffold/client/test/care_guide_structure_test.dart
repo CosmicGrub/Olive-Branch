@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:olive_client/care_guide_gate.dart' show hasDosePattern, parentFacingStrings, doseLintPatterns;
 import 'package:olive_client/care_guide_loader.dart';
 import 'package:olive_client/care_guide_models.dart';
 import 'package:olive_client/care_guide_screens.dart';
@@ -149,6 +150,28 @@ void main() {
         expect(s.contains('DRAFT'), false, reason: _name(f));
         expect(s.contains('Needs review'), false, reason: _name(f));
       }
+    });
+
+    test('no dose-shaped string (amount, per-weight, dosing interval) is in any bundled guide or any draft (ISS-093)', () {
+      // The dose rule is also part of the release gate (decideGuide refuses such a guide); this scans the files themselves,
+      // so a dose is found at review time in CI rather than when a guide is first loaded.
+      expect(doseLintPatterns, isNotEmpty);
+      final List<File> files = <File>[
+        for (final File f in bundled) if (_name(f) != 'index.json') f,
+        for (final String id in <String>['who-to-call', 'choking', 'head-injury', 'high-fever', 'childproofing-home']) File('$kDraftDir/$id.json'),
+      ];
+      expect(files, isNotEmpty);
+      for (final File f in files) {
+        final CareGuide g = CareGuide.fromJson(jsonDecode(f.readAsStringSync()) as Map<String, Object?>);
+        final List<String> hits = <String>[for (final String s in parentFacingStrings(g)) if (hasDosePattern(s)) s];
+        expect(hits, isEmpty, reason: '${_name(f)} carries a dose: $hits');
+      }
+    });
+
+    test('the scan is real: a dose planted in a guide file would be found', () {
+      final Map<String, Object?> m = jsonDecode(File('$kDraftDir/choking.json').readAsStringSync()) as Map<String, Object?>;
+      m['title'] = 'Give 5 mg every 4 hours';
+      expect(parentFacingStrings(CareGuide.fromJson(m)).any(hasDosePattern), true);
     });
 
     test('the five real drafts are kept outside the app, in docs/care-guides/app-draft', () {

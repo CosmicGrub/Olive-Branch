@@ -21,8 +21,11 @@
 // applicationId — meaning only one could ever be installed at a time. Now
 // stitched into the two reachable halves of one app, entered through the
 // same entry gate a real family would see.
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'demo_fixtures.dart';
 import 'font_licences.dart';
+import 'local_services.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 import 'child_home.dart';
@@ -33,14 +36,37 @@ import 'kiosk_shell.dart';
 
 void main() {
   registerFontLicences();
+  // This entry is the offline PREVIEW: invented medicines, an invented emergency card and a fixed stand-in code. None
+  // of that may reach a family, so outside a debug build it refuses to run at all (demo_fixtures.dart is the single
+  // place the invented content lives, behind the same switch; tools/check-release-literals.mjs checks the built app).
+  if (!kDebugMode) {
+    runApp(const _PreviewOnlyInDebug());
+    return;
+  }
+  LocalServices.install(LocalServices.memory(demoSeeds: true));
   runApp(const OliveDemo());
+}
+
+/// What a release build of this entry shows instead of the preview.
+class _PreviewOnlyInDebug extends StatelessWidget {
+  const _PreviewOnlyInDebug();
+
+  @override
+  Widget build(BuildContext context) => const Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(child: Text('This preview is not part of the app. Please install the real app.')),
+      );
 }
 
 /// Demo-only stand-in for a real backend PIN check (see api_client.dart /
 /// auth.ts). Not the shuffled-keypad UI's concern — PinGate never sees the
-/// correct code, only whatever the child/guardian typed.
-const _demoGuardianPin = '1273';
-Future<bool> _demoVerifyGuardianPin(String pin) async => pin == _demoGuardianPin;
+/// correct code, only whatever the child/guardian typed. The code itself lives
+/// in demo_fixtures.dart behind the debug switch; outside a debug build there is
+/// none, and nothing is accepted.
+Future<bool> _demoVerifyGuardianPin(String pin) async {
+  final String? code = demoGuardianPin();
+  return code != null && pin == code;
+}
 
 /// Demo-only stand-in for the real WebAuthn ceremony
 /// (webauthn_channel.dart's `buildVerifyBiometricCallback`) — no backend and

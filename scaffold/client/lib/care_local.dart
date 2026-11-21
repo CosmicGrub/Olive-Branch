@@ -128,7 +128,7 @@ class CareMedication {
     this.dose = '',
     this.kind = MedKind.scheduled,
     this.slots = const <String>[],
-    this.gapHours = 4,
+    this.gapHours,
     this.note = '',
     this.retired = false,
     this.doses = const <CareDose>[],
@@ -141,8 +141,8 @@ class CareMedication {
   /// "HH:mm" times of day (scheduled only).
   final List<String> slots;
 
-  /// Hours between doses (as needed only).
-  final int gapHours;
+  /// Hours between doses (as needed only). Null = no minimum gap was set: never invented, and no gap check runs.
+  final int? gapHours;
   final String note;
   final bool retired;
   final List<CareDose> doses;
@@ -194,7 +194,7 @@ class CareMedication {
           for (final Object? s in (j['slots']! as List).take(careMaxSlots))
             if (s is String && _hhmm.hasMatch(s)) s,
       ],
-      gapHours: g is int && g >= 1 && g <= careMaxGapHours ? g : 4,
+      gapHours: g is int && g >= 1 && g <= careMaxGapHours ? g : null,
       note: _t(j['note']),
       retired: j['retired'] == true,
       doses: <CareDose>[
@@ -238,7 +238,9 @@ List<DateTime> _slotsAround(CareMedication m, DateTime now) {
 MedState medState(CareMedication m, DateTime now) {
   if (m.kind == MedKind.prn) {
     final CareDose? last = m.doses.isEmpty ? null : m.doses.last;
-    final DateTime? next = last?.at.toLocal().add(Duration(hours: m.gapHours));
+    final int? gap = m.gapHours;
+    // No gap set: no gap clock, so nothing is ever "inside the gap".
+    final DateTime? next = last == null || gap == null ? null : last.at.toLocal().add(Duration(hours: gap));
     return MedState(last: last, next: next, given: next != null && now.isBefore(next));
   }
   final List<DateTime> all = _slotsAround(m, now);
@@ -743,7 +745,7 @@ class CareService {
     if (slots.any((String s) => !_hhmm.hasMatch(s))) throw const _Refuse('bad_time');
     if (slots.length > careMaxSlots) throw const _Refuse('too_many');
     if (m.kind == MedKind.scheduled && slots.isEmpty) throw const _Refuse('slot_needed');
-    final int gap = m.gapHours.clamp(1, careMaxGapHours);
+    final int? gap = m.gapHours?.clamp(1, careMaxGapHours).toInt();
     return CareMedication(
       id: m.id,
       name: name,

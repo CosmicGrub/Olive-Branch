@@ -223,6 +223,77 @@ void main() {
     });
   });
 
+  group('the dose rule (ISS-093): no amount, no per-weight amount, no dosing interval', () {
+    CareGuide withText(String t) => CareGuide.fromJson(fixtureGuide(extraText: ' $t'));
+
+    // Everything here must be REFUSED: a dose, in any of the shapes a dose takes.
+    const List<String> doses = <String>[
+      'Give 5 mg now.', 'give 10mg', 'Give 250 mg every 6 hours.', 'Give 2.5 ml.', 'Give 5 mL of the liquid.', 'Give 1,5 ml.',
+      'Give one tablet.', 'Give two tablets.', 'Give half a teaspoon.', 'Give 1 tsp.', 'Give 2 tablespoons.', 'Give 2 puffs.',
+      'Give 3 drops.', 'Give one spoonful.', 'Give a capsule.', 'Give 100 mcg.', 'Give 400 IU.', 'Give 2 units.', 'Give 5 grams.',
+      '15 mg/kg', '10 mg per kg', 'Give per kilogram of body weight.', 'Give per pound of body weight.', 'Give 5/kg.',
+      'Repeat every 4 hours.', 'Repeat every 4 to 6 hours.', 'Repeat every six hours.', 'Repeat every 8 hrs.', 'Repeat q6h.',
+      'Repeat 4-6 hourly.', 'Give twice a day.', 'Give three times a day.', 'Give three times daily.', 'Give once daily.',
+      'Give four times per day.', 'Give twice daily.', 'Give it bid.', 'No more than maximum 4 doses.', 'max of 5 doses',
+      'Give a suppository.', 'Give 2 lozenges.', 'Apply a patch.',
+      // deliberately eager: it only LOOKS like a dose, and the reviewer rewords it
+      'There was a drop in temperature.',
+    ];
+    // Everything here must PASS: times, counts, weights and phone numbers that are not doses.
+    const List<String> notDoses = <String>[
+      'Call 911 now.', 'Call 000 if life is in danger.', 'If the fever lasts more than 24 hours, call the doctor.',
+      'Check on the baby every 5 to 10 minutes.', 'Apply firm pressure for 10 minutes.', 'A child under 5 kg needs a doctor today.',
+      'Give 5 back blows, then 5 chest thrusts.', 'Do about 2 minutes of CPR: 30 compressions then 2 breaths.', 'Call 9-8-8.',
+      'The thermometer beeps after about 1 minute.', 'A temperature of 38 C (100.4 F) is a fever.', 'No urine for 8 hours.',
+      'Poisons Information Centre 13 11 26.', 'Keep them upright and watch their breathing.', 'Do not give a double dose.',
+      'Children under 6 months should see a doctor.', 'A seizure lasting more than 5 minutes needs 911.', 'About 2 inches deep.',
+      'Cool a burn under running water for 20 minutes.', 'Stay with them for at least the first 24 hours.', 'Sleep 12 to 16 hours a day.',
+    ];
+
+    test('every positive vector has the shape of a dose', () {
+      for (final String s in doses) {
+        expect(hasDosePattern(s), true, reason: s);
+      }
+    });
+
+    test('every negative vector is not a dose shape', () {
+      for (final String s in notDoses) {
+        expect(hasDosePattern(s), false, reason: s);
+      }
+    });
+
+    test('a REVIEWED guide carrying any positive vector is refused with the wording lint (fail closed)', () {
+      for (final String s in doses) {
+        final CareGuide g = withText(s);
+        expect(wordingViolations(g), isNotEmpty, reason: s);
+        expect(decideGuide(g, release()).refusal, GateRefusal.wordingLint, reason: s);
+      }
+    });
+
+    test('a REVIEWED guide carrying only negative vectors is allowed', () {
+      for (final String s in notDoses) {
+        expect(decideGuide(withText(s), release()).allowed, true, reason: s);
+      }
+    });
+
+    test('the rule reads every parent-facing field: a dose hidden in a title, a note or a sign is found', () {
+      final Map<String, Object?> base = fixtureGuide();
+      final Map<String, Object?> inTitle = <String, Object?>{...base, 'title': 'Give 5 mg'};
+      expect(wordingViolations(CareGuide.fromJson(inTitle)), isNotEmpty);
+      final Map<String, Object?> inNote = <String, Object?>{...base, 'notes': <Object?>[<String, Object?>{'text': 'Repeat every 4 hours.', 'sources': <int>[1]}]};
+      expect(wordingViolations(CareGuide.fromJson(inNote)), isNotEmpty);
+    });
+
+    test('the rule needs no medicine name: an unheard-of medicine with an amount is still caught', () {
+      expect(hasDosePattern('Give 7.5 mg of Zzzquil-X.'), true);
+      expect(hasDosePattern('Zzzquil-X is a medicine.'), false);
+    });
+
+    test('the patterns are exposed for the structure test and are non-empty', () {
+      expect(doseLintPatterns.length, greaterThanOrEqualTo(8));
+    });
+  });
+
   group('the models never see reviewer-only material', () {
     test('the bundled files carry no reviewer-only key anywhere', () {
       for (final String id in _ids) {

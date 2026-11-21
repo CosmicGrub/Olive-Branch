@@ -475,7 +475,7 @@ class _LocalMedsState extends State<LocalMedsScreen> with _CareLoad<LocalMedsScr
       if (st.last == null) return 'As needed. Not given yet';
       final String by = _who(st.last!.byId, st.last!.byName, me);
       return 'Last: ${careDay(st.last!.at.toLocal())}, ${careTime(st.last!.at.toLocal())} by $by'
-          '${st.given ? '. Next allowed ${careTime(st.next!)}' : '. Can be given'}';
+          '${st.given ? '. Next allowed ${careTime(st.next!)}' : (m.gapHours == null ? '. No minimum gap is set' : '. Can be given')}';
     }
     if (st.given && st.last != null) {
       return 'Given ${careTime(st.last!.at.toLocal())} by ${_who(st.last!.byId, st.last!.byName, me)}';
@@ -593,7 +593,7 @@ class _LocalMedState extends State<LocalMedScreen> with _CareLoad<LocalMedScreen
   final TextEditingController _dose = TextEditingController();
   final TextEditingController _t1 = TextEditingController();
   final TextEditingController _t2 = TextEditingController();
-  final TextEditingController _gap = TextEditingController(text: '4');
+  final TextEditingController _gap = TextEditingController();
   final TextEditingController _note = TextEditingController();
   MedKind _kind = MedKind.scheduled;
   bool _filled = false;
@@ -620,7 +620,7 @@ class _LocalMedState extends State<LocalMedScreen> with _CareLoad<LocalMedScreen
       _dose.text = m.dose;
       _t1.text = m.slots.isNotEmpty ? m.slots[0] : '';
       _t2.text = m.slots.length > 1 ? m.slots[1] : '';
-      _gap.text = '${m.gapHours}';
+      _gap.text = m.gapHours == null ? '' : '${m.gapHours}';
       _note.text = m.note;
       _kind = m.kind;
     }
@@ -651,7 +651,8 @@ class _LocalMedState extends State<LocalMedScreen> with _CareLoad<LocalMedScreen
       for (final String s in <String>[_t1.text, _t2.text])
         if (s.trim().isNotEmpty) s.trim(),
     ],
-    gapHours: int.tryParse(_gap.text.trim()) ?? 4,
+    // Blank (or not a number) = no gap set. The app does not pick one.
+    gapHours: int.tryParse(_gap.text.trim()),
     note: _note.text,
   );
 
@@ -785,14 +786,14 @@ class _LocalMedState extends State<LocalMedScreen> with _CareLoad<LocalMedScreen
                                     : 'Given ${careTime(st.last!.at.toLocal())} by ${_who(st.last!.byId, st.last!.byName, me)}')
                               : st.due && st.slot != null
                               ? 'Due since ${careTime(st.slot!)}'
-                              : 'Can be given',
+                              : (m!.kind == MedKind.prn && m.gapHours == null ? 'No minimum gap is set' : 'Can be given'),
                           key: const Key('medStatus'),
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),
                         Text(
                           m!.kind == MedKind.prn
-                              ? 'At least ${m.gapHours} h between doses.'
+                              ? (m.gapHours == null ? 'No minimum gap between doses is set.' : 'At least ${m.gapHours} h between doses.')
                               : 'Daily at ${m.slots.map(formatTimeOfDay).join(', ')}.',
                         ),
                         const SizedBox(height: 12),
@@ -848,7 +849,7 @@ class _LocalMedState extends State<LocalMedScreen> with _CareLoad<LocalMedScreen
                 _f(const Key('medFormT1'), _t1, 'Time (24 hour, for example 08:00)', type: TextInputType.datetime),
                 _f(const Key('medFormT2'), _t2, 'Second time (optional)', type: TextInputType.datetime),
               ] else
-                _f(const Key('medFormGap'), _gap, 'Hours between doses', type: TextInputType.number),
+                _f(const Key('medFormGap'), _gap, 'Hours between doses (optional)', type: TextInputType.number),
               _f(const Key('medFormNote'), _note, 'Note', hint: 'With breakfast'),
               if (m == null || !m.retired)
                 SizedBox(

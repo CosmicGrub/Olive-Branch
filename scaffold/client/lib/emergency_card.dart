@@ -24,9 +24,8 @@
 // guardians list (name + phone_e164, joined from the actual guardianship/
 // app_user rows — never a second stored copy, see that route's own
 // migration header) via OliveApi.fetchEmergencyCard() on init. The demo's
-// own hardcoded Claire/Marcus/Dr. Priya Nair/BlueBridge content is
-// preserved exactly when no live params are supplied — every existing
-// test in this file keeps passing unchanged. Editing (PUT) is NOT wired
+// own invented card (demo_fixtures.dart, a debug build with LocalServices.demoSeeds only) is shown when no live params
+// are supplied; a real build never shows invented content. Editing (PUT) is NOT wired
 // into this screen at all — the guardian-facing "set the emergency card"
 // affordance is a real, disclosed follow-up; this pass closes the READ
 // side, which is what §8.13.5's own "read once, in a hurry" framing is
@@ -50,8 +49,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'a11y_speech.dart' show SpeechTrigger, admitSpeech;
+import 'allergy_field.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
+import 'demo_fixtures.dart';
 import 'design_tokens.dart';
 import 'emergency_card_editor_screen.dart';
 import 'emergency_card_local.dart';
@@ -66,19 +67,6 @@ void _notBuiltYet(BuildContext context, String what) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text('$what — not built yet.'), duration: const Duration(seconds: 2)));
 }
-
-/// Every fact on this screen, concatenated in the exact allergy-first reading
-/// order the layout already enforces — a single source of truth so the
-/// spoken version can never drift from what's actually shown on screen.
-const String _cardSpokenText =
-    'Allergies: Peanuts. Carries an EpiPen, in her backpack side pocket. '
-    'Blood type: O positive. '
-    'Current medications: Cetirizine, 5 milligrams, once daily in the evening. '
-    'Albuterol inhaler, 2 puffs, as needed for wheezing. '
-    "Guardians: Mom, Claire Solomon, (617) 555-0142. "
-    "Dad, Marcus Solomon, (617) 555-0198. "
-    'Pediatrician: Doctor Priya Nair, Riverbend Pediatrics, (617) 555-0177. '
-    'Insurance: BlueBridge Family Health. Member ID: BBH-7734-2201.';
 
 enum _LoadState { ready, loading, error }
 
@@ -140,6 +128,8 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   _LoadState _loadState = _LoadState.ready;
   String? _bloodType;
   List<String> _allergies = <String>[];
+  // Three-state allergy field (allergy_field.dart): an empty list with no confirmation reads "Not recorded".
+  AllergyNone? _allergyNone;
   List<_LiveMedLine> _medications = <_LiveMedLine>[];
   List<_LiveGuardian> _guardians = <_LiveGuardian>[];
   String? _pediatricianName, _pediatricianPractice, _pediatricianPhone;
@@ -149,7 +139,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   // send it back from — see OliveApi.putEmergencyCard's `ifMatch`.)
   String? _lastChangedBy, _lastChangedAt;
   List<String> _conditions = <String>[];
-  _Src _src = _Src.demo;
+  _Src _src = _Src.none;
   bool _localAsFallback = false;
 
   // The server's card lists the guardians and a pediatrician; a guardian's own card lists
@@ -186,8 +176,29 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
       _loadState = _LoadState.loading;
       _loadLocal();
     } else {
-      _src = LocalServices.current.demoSeeds ? _Src.demo : _Src.none;
+      _showDemoOrNone();
     }
+  }
+
+  /// The invented demo card, only where a debug build allows demo content; otherwise the honest "no card yet".
+  void _showDemoOrNone() {
+    final DemoCard? d = LocalServices.current.demoSeeds ? demoEmergencyCard() : null;
+    if (d == null) {
+      _src = _Src.none;
+      return;
+    }
+    _src = _Src.demo;
+    _bloodType = d.bloodType;
+    _allergies = d.allergies;
+    _allergyNone = null;
+    _conditions = <String>[];
+    _medications = <_LiveMedLine>[for (final (String, String) m in d.medicines) _LiveMedLine(m.$1, m.$2)];
+    _guardians = <_LiveGuardian>[for (final DemoContact g in d.guardians) _LiveGuardian(g.name, g.phone)];
+    _pediatricianName = d.pediatricianName;
+    _pediatricianPractice = d.pediatricianPractice;
+    _pediatricianPhone = d.pediatricianPhone;
+    _insuranceProvider = d.insuranceProvider;
+    _insuranceMemberId = d.insuranceMemberId;
   }
 
   /// The guardian's local card, or null (none written, or not a guardian).
@@ -207,6 +218,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     final LocalEmergencyCard c = d.card!;
     _bloodType = null;
     _allergies = c.allergies;
+    _allergyNone = c.allergyNone;
     _conditions = c.conditions;
     _medications = <_LiveMedLine>[for (final EcMedicine m in c.medicines) _LiveMedLine(m.name, m.dose)];
     _guardians = <_LiveGuardian>[
@@ -231,7 +243,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
         _applyLocal(d);
         _src = _Src.local;
       } else {
-        _src = LocalServices.current.demoSeeds ? _Src.demo : _Src.none;
+        _showDemoOrNone();
       }
       _loadState = _LoadState.ready;
     });
@@ -261,6 +273,8 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
       setState(() {
         _bloodType = result['bloodType'] as String?;
         _allergies = (result['allergies'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
+        // A server that records the confirmation sends it; one that does not leaves the field "Not recorded".
+        _allergyNone = allergyNoneFromServer(result);
         _medications = rawMeds.map((dynamic m) {
           final Map<String, dynamic> row = m as Map<String, dynamic>;
           final List<String> slots = (row['slots'] as List<dynamic>? ?? <dynamic>[]).cast<String>();
@@ -301,14 +315,12 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
   }
 
   /// Every real fact on this screen, allergy-first — the live path's own
-  /// version of the file-level `_cardSpokenText` const, built from the
-  /// same real fields the rendered tree shows so the spoken version can
-  /// never drift from what's actually on screen, same discipline that
-  /// const's own doc comment states for the demo path.
+  /// version of the old file-level spoken const, built from the same
+  /// fields the rendered tree shows (the demo card too) so the spoken
+  /// version can never drift from what's actually on screen.
   String _liveSpokenText() {
     final StringBuffer b = StringBuffer();
-    b.write(_allergies.isEmpty
-      ? 'No allergies on file. ' : 'Allergies: ${_allergies.join('. ')}. ');
+    b.write(allergySpoken(_allergies, _allergyNone));
     if (_bloodType != null) b.write('Blood type: $_bloodType. ');
     if (_conditions.isNotEmpty) b.write('Conditions: ${_conditions.join('. ')}. ');
     if (_medications.isNotEmpty) {
@@ -349,7 +361,6 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
     // just by convention.
     if (admitSpeech(SpeechTrigger.tap) != null) return;
     speak(switch (_src) {
-      _Src.demo => _cardSpokenText,
       _Src.none => 'No emergency card has been written yet.',
       _ => _liveSpokenText(),
     });
@@ -412,8 +423,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
       // it's on screen before any scrolling on every device this ships to.
       final Widget content = _src == _Src.none
         ? _NoCardYet(canWrite: _canEditLocal, onWrite: _editLocal)
-        : _src != _Src.demo
-        ? ListView(
+        : ListView(
             key: const Key('emergencyCardList'),
             padding: const EdgeInsets.all(16),
             children: [
@@ -426,7 +436,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 const SizedBox(height: 8),
               ],
-              _AllergyCard(allergies: _allergies),
+              _AllergyCard(allergies: _allergies, none: _allergyNone),
               const SizedBox(height: 20),
               if (_conditions.isNotEmpty) ...[
                 _Section(title: 'Conditions', child: Column(
@@ -495,44 +505,7 @@ class _EmergencyCardScreenState extends State<EmergencyCardScreen> {
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
               const SizedBox(height: 12),
-            ])
-        : ListView(
-        key: const Key('emergencyCardList'),
-        padding: const EdgeInsets.all(16),
-        children: const [
-          _AllergyCard(allergies: <String>['Peanuts — carries an EpiPen, in her backpack side pocket']),
-          SizedBox(height: 20),
-          _Section(title: 'Blood type', child: Text('O positive',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
-          SizedBox(height: 20),
-          _Section(title: 'Current medications', child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _MedLine('Cetirizine', '5 mg — once daily, evening'),
-              SizedBox(height: 8),
-              _MedLine('Albuterol inhaler', '2 puffs — as needed for wheezing'),
-            ])),
-          SizedBox(height: 20),
-          _Section(title: 'Guardians', child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ContactLine(name: 'Mom — Claire Solomon', phone: '(617) 555-0142'),
-              SizedBox(height: 10),
-              _ContactLine(name: 'Dad — Marcus Solomon', phone: '(617) 555-0198'),
-            ])),
-          SizedBox(height: 20),
-          _Section(title: 'Pediatrician', child:
-            _ContactLine(name: 'Dr. Priya Nair — Riverbend Pediatrics', phone: '(617) 555-0177')),
-          SizedBox(height: 20),
-          _Section(title: 'Insurance', child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('BlueBridge Family Health', style: TextStyle(fontSize: 18)),
-              SizedBox(height: 4),
-              Text('Member ID: BBH-7734-2201', style: TextStyle(fontSize: 18)),
-            ])),
-          SizedBox(height: 12),
-        ]);
+            ]);
       return capWidth
           ? Center(
               child: ConstrainedBox(
@@ -570,8 +543,9 @@ class _NoCardYet extends StatelessWidget {
 }
 
 class _AllergyCard extends StatelessWidget {
-  const _AllergyCard({required this.allergies});
+  const _AllergyCard({required this.allergies, this.none});
   final List<String> allergies;
+  final AllergyNone? none;
 
   @override
   Widget build(BuildContext context) {
@@ -596,7 +570,7 @@ class _AllergyCard extends StatelessWidget {
             Text('ALLERGIES', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
               color: scheme.onErrorContainer, letterSpacing: 0.5)),
             const SizedBox(height: 6),
-            Text(allergies.isEmpty ? 'None on file' : allergies.join(', '),
+            Text(allergyDisplay(allergies, none),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700,
                 color: scheme.onErrorContainer)),
           ])),

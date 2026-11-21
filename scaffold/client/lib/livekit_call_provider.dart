@@ -111,6 +111,10 @@ class LiveKitCallProvider implements CallProvider {
       _room = room;
       _listener = room.createListener()..listen(_handleRoomEvent);
       await room.connect(wsURL, token, connectOptions: _connectOptions);
+      // Anyone already in the room when this device arrives is on the roster from the first frame.
+      _set(_state.copyWith(participants: <CallParticipant>[
+        for (final lk.RemoteParticipant rp in room.remoteParticipants.values) _participantOf(rp),
+      ]));
       // Respects her real choice (§5.23.1). Mic is unconditional: audio is
       // §8.14's NEVER_SHED, never gated by mode.
       await room.localParticipant?.setCameraEnabled(_state.cameraEnabled);
@@ -181,6 +185,11 @@ class LiveKitCallProvider implements CallProvider {
 
   void _end() => _set(_state.copyWith(phase: CallPhase.ended));
 
+  /// A room participant as the roster sees it. Observer = cannot publish (every observer-tier grant is subscribe-only,
+  /// session-runtime/src/rooms.ts deriveGrant). Never an id as a name: an unnamed person is "Someone".
+  static CallParticipant _participantOf(lk.RemoteParticipant p) =>
+      CallParticipant(id: p.identity, name: p.name, observer: !p.permissions.canPublish);
+
   void _handleRoomEvent(lk.RoomEvent event) {
     if (_disposed) return;
     if (event is lk.RoomDisconnectedEvent) {
@@ -197,15 +206,19 @@ class LiveKitCallProvider implements CallProvider {
       return;
     }
     if (event is lk.ParticipantConnectedEvent) {
-      final p = event.participant;
-      _set(_state.copyWith(remoteName: p.name.isNotEmpty ? p.name : p.identity));
+      _set(_state.copyWith(participants: rosterWith(_state.participants, _participantOf(event.participant))));
       return;
     }
     if (event is lk.ParticipantDisconnectedEvent) {
-      _remoteVideoTrack = null;
-      _remoteVideoPublication = null;
-      _bumpTracks();
-      _set(_state.copyWith(clearRemoteName: true));
+      // Only the video of the person who left is dropped; everyone else stays in the roster.
+      final String gone = event.participant.identity;
+      final List<CallParticipant> rest = rosterWithout(_state.participants, gone);
+      if (rest.every((CallParticipant x) => x.observer)) {
+        _remoteVideoTrack = null;
+        _remoteVideoPublication = null;
+        _bumpTracks();
+      }
+      _set(_state.copyWith(participants: rest));
       return;
     }
     if (event is lk.LocalTrackPublishedEvent) {
