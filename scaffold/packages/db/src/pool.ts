@@ -1728,15 +1728,17 @@ export async function childCtxFor(pool: pg.Pool, childId: string): Promise<Child
     // by the TARGET date. effective is a [) daterange, so the inclusive end
     // the engine uses is upper - 1; NULL = open. Ordered so ties are
     // deterministic.
-    // substring(...::text from 1 for 5) truncates Postgres's second-precision
-    // time cast ('12:00:00') down to gate.ts's own 'HH:mm' width ('12:00') --
-    // without this, `hhmm >= p.startsLocal` string-compares a 5-char value
-    // against an 8-char one and is FALSE for the entire minute the local
-    // clock reads exactly a row's own start boundary, silently skipping that
-    // day-part for one minute a day. See gate.ts's `hhmm` comment.
+    // Bounds keep their SECONDS. They used to be cut to 'HH:mm' to match the
+    // engine's old string comparison, which ended a window up to 59 s early:
+    // an all-day window ending 23:59:59 stopped covering 23:59:00-23:59:59
+    // and a child could be rung during quiet hours in the last minute of her
+    // local day. A zero-seconds bound is still emitted as 'HH:mm' (the shape
+    // every other consumer, e.g. zonedWallClock, expects); the engine
+    // normalises both widths (materialize.ts hms()).
     const dpRows = await q(
-      `SELECT kind, substring(starts_local::text from 1 for 5) AS starts_local,
-              substring(ends_local::text from 1 for 5) AS ends_local,
+      `SELECT kind,
+              regexp_replace(starts_local::text, ':00$', '') AS starts_local,
+              regexp_replace(ends_local::text, ':00$', '') AS ends_local,
               days_of_week, reachable,
               lower(effective)::text AS effective_from,
               (upper(effective) - 1)::text AS effective_to
