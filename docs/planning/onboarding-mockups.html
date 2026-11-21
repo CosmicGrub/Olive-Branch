@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guided First Run Mockup</title>
+<meta name="description" content="Interactive mockup of the guided first run: the grown-up on the phone and the child on the tablet, side by side.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Tokens are the app's own: scaffold/client/lib/design_tokens_generated.dart, palette "olive". */
+:root{
+  --bg:#F6F9F6; --surface:#FFFFFF; --surface2:#EDF3EE; --surface3:#E1EAE2; --line:#DEE7E0; --edge:#6D8370;
+  --ink:#142417; --ink2:#4A5E4D; --ink3:#556858; --pri:#427049; --priD:#2B4A30; --onPri:#FFFFFF; --priC:#DDEEE0; --onPriC:#26402A; --priC2:#C3DFC7;
+  --accent:#51D6A3; --accentC:#D4F7EA; --focus:#267332; --hero1:#427049; --hero2:#2B4A30;
+  --ok:#237A52; --okC:#DCF3E6; --warn:#8F6100; --warnC:#FCEFCF; --bad:#B3322A; --badC:#FBE3E0; --info:#245F9C; --infoC:#DCEAFA;
+  --sh1:0 1px 2px rgba(20,36,23,.06),0 3px 8px -2px rgba(20,36,23,.08); --sh3:0 2px 4px rgba(20,36,23,.10),0 18px 34px -6px rgba(20,36,23,.18);
+  --kbg:#12172B; --kink:#fff; --kink2:rgba(255,255,255,.7); --kink3:rgba(255,255,255,.54); --kink4:rgba(255,255,255,.38);
+  --font-display:"Bricolage Grotesque","Atkinson Hyperlegible",system-ui,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --ground:#E4EAE4; --bezel:#1c2420; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101812; --surface:#19241B; --surface2:#222F24; --surface3:#2E3E30; --line:#2A372C; --edge:#7A907D;
+  --ink:#EDF2EE; --ink2:#C7D1C8; --ink3:#A0B0A3; --pri:#9ACBA1; --priD:#8BBB92; --onPri:#122114; --priC:#2D4D32; --onPriC:#DBF0DE; --priC2:#39603F;
+  --accent:#74DCB4; --accentC:#285D48; --focus:#9AD6A3; --hero1:#9ACBA1; --hero2:#8BBB92;
+  --ok:#6CCF9D; --okC:#12301F; --warn:#ECC15C; --warnC:#34290C; --bad:#F2A59D; --badC:#3A1A17; --info:#8BBDF0; --infoC:#122A44;
+  --sh1:0 1px 2px rgba(0,0,0,.4),0 3px 8px -2px rgba(0,0,0,.4); --sh3:0 2px 4px rgba(0,0,0,.5),0 18px 34px -6px rgba(0,0,0,.55);
+  --ground:#0B110D; --bezel:#2b3630; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101812; --surface:#19241B; --surface2:#222F24; --surface3:#2E3E30; --line:#2A372C; --edge:#7A907D;
+  --ink:#EDF2EE; --ink2:#C7D1C8; --ink3:#A0B0A3; --pri:#9ACBA1; --priD:#8BBB92; --onPri:#122114; --priC:#2D4D32; --onPriC:#DBF0DE; --priC2:#39603F;
+  --accent:#74DCB4; --accentC:#285D48; --focus:#9AD6A3; --hero1:#9ACBA1; --hero2:#8BBB92;
+  --ok:#6CCF9D; --okC:#12301F; --warn:#ECC15C; --warnC:#34290C; --bad:#F2A59D; --badC:#3A1A17; --info:#8BBDF0; --infoC:#122A44;
+  --sh1:0 1px 2px rgba(0,0,0,.4),0 3px 8px -2px rgba(0,0,0,.4); --sh3:0 2px 4px rgba(0,0,0,.5),0 18px 34px -6px rgba(0,0,0,.55);
+  --ground:#0B110D; --bezel:#2b3630; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.5 var(--font-body);overflow-x:hidden}
+h1,h2,h3,h4{font-family:var(--font-display);margin:0;line-height:1.15}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:6px}
+.skip{position:absolute;left:8px;top:-60px;background:var(--pri);color:var(--onPri);padding:8px 12px;border-radius:8px;z-index:100}
+.skip:focus{top:8px}
+.wrap{max-width:1280px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-left)) 64px}
+header.top h1{font-size:clamp(1.6rem,4vw,2.3rem);font-weight:800;letter-spacing:-.02em}
+header.top p{margin:6px 0 0;color:var(--ink2);max-width:70ch}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.pill{display:inline-flex;align-items:center;gap:6px;font:700 12px/1.2 var(--font-body);padding:4px 10px;border-radius:999px;border:1.5px solid currentColor;background:transparent;white-space:nowrap}
+.pill svg{width:14px;height:14px}
+.p-exists{color:var(--ok);background:var(--okC)}
+.p-lane{color:var(--info);background:var(--infoC);border-style:solid}
+.p-pin{color:var(--info);background:var(--infoC);border-style:dashed}
+.p-later{color:var(--warn);background:var(--warnC);border-style:dashed}
+.p-example{color:var(--ink2);background:var(--surface2);border-style:dotted}
+
+.bar.sticky{position:sticky;top:0;z-index:20}
+@media (max-width:700px){.bar.sticky{position:static}#hintkeys{display:none}}
+.bar{background:var(--bg);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh1);padding:10px 12px;margin:12px 0;display:grid;gap:10px}
+.bar-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{min-height:44px;padding:0 16px;border-radius:15px;border:1.5px solid var(--edge);background:var(--surface);cursor:pointer;font-weight:700}
+.btn.pri{background:var(--pri);color:var(--onPri);border-color:var(--pri)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.seg{display:inline-flex;border:1.5px solid var(--edge);border-radius:12px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;min-height:40px;padding:0 12px;cursor:pointer;font-size:14px;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--priC);color:var(--onPriC)}
+.seg button+button{border-left:1.5px solid var(--edge)}
+.lab{font:500 11px/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3)}
+.field-grp{display:grid;gap:4px}
+select.jump{min-height:44px;border-radius:12px;border:1.5px solid var(--edge);background:var(--surface);color:var(--ink);padding:0 10px;font:inherit;max-width:100%;flex:1 1 260px}
+.caption{margin:8px 0 14px;padding:14px 16px;border-radius:16px;background:var(--priC);color:var(--onPriC);border:1px solid var(--line)}
+.caption b{font-family:var(--font-display);font-size:1.1rem}
+.caption small{display:block;margin-top:4px;opacity:.9}
+.hint{font-size:13px;color:var(--ink3)}
+
+.stage{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.stage{grid-template-columns:var(--pw,360px) minmax(0,1fr);align-items:start}}
+.col{min-width:0}
+.col h2{font-size:1.05rem;font-weight:800;margin:0 0 6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.devwrap{overflow:auto;max-width:100%;margin:0 auto}
+.devwrap:focus-visible{outline-offset:-3px}
+.sizer{position:relative}
+.dev{position:absolute;left:0;top:0;transform-origin:0 0;background:var(--bezel);border-radius:44px;padding:12px;box-shadow:var(--sh3)}
+.dev.tab{border-radius:34px;padding:16px}
+.screen{position:relative;width:100%;height:100%;border-radius:34px;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;font:15px/1.45 var(--font-body)}
+.tab .screen{border-radius:22px}
+.screen.kiosk{background:var(--kbg);color:var(--kink)}
+.sbar{height:28px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:0 22px;font:700 12px var(--font-body);color:var(--ink2)}
+.kiosk .sbar{color:var(--kink3)}
+.gest{height:22px;flex:none;display:grid;place-items:center}.gest i{display:block;width:110px;height:4px;border-radius:4px;background:var(--ink3);opacity:.6}
+.kiosk .gest i{background:var(--kink3)}
+.badge{position:absolute;top:30px;right:10px;z-index:30;font-size:10.5px;padding:3px 8px}
+.appbar{height:56px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px}
+.appbar .t{font:800 17px var(--font-display);letter-spacing:-.012em}
+.ib{width:48px;height:48px;border-radius:14px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--ink)}
+.ib svg{width:24px;height:24px}
+.prog{flex:none;padding:2px 16px 10px}
+.prog .row{display:flex;justify-content:space-between;align-items:baseline}
+.prog .step{font:700 13px var(--font-body);color:var(--ink2)}
+.prog .name{font:500 10.5px var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3)}
+.segs{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:6px}
+.segs i{height:6px;border-radius:6px;background:var(--surface3)}
+.segs i.on{background:var(--pri)}.segs i.cur{background:var(--pri);box-shadow:0 0 0 2px var(--priC2)}
+.body{position:relative;flex:1;overflow:auto;padding:6px 16px 12px;display:flex;flex-direction:column;gap:12px}
+.body.c{justify-content:center}
+.foot{flex:none;padding:10px 16px 8px;display:grid;gap:8px;border-top:1px solid var(--line);background:var(--bg)}
+.foot .r2{display:flex;justify-content:space-between;gap:8px}
+.h1{font:800 22px/1.08 var(--font-display);letter-spacing:-.022em}
+.intro{color:var(--ink2)}
+.b{min-height:48px;border-radius:15px;border:1.5px solid var(--edge);background:var(--surface);padding:0 16px;font:700 15px var(--font-body);cursor:pointer;display:inline-flex;gap:8px;align-items:center;justify-content:center}
+.b.big{min-height:60px;border-radius:20px;font-size:18px}
+.b.p{background:var(--pri);border-color:var(--pri);color:var(--onPri)}
+.b.t{border-color:transparent;background:transparent;color:var(--pri);min-height:44px}
+.b.w{width:100%}
+.b:disabled{opacity:.45;cursor:not-allowed}
+.b svg{width:20px;height:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:14px;box-shadow:var(--sh1)}
+.hero{background:linear-gradient(155deg,var(--hero1),var(--hero2));color:var(--onPri);border-radius:22px;padding:18px;display:grid;gap:6px;justify-items:start}
+.hero svg{width:40px;height:40px}
+.fld{display:grid;gap:4px}
+.fld label{font:700 12.5px var(--font-body);color:var(--ink2)}
+.fld input{min-height:52px;border-radius:15px;border:1.5px solid var(--edge);background:var(--surface);color:var(--ink);padding:0 14px;font:700 15.5px var(--font-body);width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:40px;min-width:44px;padding:0 14px;border-radius:12px;border:1.5px solid var(--edge);background:var(--surface);cursor:pointer;font-weight:700}
+.chip[aria-pressed="true"]{background:var(--priC);border-color:var(--pri);color:var(--onPriC)}
+.row3{display:flex;gap:12px;align-items:flex-start}
+.row3 svg{width:24px;height:24px;flex:none;color:var(--pri);margin-top:2px}
+.note{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:16px;font-size:14px;border:1px solid currentColor}
+.note svg{width:22px;height:22px;flex:none}
+.note.warn{background:var(--warnC);color:var(--warn)}.note.info{background:var(--infoC);color:var(--info)}.note.ok{background:var(--okC);color:var(--ok)}
+.note span{color:var(--ink)}
+.dots{display:flex;gap:10px;justify-content:center;min-height:20px}
+.dots i{width:16px;height:16px;border-radius:50%;border:2px solid var(--edge)}
+.dots i.f{background:var(--ink);border-color:var(--ink)}
+.pad{display:grid;grid-template-columns:repeat(3,72px);gap:10px;justify-content:center}
+.pad button{height:56px;border-radius:16px;border:1.5px solid var(--edge);background:var(--surface);font:700 22px var(--font-body);cursor:pointer;display:grid;place-items:center}
+.pad button.x{visibility:hidden}.pad button.bk{border-color:transparent;background:transparent}
+.pad button svg{width:26px;height:26px}
+.err{color:var(--bad);font-weight:700;min-height:22px;text-align:center;font-size:14px}
+.tile{border:0;text-align:left;border-radius:14px;padding:12px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;color:var(--onPriC);background:var(--priC);min-height:88px;font:inherit;position:relative}
+.tile svg{width:28px;height:28px}
+.tile .tl{font:700 15px var(--font-body)}
+.tile.feat{background:var(--accentC);min-height:132px}.tile.feat svg{width:36px;height:36px}.tile.feat .tl{font-size:17px}
+.tile.hero{background:linear-gradient(155deg,var(--hero1),var(--hero2));color:var(--onPri);min-height:128px;width:100%}
+.tile.hero svg{width:40px;height:40px}.tile.hero .tl{font-size:19px}
+.tile.cm{background:var(--surface2);color:var(--ink)}
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dim .tile,.dim .hub{opacity:.38}
+.body.dim{padding-bottom:300px}
+.dim .tile.tg,.dim .hub.tg{opacity:1}
+.tg{outline:4px solid var(--accent);outline-offset:3px;box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 30%,transparent);z-index:2}
+.hub{display:flex;gap:12px;align-items:center;padding:12px;border-radius:16px;background:var(--surface);border:1px solid var(--line);cursor:pointer;text-align:left;width:100%}
+.hub svg{width:24px;height:24px;color:var(--pri);flex:none}
+.hub b{display:block;font-size:14.5px}.hub small{color:var(--ink3);font-size:12.5px}
+.hsec{font:500 10.5px var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);margin:8px 0 2px}
+.coach{position:absolute;left:10px;right:10px;bottom:34px;z-index:20;background:var(--surface);color:var(--ink);border:1.5px solid var(--pri);border-radius:22px;padding:14px;box-shadow:var(--sh3);display:grid;gap:8px}
+.coach .k{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font:700 12px var(--font-body);color:var(--ink2)}
+.coach .lbl{font:800 20px/1.1 var(--font-display);display:flex;gap:8px;align-items:center}
+.coach .lbl svg{width:26px;height:26px;color:var(--pri)}
+.coach .q{font-size:12px;color:var(--ink3)}
+.coach .acts{display:flex;gap:8px;flex-wrap:wrap}
+.tag{font:700 11px var(--font-body);padding:2px 8px;border-radius:999px;background:var(--accentC);color:var(--ink)}
+.sheet{position:absolute;inset:0;z-index:40;background:rgba(0,0,0,.45);display:flex;align-items:flex-end}
+.sheet>div{background:var(--surface);width:100%;border-radius:28px 28px 0 0;padding:20px 16px 26px;display:grid;gap:10px;box-shadow:var(--sh3)}
+/* Tablet (child) */
+.tab .screen{font-size:20px}
+.tab .appbar{display:none}
+.cs{flex:1;display:flex;flex-direction:column;padding:36px 44px 20px;gap:22px;overflow:auto}
+.cs h3{font:800 44px/1.05 var(--font-display);letter-spacing:-.03em}
+.cs .sub{font-size:22px;color:var(--ink2)}
+.cb{min-height:72px;border-radius:20px;border:0;background:var(--pri);color:var(--onPri);font:700 24px var(--font-body);padding:0 36px;cursor:pointer;display:inline-flex;align-items:center;gap:12px;justify-content:center;align-self:center}
+.cb svg{width:30px;height:30px}
+.sp{width:64px;height:64px;border-radius:50%;border:2px solid var(--edge);background:var(--surface);display:grid;place-items:center;cursor:pointer;color:var(--ink)}
+.sp svg{width:30px;height:30px}
+.w.hl{background:var(--accent);color:var(--ink);border-radius:6px;box-shadow:0 0 0 3px var(--accent)}
+.tab .tile{min-height:120px;padding:16px;border-radius:14px}.tab .tile svg{width:38px;height:38px}.tab .tile .tl{font-size:22px}
+.tab .tile.feat{min-height:170px}.tab .tile.feat svg{width:48px;height:48px}.tab .tile.feat .tl{font-size:26px}
+.tab .tile.hero{min-height:180px}.tab .tile.hero .tl{font-size:30px}.tab .tile.hero svg{width:56px;height:56px}
+.tab .tgrid{gap:14px}
+.tab .coach{bottom:42px;left:24px;right:24px;padding:22px;gap:12px;font-size:22px}
+.tab .coach .lbl{font-size:30px}.tab .coach .lbl svg{width:36px;height:36px}
+.tile.sp-on{outline:5px solid var(--accent);outline-offset:3px}
+.big-ic{display:flex;justify-content:center;align-items:center;gap:20px;color:var(--pri)}
+.gate svg.g1{width:120px;height:120px}.gate svg.g2{width:70px;height:70px;opacity:.8}
+.kiosk .gt{font:700 32px var(--font-body);text-align:center}
+.kiosk .q{font-size:14px;color:var(--kink4)}
+.kq{background:transparent;border:0;color:var(--kink2);font:inherit;cursor:pointer;text-decoration:underline;padding:12px}
+.kb{min-height:56px;padding:0 24px;border-radius:16px;border:1.5px solid var(--kink3);background:transparent;color:var(--kink);font:700 18px var(--font-body);cursor:pointer;display:inline-flex;gap:8px;align-items:center;justify-content:center}
+.kb svg{width:22px;height:22px}
+.kdots{display:flex;gap:10px;justify-content:center}.kdots i{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--kink3)}.kdots i.f{background:#fff}
+.kpad{display:grid;grid-template-columns:repeat(3,76px);gap:10px;justify-content:center}.kpad button{height:64px;border-radius:14px;border:0;background:rgba(255,255,255,.08);color:#fff;font:600 24px var(--font-body);cursor:pointer}
+.match{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.mc{width:130px;border-radius:18px;padding:12px;display:grid;gap:8px;justify-items:center;border:2px solid transparent;background:var(--surface2);cursor:pointer;color:var(--ink);font:inherit}
+.mc svg{width:34px;height:34px}.mc .ps{display:flex;gap:6px}
+.mc[aria-pressed="true"]{border-color:var(--pri);box-shadow:0 0 0 3px var(--priC2)}
+.kiosk .mc{background:rgba(255,255,255,.08);color:#fff;width:160px}
+.kiosk .mc svg{width:44px;height:44px}
+.cardtile{width:100%;border-radius:22px;padding:20px;background:var(--surface2);display:grid;gap:10px;justify-items:center;text-align:center}
+.pict{display:grid;place-items:center;gap:8px;border-radius:22px;background:var(--accentC);padding:24px;color:var(--ink)}
+.pict svg{width:120px;height:120px;color:var(--pri)}
+.quiet{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.hold{width:200px;min-height:170px;border-radius:22px;border:0;background:var(--accentC);display:grid;place-items:center;gap:6px;cursor:pointer;color:var(--ink);font:700 24px var(--font-body);padding:16px;user-select:none;touch-action:none}
+.hold svg{width:56px;height:56px;color:var(--pri)}
+.hold.on{outline:5px solid var(--accent);outline-offset:3px}
+.pulse{animation:pl 1.6s ease-in-out infinite}
+@keyframes pl{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+
+/* Notes */
+.notes{display:grid;gap:16px;margin-top:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.notes{grid-template-columns:1fr 1fr}}
+.np{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--sh1);min-width:0}
+.np h3{font-size:1.05rem;display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.np dl{margin:0;display:grid;gap:10px}
+.np dt{font:500 11px var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3)}
+.np dd{margin:2px 0 0;overflow-wrap:anywhere}
+.np ul{margin:2px 0 0;padding-left:18px}
+.np code{font-family:var(--font-mono);font-size:.85em;background:var(--surface2);padding:1px 5px;border-radius:6px}
+.list{margin:20px 0}
+.list details{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 14px}
+.list summary{cursor:pointer;font-weight:700;min-height:32px}
+.list ol{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:4px}
+.list .g{font:500 11px var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);margin:10px 0 2px}
+.list button{width:100%;text-align:left;min-height:40px;border-radius:10px;border:1px solid transparent;background:transparent;cursor:pointer;padding:6px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.list button[aria-current="step"]{background:var(--priC);color:var(--onPriC);border-color:var(--pri);font-weight:700}
+.list .n{font:500 12px var(--font-mono);color:var(--ink3);min-width:26px}
+footer.hon{margin-top:24px;padding:16px;border-radius:16px;background:var(--surface2);font-size:14px;color:var(--ink2)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the screens</a>
+<div class="wrap">
+<header class="top">
+  <h1>Guided first run: the story, screen by screen</h1>
+  <p>The grown-up on her phone and the child on her tablet, side by side. Step through the story with Next and Back, or the arrow keys. Every screen has a notes panel that says what exists in the app today, what the first-run work builds, and what is later. Scope: <code>docs/planning/ONBOARDING-SCOPE.md</code>.</p>
+  <div class="legend" aria-label="Legend">
+    <span class="pill p-exists" id="lg1"></span><span class="pill p-lane" id="lg2"></span><span class="pill p-pin" id="lg3"></span><span class="pill p-later" id="lg4"></span><span class="pill p-example" id="lg5"></span>
+  </div>
+</header>
+
+<section class="bar sticky" aria-label="Story controls">
+  <div class="bar-row">
+    <button class="btn" id="prev" type="button">Back</button>
+    <button class="btn pri" id="next" type="button">Next</button>
+    <label class="vh" for="jump">Jump to a moment</label>
+    <select class="jump" id="jump"></select>
+    <span class="hint" id="hintkeys">Arrow keys also work.</span>
+  </div>
+</section>
+<section class="bar" aria-label="View options">
+  <div class="bar-row">
+    <div class="field-grp"><span class="lab">Theme</span>
+      <div class="seg" role="group" aria-label="Theme"><button type="button" data-th="auto">Auto</button><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div></div>
+    <div class="field-grp"><span class="lab">Phone</span>
+      <div class="seg" role="group" aria-label="Phone display"><button type="button" data-ph="cover">Fold cover (344 dp)</button><button type="button" data-ph="open">Fold open (673 x 841)</button></div></div>
+    <div class="field-grp"><span class="lab">Connecting</span>
+      <div class="seg" role="group" aria-label="Connecting state"><button type="button" data-pair="normal">Normal</button><button type="button" data-pair="wait">Waiting</button><button type="button" data-pair="fail">Didn't connect</button></div></div>
+    <div class="field-grp"><span class="lab">Coach marks</span>
+      <div class="seg" role="group" aria-label="Coach marks"><button type="button" data-co="1">On</button><button type="button" data-co="0">Off</button></div></div>
+    <div class="field-grp"><span class="lab">Tablet size</span>
+      <div class="seg" role="group" aria-label="Tablet size"><button type="button" data-mag="0">Fit</button><button type="button" data-mag="1">Large (scroll inside)</button></div></div>
+  </div>
+</section>
+
+<div class="caption" id="cap" aria-live="polite"></div>
+
+<main id="stage" class="stage" tabindex="-1">
+  <section class="col" aria-labelledby="hp">
+    <h2 id="hp">Her phone <span class="hint">(the grown-up)</span> <span class="pill" id="pp"></span></h2>
+    <div class="devwrap" id="pw"><div class="sizer" id="ps"><div class="dev" id="pd" role="group"></div></div></div>
+  </section>
+  <section class="col" aria-labelledby="ht">
+    <h2 id="ht">Her tablet <span class="hint">(the child, portrait)</span> <span class="pill" id="tp"></span></h2>
+    <div class="devwrap" id="tw" tabindex="-1"><div class="sizer" id="ts"><div class="dev tab" id="td" role="group"></div></div></div>
+  </section>
+</main>
+
+<section class="notes" aria-label="Notes for the screens now showing">
+  <div class="np" id="nphone"></div>
+  <div class="np" id="ntab"></div>
+</section>
+
+<section class="list"><details><summary>All moments in order</summary><div id="all"></div></details></section>
+
+<footer class="hon">
+  <b>This is a picture of the plan, not the app.</b> Colours, type and corner sizes are the app's own tokens (the "olive" palette from <code>design_tokens_generated.dart</code>). Labels and wording use the real strings from the code where a screen exists today, and say "proposed" where they are new. Icons are redrawn outlines for the icon names the code uses (the app draws the real Material glyphs). The tablet's gate, window and keypad screens use the app's dark kiosk colours, as the real ones do. Voice is silent here: the highlighted words show what read aloud would follow. Nothing on this page is saved or sent.
+</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ---------- icons: outline set, 24 grid. Names follow the app's Material icon names where noted ---------- */
+var IC={
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+ puzzle:'<path d="M10 4a2 2 0 114 0v2h4v4h-2a2 2 0 100 4h2v4h-4v-2a2 2 0 10-4 0v2H6v-4h2a2 2 0 100-4H6V6h4z"/>',
+ mail:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 8l9 6 9-6"/>',
+ book:'<path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19a2 2 0 012-2h13"/>',
+ camera:'<path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/>',
+ palette:'<path d="M12 3a9 9 0 100 18c1.5 0 2-1 1.5-2s0-2 1.5-2h2a3 3 0 003-3c0-5-4-11-8-11z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+ more:'<circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/>',
+ msgbank:'<path d="M3 12l14-7-4 14-3-6z"/><circle cx="18" cy="18" r="3.5"/><path d="M18 16.5V18l1 .8"/>',
+ avail:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ pill:'<path d="M10.5 3.5a4.5 4.5 0 016.4 6.4l-7 7a4.5 4.5 0 01-6.4-6.4z"/><path d="M8 8l8 8"/>',
+ emerg:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 9v6M9 12h6"/>',
+ care:'<path d="M12 11s-4-2.5-4-5.5a2.2 2.2 0 014-1.2 2.2 2.2 0 014 1.2c0 3-4 5.5-4 5.5z"/><path d="M3 15h4l4 2h4a2 2 0 010 4H8l-5-2z"/>',
+ phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
+ tune:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+ swap:'<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+ receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+ grownup:'<circle cx="8" cy="5" r="2"/><path d="M5.5 10h5l1 6h-7zM8 16v5"/><circle cx="17" cy="12" r="1.6"/><path d="M15 16h4l.7 4h-5.4z"/>',
+ device:'<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>',
+ tablet:'<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M11 18h2"/>',
+ check:'<path d="M5 12l5 5 9-10"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',
+ arrowL:'<path d="M19 12H5M11 6l-6 6 6 6"/>',arrowR:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+ bksp:'<path d="M9 5h11a1 1 0 011 1v12a1 1 0 01-1 1H9l-6-7z"/><path d="M12 9l5 6M17 9l-5 6"/>',
+ vol:'<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/>',
+ lock:'<rect x="5" y="11" width="14" height="10" rx="3"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+ shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9.5"/>',
+ hourglass:'<path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/>',
+ leaf:'<path d="M4 20C4 10 10 4 20 4c0 10-6 16-16 16z"/><path d="M4 20L14 10"/>',
+ hand:'<path d="M7 12V6a1.5 1.5 0 013 0v5V4a1.5 1.5 0 013 0v7V5a1.5 1.5 0 013 0v8c0 5-3 8-7 8-3 0-5-2-6-5l-1-3a1.5 1.5 0 013-.5z"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+ heart:'<path d="M12 20s-8-5-8-11a4.5 4.5 0 018-2.5A4.5 4.5 0 0120 9c0 6-8 11-8 11z"/>',
+ star:'<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.3 6L12 16.3 6.6 19.4l1.3-6L3.4 9.3l6-.7z"/>',
+ tri:'<path d="M12 4l9 16H3z"/>',sq:'<rect x="4" y="4" width="16" height="16" rx="3"/>',circ:'<circle cx="12" cy="12" r="8"/>',
+ sparkle:'<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+ key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+ chevR:'<path d="M9 6l6 6-6 6"/>'
+};
+function ic(n,cls){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"'+(cls?' class="'+cls+'"':'')+'>'+IC[n]+'</svg>';}
+
+/* ---------- state ---------- */
+var st={idx:0,theme:'auto',phone:'cover',pair:'normal',coach:true,mag:false,
+  name:'',label:'Mom',child:'Mia',age:7,zone:'phone',pin:'',pin2:'',pinMsg:'',minute:false,resume:false,pairLater:false,pick:-1,
+  gdots:0,held:'',myDay:false,hist:[]};
+
+/* ---------- the story (every moment, both devices) ---------- */
+var GROUPS={set:'Set up on the phone',wake:'Wake her tablet',conn:'Connect her tablet',turn:"Mia's turn",tour:'Your tour',fin:'Finish',wn:"What's new (example for an update)"};
+var BEATS=[
+ {g:'set',t:'Welcome',p:'A1',c:'T0',cap:'The grown-up opens the app on her phone for the first time. The tablet is still in a drawer.'},
+ {g:'set',t:'About you',p:'A2',c:'T0',cap:'Name and what she calls you. Back keeps everything typed.'},
+ {g:'set',t:'About her',p:'A3',c:'T0',cap:'Her first name, her age (locked once set) and her time zone.'},
+ {g:'set',t:'Choose your PIN',p:'A4',c:'T0',cap:'The normal keypad: 1 2 3, 4 5 6, 7 8 9, then blank, 0 and backspace. Dots fill as you type.'},
+ {g:'set',t:'Enter your PIN again',p:'A4c',c:'T0',cap:'Once more to be sure. The family and the PIN are saved on this phone when it matches.'},
+ {g:'wake',t:'Get her tablet ready',p:'A5',c:'T1',cap:'Hand-off 1. Now the grown-up wakes her tablet. It shows only a grown-up and a phone: "A grown-up does this".'},
+ {g:'conn',t:'Open the window (phone)',p:'A6a',c:'T1',cap:'Hand-off 2. Now the grown-up opens the window on the phone. The tablet stays calm.'},
+ {g:'conn',t:'Go to the tablet: choose how',p:'A6b',c:'T2',cap:'Now the tablet. The grown-up taps the small "I\'m the grown-up" and chooses "Type my code".'},
+ {g:'conn',t:'The tablet shows the window',p:'A6b',c:'T3',cap:'The tablet shows one nameless picture for the open window. The grown-up taps it.'},
+ {g:'conn',t:'The grown-up types their own PIN',p:'A6b',c:'T4',cap:'Hand-off 3. The tablet\'s adult keypad, shuffled each time. This is the only keypad the tablet ever shows.'},
+ {g:'conn',t:'Match the pictures',p:'A6c',c:'T5',cap:'Hand-off 4. The tablet shows three pictures and a colour. The phone asks which card has the same ones.'},
+ {g:'conn',t:'Approve',p:'A6d',c:'T6',cap:'Hand-off 5. Only the grown-up says yes, on the phone. The tablet waits quietly, with no timer.'},
+ {g:'conn',t:'Connected',p:'A6e',c:'T7',cap:'Both devices show it is done. The tablet shows a soft picture, no words to read.'},
+ {g:'turn',t:'Now Mia\'s turn: hello',p:'A7',c:'T8',cap:'Hand-off 6. "Now let Mia have a look." The tablet says hello with her name and a speaker button.'},
+ {g:'turn',t:'Her home, every picture labelled',p:'A7',c:'T9',cap:'Her own home with a word under every picture. Read aloud highlights each word as it is spoken.'},
+ {g:'turn',t:'Try it: tap',p:'A7',c:'T10',cap:'A tiny try-it. Tapping My day opens a quiet picture and comes back. Nothing is kept.'},
+ {g:'turn',t:'Try it: hold to hear',p:'A7',c:'T11',cap:'The second try-it. Press and hold a picture to hear its word. Nothing is kept.'},
+ {g:'turn',t:'She is ready',p:'A7',c:'T12',cap:'No score, no star, no count. One button to her home. The grown-up taps "She has finished" on the phone.'},
+ {g:'tour',t:'Tour 1: Message banking',p:'A8.1',c:'T13',cap:'Hand-off 7. Now the grown-up\'s tour. Her tablet sits safely on her home.'},
+ {g:'tour',t:'Tour 2: Availability',p:'A8.2',c:'T13',cap:'The tour points at each real tile and spells out its label.'},
+ {g:'tour',t:'Tour 3: Send-time guard',p:'A8.3',c:'T13',cap:'The tour continues.'},
+ {g:'tour',t:'Tour 4: Care and coordination',p:'A8.4',c:'T13',cap:'The next stops live in More.'},
+ {g:'tour',t:'Tour 5: Emergency card',p:'A8.5',c:'T13',cap:'The tour continues.'},
+ {g:'tour',t:'Tour 6: Call',p:'A8.6',c:'T13',cap:'Shown only when calls are available (an open owner decision).'},
+ {g:'tour',t:'Tour 7: Settings',p:'A8.7',c:'T13',cap:'The last stop: where everything can be changed, and where this tour can be replayed.'},
+ {g:'fin',t:'All done',p:'A9',c:'T13',cap:'What is set up, what is waiting, and where help lives.'},
+ {g:'wn',t:'A quiet card appears',p:'W1',c:'T13',cap:'Example only. After an update with something new, the home shows a quiet card. Nothing blocks the home and the tablet shows nothing to her.'},
+ {g:'wn',t:'New stop 1',p:'W2',c:'T13',cap:'Example only. One stop per new entry, in the same coach-mark form, skippable.'},
+ {g:'wn',t:'New stop 2',p:'W3',c:'T13',cap:'Example only. A second new entry, in its own slot.'},
+ {g:'wn',t:'Up to date',p:'W4',c:'T13',cap:'Example only. Finishing, skipping or dismissing marks the new entries as seen, so this appears once.'}
+];
+var HOME_IDX=18, DONE_IDX=25;
+
+/* ---------- screen notes ---------- */
+var S_EX='exists',S_LN='lane',S_PIN='pin',S_LT='later',S_EG='example';
+var STATUS={exists:['Exists today','check','p-exists'],lane:['Built by this lane','sparkle','p-lane'],pin:['Built by the PIN lane (another agent)','key','p-pin'],later:['Later','clock','p-later'],example:['Example only: planned, not built','info','p-example']};
+var N={
+ A1:{id:'A1 welcome',s:S_LN,copy:'proposed',saves:'A resume marker only. No account, no network.',back:'None (first screen).',skip:'None.',a11y:'Heading first; the three reassurances are a list; "Start" is the one primary control; no timers.',file:'new (guardian_onboarding.dart gains a welcome stage)'},
+ A2:{id:'A2 you (step 2 of 9)',s:S_EX,copy:'real strings: "About you", the intro and the field labels; the chrome (progress, I need a minute) is new',saves:'Your name and the word she calls you, held in the draft.',back:'Returns to A1; typed values are kept.',skip:'Not skippable (needed). "I need a minute" always available.',a11y:'Every field has a visible label; the label chips are toggle buttons with pressed state; errors are announced in words.',file:'guardian_onboarding.dart (stage "you")'},
+ A3:{id:'A3 her (step 3 of 9)',s:S_EX,copy:'real strings for "About her" and the zone intro; the zone is folded into this screen in v1 (today a separate stage)',saves:'Her first name, her locked age and her home zone, held in the draft.',back:'Returns to A2; values kept.',skip:'Not skippable (needed).',a11y:'Age chips are a labelled group; the lock is said in words; the zone default is a radio with a visible label.',file:'guardian_onboarding.dart (stages "her" and "zone")'},
+ A4:{id:'A4 pin (step 4 of 9): choose',s:S_PIN,copy:'proposed; the intro reuses the existing PIN wording',saves:'Nothing until the second entry matches.',back:'Returns to A3.',skip:'Not skippable: the PIN opens the phone with no internet.',a11y:'Digits are real buttons; backspace is labelled "Delete the last digit"; dots are announced as "n digits entered", never the digits; a too-easy PIN is refused in words.',file:'today: local_pin_screens.dart (two text fields). The normal keypad comes from the PIN lane. Reconcile its API.'},
+ A4c:{id:'A4 pin (step 4 of 9): enter again',s:S_PIN,copy:'proposed; mismatch line is the real "The two PINs don\'t match."',saves:'On a match: the family and the PIN (as a salted hash, never the digits) are stored on this phone. A store that cannot be written says so and holds this screen.',back:'Returns to the first entry (empty).',skip:'Not skippable.',a11y:'Same as the first entry; the mismatch is announced.',file:'PIN lane keypad hosted by this lane; rules in local_pin.dart (4 to 8 digits, easy-guess refusal)'},
+ A5:{id:'A5 ready (step 5 of 9)',s:S_LN,copy:'proposed',saves:'A resume marker.',back:'Returns to A4 (shows "Your PIN is set" with "Change my PIN").',skip:'"Do this later" jumps to the tour; the finish then shows "Connect her tablet" as waiting.',a11y:'The picture of the tablet card has a text equivalent that quotes its words.',file:'new'},
+ A6a:{id:'A6a open window (step 6 of 9)',s:S_EX,copy:'real strings from connect_child_screen.dart; progress strip, "I need a minute" and "Do this later" are new',saves:'Nothing yet. The window is short-lived.',back:'Returns to A5.',skip:'"Do this later" (jumps to the tour).',a11y:'The PIN field is masked and announced as "PIN, n digits"; errors are calm and in words.',file:'connect_child_screen.dart'},
+ A6b:{id:'A6b waiting at the tablet',s:S_LN,copy:'proposed (the screen exists; this calmer line is new)',saves:'Nothing.',back:'"Close the window" returns to A6a.',skip:'"Do this later".',a11y:'No countdown. Status text is a polite live region.',file:'connect_child_screen.dart (waiting stage)'},
+ A6c:{id:'A6c match (step 6 of 9)',s:S_EX,copy:'real strings',saves:'Nothing until she approves.',back:'"None of these" starts again calmly.',skip:'"Do this later".',a11y:'Each card has a shape as well as a colour, and a text name for screen readers.',file:'connect_child_screen.dart, pairing_picture_widgets.dart'},
+ A6d:{id:'A6d approve (step 6 of 9)',s:S_EX,copy:'real strings',saves:'On "Yes, connect it": the pairing record, the tablet\'s key and the trust entry.',back:'"Not mine" ends the attempt with no record.',skip:'"Do this later".',a11y:'The radio and both buttons are labelled in words.',file:'connect_child_screen.dart'},
+ A6e:{id:'A6e connected (step 6 of 9)',s:S_EX,copy:'real string "device is connected"; the Next button is new',saves:'Nothing more.',back:'None (already connected).',skip:'None.',a11y:'Success is a word and an icon, never a colour alone.',file:'connect_child_screen.dart'},
+ A6w:{id:'A6 waiting variant',s:S_LN,copy:'proposed',saves:'Nothing.',back:'"Keep waiting" returns to the step.',skip:'"Do this later".',a11y:'No timer or count; polite live region.',file:'new chrome around the existing waiting stage'},
+ A6f:{id:'A6 calm failure variant',s:S_LN,copy:'proposed (phone). The tablet shows the existing calm card.',saves:'Nothing was saved on either device.',back:'"Try again" returns to A6a.',skip:'"Do this later".',a11y:'The cause is not explained to the child; the grown-up sees plain words, not codes.',file:'new phone copy; tablet side exists'},
+ A7:{id:'A7 hand (step 7 of 9)',s:S_LN,copy:'proposed',saves:'A resume marker.',back:'None while she is on the tablet.',skip:'"Skip this part": her tablet goes straight to her home.',a11y:'The phone is quiet; the one control is a labelled button.',file:'new'},
+ A8:{id:'A8 tour stop',s:S_LN,copy:'labels are the real tile labels; the one-line explanations are proposed',saves:'A tour marker (finished or skipped) when it ends.',back:'Returns to the previous stop.',skip:'"Skip this part" goes to All done.',a11y:'The highlight is an outline plus a spelled-out label, never colour alone. The callout is part of the screen, not a trap. Large text is supported.',file:'guardian_home.dart, guardian_more.dart (tiles exist); the coach layer is new'},
+ A9:{id:'A9 all done (step 9 of 9)',s:S_LN,copy:'proposed',saves:'firstRun.complete = true. A finished install never sees the first run again, except "Show me around again".',back:'Returns to the last tour stop.',skip:'None.',a11y:'Done and waiting items use an icon and a word.',file:'new'},
+ RES:{id:'Resume screen',s:S_LN,copy:'proposed',saves:'Nothing. The place was saved when she left.',back:'None.',skip:'None.',a11y:'Names the exact step in words.',file:'new'},
+ W1:{id:"W1 what's new card",s:S_EG,copy:'example copy',saves:'Nothing until she opens or dismisses it.',back:'None.',skip:'"Not now" dismisses it and marks the new entries as seen.',a11y:'A quiet card, not a modal.',file:'script versioning: ONBOARDING-SCOPE.md section 15'},
+ W2:{id:"W2 what's new stop 1",s:S_EG,copy:'example copy. The feature named is planned, not built.',saves:'Nothing until the mini-tour ends.',back:'Returns to the card.',skip:'"Skip this part".',a11y:'Same coach-mark form as the tour.',file:'script versioning: ONBOARDING-SCOPE.md section 15'},
+ W3:{id:"W3 what's new stop 2",s:S_EG,copy:'example copy. The feature named is planned, not built.',saves:'Nothing until the mini-tour ends.',back:'Returns to stop 1.',skip:'"Skip this part".',a11y:'Same coach-mark form as the tour.',file:'script versioning: ONBOARDING-SCOPE.md section 15'},
+ W4:{id:"W4 what's new finished",s:S_EG,copy:'example copy',saves:'onboardingSeenVersion is set to the current version.',back:'Returns to the last stop.',skip:'None.',a11y:'A word and an icon.',file:'script versioning: ONBOARDING-SCOPE.md section 15'},
+ T0:{id:'T0 not started',s:S_EX,copy:'nothing of ours is shown',saves:'Nothing.',back:'n/a',skip:'n/a',a11y:'n/a',file:'n/a'},
+ T1:{id:'T1 gate card',s:S_EX,copy:'real string',saves:'Nothing.',back:'None. A child tapping anywhere does nothing.',skip:'None.',a11y:'Text equivalent: "A grown-up does this". No input. No count, no error.',file:'adult_gate.dart'},
+ T2:{id:'T2 grown-up chooses',s:S_EX,copy:'real strings, reached only by tapping the small "I\'m the grown-up"',saves:'Nothing.',back:'Returns to the card.',skip:'None.',a11y:'Large labelled buttons.',file:'adult_gate.dart'},
+ T3:{id:'T3 window picture',s:S_EX,copy:'a nameless picture tile; real behaviour',saves:'Nothing.',back:'Returns to the card.',skip:'None.',a11y:'Text equivalent "An open window nearby".',file:'child_connect_screen.dart'},
+ T4:{id:'T4 adult keypad',s:S_EX,copy:'real strings and real behaviour (shuffled digits, order changes every time)',saves:'Nothing is kept; the PIN is the key-exchange secret and is never sent.',back:'A wrong code simply resets the keypad. Nothing is explained to the child.',skip:'None.',a11y:'This is the only keypad the tablet shows. It is the adult gate, not part of the child welcome.',file:'pin_gate.dart, adult_gate.dart'},
+ T5:{id:'T5 match',s:S_EX,copy:'three pictures and a colour, no words',saves:'Nothing.',back:'None.',skip:'None.',a11y:'A shape in the corner so colour is never the only cue.',file:'pairing_picture_widgets.dart'},
+ T6:{id:'T6 waiting for the yes',s:S_EX,copy:'the same calm card; no timer',saves:'Nothing.',back:'None.',skip:'None.',a11y:'No count, no error.',file:'child_connect_screen.dart'},
+ T7:{id:'T7 connected',s:S_LN,copy:'none to read; a soft picture',saves:'The pairing record (written by the existing pairing code).',back:'None.',skip:'None.',a11y:'Text equivalent "Joined".',file:'new'},
+ T8:{id:'T8 hello',s:S_LN,copy:'proposed. Greeting follows the existing "Hi {name}" pattern.',saves:'Nothing.',back:'None.',skip:'None for her.',a11y:'Speaker button reads the words and highlights each word; speech starts only on a tap (read_aloud.dart refuses autonomous speech).',file:'new; read_aloud.dart exists'},
+ T9:{id:'T9 labelled home',s:S_LN,copy:'real tile labels (child_home_bands.dart); the lines in the callout are proposed',saves:'Nothing.',back:'None.',skip:'None for her.',a11y:'A word under every picture. Each tile has its own speaker button. Targets 64 dp or larger.',file:'child_home.dart, tiered_tile.dart exist; the coach layer is new'},
+ T10:{id:'T10 try it: tap',s:S_LN,copy:'proposed',saves:'Nothing: no result, count or streak is kept.',back:'None.',skip:'Next is always available; nothing is required.',a11y:'No wrong answer; the Next button is always available.',file:'new'},
+ T11:{id:'T11 try it: hold',s:S_LN,copy:'proposed; long-press to hear exists today',saves:'Nothing.',back:'None.',skip:'Next is always available.',a11y:'Each picture also has a speaker button so holding is never the only way. Voice is silent in this mockup.',file:'new; read_aloud.dart exists'},
+ T12:{id:'T12 ready',s:S_LN,copy:'proposed',saves:'welcome.done on the tablet.',back:'None.',skip:'None.',a11y:'No score, no star, no count.',file:'new'},
+ T13:{id:'T13 her home',s:S_EX,copy:'real labels',saves:'Nothing.',back:'n/a',skip:'n/a',a11y:'The normal child home.',file:'child_home.dart'},
+ T13L:{id:'T1 gate card (tablet not connected yet)',s:S_EX,copy:'real string',saves:'Nothing. "Do this later" was chosen on the phone.',back:'None.',skip:'None.',a11y:'As T1.',file:'adult_gate.dart'},
+ TF:{id:'TF calm try-again card',s:S_EX,copy:'real string',saves:'Nothing.',back:'OK returns to the card.',skip:'None.',a11y:'No number, no count, no reason.',file:'adult_gate.dart (CalmTryAgainCard)'}
+};
+
+/* ---------- helpers ---------- */
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function nm(){return esc(st.child||'Mia');}
+function status(k){var x=STATUS[N[k].s];return '<span class="pill '+x[2]+'">'+ic(x[1])+x[0]+'</span>';}
+function badge(k){var x=STATUS[N[k].s];return '<span class="pill badge '+x[2]+'" style="background:var(--surface)">'+ic(x[1])+x[0].split(' (')[0]+'</span>';}
+function sb(t){return '<div class="sbar" aria-hidden="true"><span>'+(t||'9:41')+'</span><span>'+ic('lock').replace('<svg','<svg width="14" height="14"')+'</span></div>';}
+function gest(){return '<div class="gest" aria-hidden="true"><i></i></div>';}
+function appbar(back,title){return '<div class="appbar">'+(back?'<button class="ib" type="button" data-a="back" aria-label="Back">'+ic('arrowL')+'</button>':'<span style="width:12px"></span>')+'<span class="t">'+esc(title||'Olive Branch')+'</span></div>';}
+var STEPNAME={1:'Welcome',2:'About you',3:'About her',4:'Your PIN',5:'Her tablet',6:'Connect',7:'Her turn',8:'Your tour',9:'All done'};
+function prog(n){var s='';for(var i=1;i<=9;i++)s+='<i class="'+(i<n?'on':i===n?'cur':'')+'"></i>';
+ return '<div class="prog"><div class="row"><span class="step" role="status">Step '+n+' of 9</span><span class="name">'+STEPNAME[n]+'</span></div><div class="segs" role="progressbar" aria-valuemin="1" aria-valuemax="9" aria-valuenow="'+n+'" aria-label="Step '+n+' of 9">'+s+'</div></div>';}
+function minute(){return '<button class="b t" type="button" data-a="minute">I need a minute</button>';}
+function foot(primary,opts){opts=opts||{};
+ return '<div class="foot">'+(primary||'')+'<div class="r2">'+minute()+(opts.later?'<button class="b t" type="button" data-a="'+(opts.laterAct||'later')+'">'+opts.later+'</button>':'<span></span>')+'</div></div>';}
+function P(label,act,dis,ico){return '<button class="b big p w" type="button" data-a="'+act+'"'+(dis?' disabled':'')+'>'+esc(label)+(ico?ic(ico):'')+'</button>';}
+function phoneShell(step,inner,footer,back){return sb()+appbar(back!==false)+(step?prog(step):'')+'<div class="body">'+inner+'</div>'+footer+gest();}
+function tileHtml(cls,ico,label,key,tg){return '<button class="tile '+cls+(tg?' tg':'')+'" type="button" data-tile="'+esc(key||label)+'" aria-label="'+esc(label)+'">'+ic(ico)+'<span class="tl">'+esc(label)+'</span></button>';}
+function hubHtml(ico,title,sub,tg){return '<button class="hub'+(tg?' tg':'')+'" type="button">'+ic(ico)+'<span><b>'+esc(title)+'</b><small>'+esc(sub)+'</small></span></button>';}
+
+/* ---------- phone screens ---------- */
+var TOUR=[
+ {label:'Message banking',ic:'msgbank',where:'home',top:true,txt:'Write a message now and choose when she gets it. This is the most important one.'},
+ {label:'Availability',ic:'avail',where:'full',txt:'Tell her when you can be reached, so she can see it in words.'},
+ {label:'Send-time guard',ic:'clock',where:'full',txt:'Stops a message arriving at a bad hour for her.'},
+ {label:'Care and coordination',ic:'care',where:'hub',txt:'Medicines, expenses, handover notes and more, kept on this phone.'},
+ {label:'Emergency card',ic:'emerg',where:'full',txt:'Allergies and contacts in one place, for someone in a hurry.'},
+ {label:'Call '+'{c}',ic:'phone',where:'hub',txt:'Video call when you are both online. Shown only when calls are available.'},
+ {label:'Settings',ic:'tune',where:'hub',txt:'Her time, her safety and your PIN. You can change anything here.'}
+];
+function homeBody(layer,target,cover){
+ var tg=function(l){return target===l;};
+ var h='';
+ if(layer==='hub'){
+  h+='<div class="hsec">Coordination</div>'+hubHtml('care','Care and coordination','Medicines, expenses, handover notes and more. On this device',tg('Care and coordination'))
+   +hubHtml('avail','Availability','When he can actually be reached, honestly rendered')+hubHtml('emerg','Emergency card','Read once, in a hurry');
+  h+='<div class="hsec">Calls</div>'+hubHtml('phone','Call '+st.child,'Needs a connection',tg('Call '+'{c}'));
+  h+='<div class="hsec">Preferences</div>'+hubHtml('tune','Settings','Her, Family, Safety, Learn, Account in one place',tg('Settings'));
+  return h;}
+ h+='<div class="note info" style="padding:8px 12px;font-size:13px"><span>This is on this phone only. You can connect later in Settings, under Account.</span></div>';
+ var hero=tileHtml('hero','msgbank','Message banking','Message banking',tg('Message banking'));
+ if(cover&&layer==='home'){
+  return h+hero+tileHtml('cm','more','More','More');}
+ h+=hero;
+ h+='<div class="tgrid">'+tileHtml('feat','avail','Availability','Availability',tg('Availability'))+tileHtml('feat','clock','Send-time guard','Send-time guard',tg('Send-time guard'))
+   +tileHtml('feat','pill','Meds & care','Meds & care')+tileHtml('feat','emerg','Emergency card','Emergency card',tg('Emergency card'))+'</div>';
+ h+='<div class="tgrid">'+tileHtml('','receipt','Handover notes','Handover notes')+tileHtml('','swap','Exchange','Exchange')+'</div>'+tileHtml('cm','more','More','More');
+ return h;
+}
+function tourScreen(i){
+ var s=TOUR[i], cover=st.phone==='cover', lbl=s.label.replace('{c}',esc(st.child));
+ var layer=s.where==='hub'?'hub':(s.where==='home'?'home':(cover?'full':'home'));
+ var body=homeBody(layer,s.label,cover);
+ var title=layer==='hub'?'More':(layer==='full'?'More':'Olive Branch');
+ var where=layer==='hub'?'It is in More.':(layer==='full'?'On the narrow cover display, More opens the full home.':'');
+ var coach='';
+ if(st.coach){
+  coach='<div class="coach" role="region" aria-label="Tour stop '+(i+1)+' of 7: '+esc(lbl)+'"><div class="k"><span class="tag">Stop '+(i+1)+' of 7</span>'+(s.top?'<span class="tag" style="background:var(--warnC);color:var(--warn)">Most important</span>':'')+'<span>'+where+'</span></div>'
+   +'<div class="lbl">'+ic(s.ic)+'<span>'+esc(lbl)+'</span></div><div>'+esc(s.txt)+'</div><div class="q">The label on the screen says exactly: "'+esc(lbl)+'"</div>'
+   +'<div class="acts">'+(i>0?'<button class="b" type="button" data-a="back">Back</button>':'')+'<button class="b p" type="button" data-a="next">'+(i<6?'Next':'Finish the tour')+'</button><button class="b t" type="button" data-a="skiptour">Skip this part</button><button class="b t" type="button" data-a="minute">I need a minute</button></div></div>';
+ }
+ return sb()+appbar(layer!=='home'||i>0,title)+prog(8)+'<div class="body'+(st.coach?' dim':'')+'" data-scroll>'+body+'</div>'+coach+gest();
+}
+function whatsNew(k){
+ var coachOn=st.coach;
+ if(k==='W1')return sb()+appbar(false,'Olive Branch')+'<div class="body"><div class="card" style="border-color:var(--pri)"><div class="row3">'+ic('sparkle')+'<div><b>Something new: 2 things</b><div class="intro">A short look at what changed. It takes about a minute.</div></div></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="b p" type="button" data-a="next">Show me</button><button class="b" type="button" data-a="wnnot">Not now</button></div></div>'+homeBody('home','',st.phone==='cover')+'</div>'+gest();
+ if(k==='W4')return sb()+appbar(true,'Olive Branch')+'<div class="body c"><div class="note ok">'+ic('check')+'<span><b>You are up to date.</b><br>You can see this again any time: Settings, then "Show me what\'s new".</span></div>'+P('Go to my home','wnnot')+'</div>'+gest();
+ var w=k==='W2'?{l:'Compose and send',i:'msgbank',t:'Write a message and choose the day-part it goes in.',sl:'tour.core'}:{l:'Lost phone and recovery',i:'shield',t:'Where to go if this phone is lost. Your family is kept safe.',sl:'tour.safety'};
+ var body=k==='W2'?homeBody('home','Message banking',st.phone==='cover'):homeBody('hub','',false);
+ var co=coachOn?'<div class="coach" role="region"><div class="k"><span class="tag">New</span><span>Example entry in slot <code>'+w.sl+'</code>: planned, not built</span></div><div class="lbl">'+ic(w.i)+'<span>'+w.l+'</span></div><div>'+w.t+'</div><div class="acts">'+(k==='W3'?'<button class="b" type="button" data-a="back">Back</button>':'')+'<button class="b p" type="button" data-a="next">'+(k==='W2'?'Next':'Finish')+'</button><button class="b t" type="button" data-a="skiptour">Skip this part</button></div></div>':'';
+ return sb()+appbar(true,'What\'s new')+'<div class="body'+(coachOn?' dim':'')+'">'+body+'</div>'+co+gest();
+}
+function pinDots(n){var m=Math.max(4,n),s='';for(var i=0;i<m;i++)s+='<i class="'+(i<n?'f':'')+'"></i>';return '<div class="dots" role="img" aria-label="'+n+' digits entered">'+s+'</div>';}
+function normalPad(){var k='';for(var d=1;d<=9;d++)k+='<button type="button" data-a="pin" data-d="'+d+'">'+d+'</button>';
+ return '<div class="pad" role="group" aria-label="Keypad">'+k+'<button class="x" type="button" tabindex="-1" aria-hidden="true"></button><button type="button" data-a="pin" data-d="0">0</button><button class="bk" type="button" data-a="pindel" aria-label="Delete the last digit">'+ic('bksp')+'</button></div>';}
+function pairBody(kind){
+ if(st.pair==='wait'&&kind!=='A6a'&&kind!=='A6e')return {k:'A6w',html:'<div class="body c"><div class="big-ic" style="color:var(--ink3)">'+ic('hourglass').replace('<svg','<svg width="72" height="72"')+'</div><div class="h1" style="text-align:center">Waiting for her tablet</div><div class="intro" style="text-align:center">Nothing is wrong. Keep this open, or do this later. Nothing has been saved yet.</div><button class="b big w" type="button" data-a="pairnormal">Keep waiting</button></div>'};
+ if(st.pair==='fail'&&kind!=='A6a'&&kind!=='A6e')return {k:'A6f',html:'<div class="body c"><div class="note warn">'+ic('info')+'<span><b>That did not connect.</b><br>Nothing was saved on either device. You can try again whenever you are ready.</span></div>'+P('Try again','retry')+'</div>'};
+ return null;}
+function phoneScreen(k){
+ var c=st.child||'Mia', cE=esc(c);
+ var w=pairBody(k);
+ if(w&&/^A6/.test(k))return {key:w.k,html:sb()+appbar(true)+prog(6)+w.html.replace('<div class="body c">','<div class="body c">')+foot('',{later:'Do this later'})+gest()};
+ switch(k){
+ case 'A1':return {key:'A1',html:sb()+appbar(false)+'<div class="body"><div class="hero">'+ic('leaf')+'<div class="h1">Welcome to Olive Branch</div><div>We will go slowly, one thing at a time. You can stop whenever you like, and we will keep your place.</div></div>'
+  +'<div class="row3">'+ic('lock')+'<div>Everything you type stays on this phone.</div></div><div class="row3">'+ic('shield')+'<div>There is nothing to sign up for.</div></div><div class="row3">'+ic('clock')+'<div>It takes about ten minutes, and you can leave and come back.</div></div></div>'+'<div class="foot">'+P('Start','next')+'</div>'+gest()};
+ case 'A2':return {key:'A2',html:phoneShell(2,'<div class="h1">About you</div><div class="intro">This stays on this device. There is nothing to sign up for.</div><div class="fld"><label for="f1">Your name</label><input id="f1" data-in="name" value="'+esc(st.name)+'" autocomplete="off"></div><div><div class="fld"><label id="lw">What does she call you?</label></div><div class="chips" role="group" aria-labelledby="lw" style="margin-top:6px"><button class="chip" type="button" data-a="lab" data-v="Mom" aria-pressed="'+(st.label==='Mom')+'">Mom</button><button class="chip" type="button" data-a="lab" data-v="Dad" aria-pressed="'+(st.label==='Dad')+'">Dad</button></div></div><div class="fld"><label for="f2">Or your own word</label><input id="f2" data-in="label2" value="" autocomplete="off"></div>',foot(P('Continue','next')))};
+ case 'A3':var ages='';for(var a=3;a<=17;a++)ages+='<button class="chip" type="button" data-a="age" data-v="'+a+'" aria-pressed="'+(st.age===a)+'">'+a+'</button>';
+  return {key:'A3',html:phoneShell(3,'<div class="h1">About her</div><div class="intro">Her age is locked once you set it. Changing it later needs your PIN.</div><div class="fld"><label for="f3">Her first name</label><input id="f3" data-in="child" value="'+esc(st.child)+'" autocomplete="off"></div><div><div class="fld"><label id="la">How old is she?</label></div><div class="chips" role="group" aria-labelledby="la" style="margin-top:6px">'+ages+'</div></div><div><div class="fld"><label id="lz">Where does she live?</label></div><div class="intro" style="font-size:13px">Her time zone. "Same as this phone" is right for most families.</div><div class="chips" role="group" aria-labelledby="lz" style="margin-top:6px"><button class="chip" type="button" data-a="zone" data-v="phone" aria-pressed="'+(st.zone==='phone')+'">Same as this phone</button><button class="chip" type="button" data-a="zone" data-v="other" aria-pressed="'+(st.zone==='other')+'">Choose another</button></div></div>',foot(P('Continue','next')))};
+ case 'A4':return {key:'A4',html:phoneShell(4,'<div class="h1">Choose a PIN for this phone</div><div class="intro">It guards your settings, her locked age and clearing data, and works with no internet. Only you will know it.</div>'+pinDots(st.pin.length)+'<div class="err" role="alert">'+esc(st.pinMsg)+'</div>'+normalPad(),foot(P('Continue','pinok',st.pin.length<4)))};
+ case 'A4c':return {key:'A4c',html:phoneShell(4,'<div class="h1">Enter it again</div><div class="intro">Once more, so we know you typed what you meant.</div>'+pinDots(st.pin2.length)+'<div class="err" role="alert">'+esc(st.pinMsg)+'</div>'+normalPad(),foot(P('Save PIN and continue','pin2ok',st.pin2.length<4)))};
+ case 'A5':return {key:'A5',html:phoneShell(5,'<div class="h1">Now, her tablet</div><div class="intro">Wake her tablet and open Olive Branch. You should see a grown-up and a phone, with the words "A grown-up does this".</div><div class="card" style="display:grid;place-items:center;gap:8px;background:var(--kbg);color:#fff;border-color:transparent"><div class="big-ic" style="color:#fff">'+ic('grownup').replace('<svg','<svg width="56" height="56"')+ic('device').replace('<svg','<svg width="34" height="34"')+'</div><b>A grown-up does this</b></div>',foot(P('It shows that','next'),{later:'Do this later'}))};
+ case 'A6a':return {key:'A6a',html:phoneShell(6,'<div class="h1">Open a short window for '+cE+'\'s device</div><div class="intro">Type your PIN here. This phone will then show a picture. On her device, tap "A grown-up does this", then "I\'m the grown-up".</div><div class="fld"><label for="f6">Your PIN</label><input id="f6" type="password" value="" readonly placeholder="4 to 8 digits"></div>',foot(P('Open the window','next'),{later:'Do this later'}))};
+ case 'A6b':return {key:'A6b',html:phoneShell(6,'<div class="big-ic" style="color:var(--ink3)">'+ic('device').replace('<svg','<svg width="64" height="64"')+'</div><div class="h1" style="text-align:center">The window is open</div><div class="intro" style="text-align:center">Now go to her tablet. Tap "I\'m the grown-up", then the picture shown there.</div><div class="note info" role="status">'+ic('info')+'<span>Take your time. Nothing is counting down.</span></div><button class="b w" type="button" data-a="back">Close the window</button>',foot('',{later:'Do this later'}))};
+ case 'A6c':var cards='';[['star','tri','circ'],['heart','sq','star'],['circ','heart','tri']].forEach(function(g,i){cards+='<button class="mc" type="button" data-a="pick" data-v="'+i+'" aria-pressed="'+(st.pick===i)+'" aria-label="Card '+(i+1)+': '+g.join(', ')+'"><span class="ps">'+g.map(function(x){return ic(x)}).join('')+'</span><span class="hint">Card '+(i+1)+'</span></button>';});
+  return {key:'A6c',html:phoneShell(6,'<div class="h1">Does it match?</div><div class="intro">Her device is showing three pictures and a colour. Tap the card here that has the same ones.</div><div class="match">'+cards+'</div><button class="b w" type="button" data-a="none">None of these</button>',foot(P('This one','next',st.pick<0),{later:'Do this later'}))};
+ case 'A6d':return {key:'A6d',html:phoneShell(6,'<div class="h1">Is this '+cE+'\'s device?</div><div class="fld"><label>Who is this?</label></div><div class="card"><div class="row3">'+ic('heart')+'<div><b>My child, '+cE+'</b><div class="intro" style="font-size:13px">Only you choose this. The device cannot choose for itself.</div></div></div></div><button class="b w" type="button" data-a="notmine">Not mine</button>',foot(P('Yes, connect it','next'),{later:'Do this later'}))};
+ case 'A6e':return {key:'A6e',html:phoneShell(6,'<div class="big-ic">'+ic('check').replace('<svg','<svg width="72" height="72"')+'</div><div class="h1" style="text-align:center">'+cE+'\'s device is connected</div><div class="intro" style="text-align:center">Her tablet is ready. Next, let her say hello.</div>',foot(P('Next','next')),false)};
+ case 'A7':return {key:'A7',html:phoneShell(7,'<div class="big-ic">'+ic('tablet').replace('<svg','<svg width="64" height="64"')+ic('heart').replace('<svg','<svg width="40" height="40"')+'</div><div class="h1" style="text-align:center">Now '+cE+'\'s turn</div><div class="intro" style="text-align:center">Hand her the tablet. She will say hello and see her own home, with a word under every picture. You do not need to do anything.</div>',foot(P('She has finished','next'),{later:'Skip this part',laterAct:'skiptablet'}),false)};
+ case 'A9':var pend=st.pairLater;
+  return {key:'A9',html:sb()+appbar(true)+prog(9)+'<div class="body"><div class="h1">You are all set</div><div class="card" style="display:grid;gap:10px"><div class="row3">'+ic('check')+'<div>Your PIN is saved on this phone.</div></div><div class="row3">'+ic('check')+'<div>'+cE+', age '+st.age+'. Her age is locked.</div></div>'+(pend?'<div class="row3" style="color:var(--warn)">'+ic('hourglass')+'<div><b>Her tablet is not connected yet.</b></div></div>':'<div class="row3">'+ic('check')+'<div>Her tablet is connected.</div></div>')+'</div>'+(pend?'<button class="b w" type="button" data-a="connectnow">Connect her tablet</button>':'')+'<div class="note info">'+ic('info')+'<span>To see any of this again: Settings, then "Show me around again".</span></div></div><div class="foot">'+P('Go to my home','toend')+'</div>'+gest()};
+ }
+ if(/^A8\.(\d)$/.test(k))return {key:'A8',html:tourScreen(+k.split('.')[1]-1)};
+ if(/^W\d$/.test(k))return {key:k,html:whatsNew(k)};
+ return {key:'A1',html:''};
+}
+/* ---------- tablet screens ---------- */
+function kiosk(inner,tg){return '<div class="screen kiosk">'+sb()+inner+gest()+'</div>';}
+function gateCard(){return '<div class="cs gate" style="justify-content:center;align-items:center;text-align:center"><div class="big-ic" style="color:var(--kink2)" aria-label="A grown-up and a phone" role="img">'+ic('grownup','g1')+ic('device','g2')+'</div><div class="gt">A grown-up does this</div><button class="kq" type="button" data-a="grownup">I\'m the grown-up</button></div>';}
+function readable(text,id){return '<span id="'+id+'" data-read>'+text.split(' ').map(function(w){return '<span class="w">'+esc(w)+'</span>';}).join(' ')+'</span>';}
+function speaker(id,label){return '<button class="sp" type="button" data-a="read" data-t="'+id+'" aria-label="'+esc(label||'Read this out loud')+'">'+ic('vol')+'</button>';}
+var CHILD_TILES=[['My day','sun'],['Play together','puzzle'],['Messages','mail'],['Stories','book'],['Show & tell','camera'],['Colour','palette'],['More','more']];
+function childHome(coach,sel){
+ var t=CHILD_TILES,g=function(i,cls){return tileHtml(cls,t[i][1],t[i][0],t[i][0],sel===t[i][0]).replace('class="tile','class="tile'+(sel===t[i][0]?' sp-on':''));};
+ return '<div class="cs" style="gap:16px;padding-top:12px"><h3 style="font-size:38px">Hi '+nm()+'</h3>'+g(0,'hero feat')+'<div class="tgrid">'+g(1,'feat')+g(2,'feat')+g(3,'feat')+g(4,'feat')+'</div><div class="tgrid">'+g(5,'')+g(6,'cm')+'</div></div>';
+}
+function tabletScreen(k){
+ var c=nm();
+ if(k==='T13'&&st.pairLater&&st.idx>=HOME_IDX)k='T13L';
+ if(st.idx>=5&&st.idx<=12&&(k==='T2'||k==='T3'||k==='T4'||k==='T5'||k==='T6')){
+  if(st.pair==='wait')k='T1w';
+  if(st.pair==='fail')k='TF';}
+ switch(k){
+ case 'T0':return {key:'T0',html:'<div class="screen kiosk" style="background:#05070d;color:#6f7893"><div class="cs" style="justify-content:center;align-items:center;text-align:center"><div style="font-size:18px">Tablet asleep.<br>It is not part of the story yet.</div></div></div>'};
+ case 'T1':return {key:'T1',html:kiosk(gateCard())};
+ case 'T1w':return {key:'T1',html:kiosk(gateCard())};
+ case 'T13L':return {key:'T13L',html:kiosk(gateCard())};
+ case 'TF':return {key:'TF',html:kiosk('<div class="cs" style="justify-content:center;align-items:center;text-align:center"><div class="gt" style="font:700 30px var(--font-body)">Your grown-up can try again</div><button class="kb" type="button" data-a="okfail">OK</button></div>')};
+ case 'T2':return {key:'T2',html:kiosk('<div class="cs gate" style="justify-content:center;align-items:center;text-align:center;gap:20px"><div class="big-ic" style="color:var(--kink2)">'+ic('grownup','g1')+'</div><div class="gt">A grown-up does this</div><div style="display:grid;gap:12px;width:70%"><button class="kb" type="button" data-a="next">'+ic('key')+'Type my code</button><button class="kb" type="button" disabled style="opacity:.55">'+ic('phone')+'Use my phone</button></div></div>')};
+ case 'T3':return {key:'T3',html:kiosk('<div class="cs" style="justify-content:center;align-items:center;text-align:center;gap:20px"><div class="match"><button class="mc" type="button" data-a="next" aria-label="An open window nearby">'+ic('device')+'<span class="ps">'+ic('circ')+ic('sq')+'</span></button></div><div class="q">Tap the picture</div></div>')};
+ case 'T4':var order=[7,2,9,0,4,1,8,3,5,6],dots='';for(var i=0;i<4;i++)dots+='<i class="'+(i<st.gdots?'f':'')+'"></i>';var pad=order.slice(0,9).map(function(d){return '<button type="button" data-a="gd" aria-label="Digit">'+d+'</button>'}).join('')+'<span></span><button type="button" data-a="gd" aria-label="Digit">'+order[9]+'</button>';
+  return {key:'T4',html:kiosk('<div class="cs" style="justify-content:center;align-items:center;text-align:center;gap:18px"><div style="font:600 26px var(--font-body)">Welcome back</div><div style="font-size:17px;color:var(--kink2)">Type your code to keep going</div><div style="font-size:15px;font-style:italic;color:var(--kink3)">This needs a grown-up\'s code</div><div class="kdots" role="img" aria-label="'+st.gdots+' digits entered">'+dots+'</div><div class="kpad" role="group" aria-label="Keypad, order changes every time">'+pad+'</div><div style="font-size:13px;color:var(--kink4)">keypad order changes every time</div></div>')};
+ case 'T5':return {key:'T5',html:kiosk('<div class="cs" style="justify-content:center;align-items:center;text-align:center;gap:20px"><div class="mc" style="width:300px;background:#3a4a8a;padding:24px"><span class="ps" style="gap:14px;color:#fff">'+ic('star')+ic('sq')+ic('heart')+'</span></div><div class="q">Three pictures and a colour</div></div>')};
+ case 'T6':return {key:'T6',html:kiosk(gateCard())};
+ case 'T7':return {key:'T7',html:'<div class="screen">'+sb()+'<div class="cs" style="justify-content:center;align-items:center"><div class="big-ic" role="img" aria-label="Joined">'+ic('tablet').replace('<svg','<svg width="110" height="110"')+ic('heart').replace('<svg','<svg width="60" height="60"')+ic('device').replace('<svg','<svg width="80" height="80"')+'</div></div>'+gest()+'</div>'};
+ case 'T8':return {key:'T8',html:'<div class="screen">'+sb()+'<div class="cs" style="justify-content:center;align-items:center;text-align:center;gap:26px"><h3 style="font-size:64px">'+readable('Hello, '+(st.child||'Mia'),'r8')+'</h3><div class="sub">'+readable('Welcome to your tablet.','r8b')+'</div>'+speaker('r8,r8b','Read this out loud')+'<button class="cb" type="button" data-a="next">Hello</button></div>'+gest()+'</div>'};
+ case 'T9':var co=st.coach?'<div class="coach" role="region" aria-label="Her pictures"><div style="font:700 24px var(--font-body)">'+readable('Every picture has a word. Tap the speaker to hear them.','r9')+'</div><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'+speaker('r9','Read this out loud')+'<button class="b" type="button" data-a="hearall" style="min-height:64px;font-size:20px">'+ic('vol')+'Hear all seven</button><button class="cb" type="button" data-a="next" style="margin-left:auto">Next</button></div></div>':'';
+  return {key:'T9',html:'<div class="screen">'+sb()+'<div style="display:flex;flex-direction:column;flex:1;overflow:auto">'+childHome(false,st.hearing)+'</div>'+co+gest()+'</div>'};
+ case 'T10':return {key:'T10',html:'<div class="screen">'+sb()+'<div class="cs" style="gap:22px"><h3>'+readable('Tap My day.','r10')+'</h3>'+(st.myDay?'<div class="pict">'+ic('sun').replace('<svg','<svg width="160" height="160"')+'<div style="font:800 34px var(--font-display)">My day</div></div><button class="cb" type="button" data-a="myback" style="min-height:64px">'+ic('arrowL')+'Back</button>':tileHtml('hero feat','sun','My day','My day',true)+'<div style="display:flex;gap:14px;align-items:center">'+speaker('r10','Read this out loud')+'</div>')+'<button class="cb" type="button" data-a="next" style="margin-top:auto">Next</button></div>'+gest()+'</div>'};
+ case 'T11':var hs=[['Colour','palette'],['Stories','book'],['Messages','mail']].map(function(x){return '<button class="hold'+(st.held===x[0]?' on':'')+'" type="button" data-a="hold" data-v="'+x[0]+'" aria-label="'+x[0]+'. Press and hold to hear it, or tap to hear it.">'+ic(x[1])+(st.held===x[0]?'<span class="w hl">'+x[0]+'</span>':x[0])+'</button>';}).join('');
+  return {key:'T11',html:'<div class="screen">'+sb()+'<div class="cs" style="gap:22px"><h3>'+readable('Press and hold a picture to hear it.','r11')+'</h3><div class="quiet">'+hs+'</div><div class="hint" style="text-align:center;font-size:16px">Voice is silent in this mockup. The word lights up where the voice would be.</div><button class="cb" type="button" data-a="next" style="margin-top:auto">Next</button></div>'+gest()+'</div>'};
+ case 'T12':return {key:'T12',html:'<div class="screen">'+sb()+'<div class="cs" style="justify-content:center;align-items:center;text-align:center;gap:28px"><h3 style="font-size:60px">'+readable('You are ready.','r12')+'</h3>'+speaker('r12','Read this out loud')+'<button class="cb" type="button" data-a="next">Go to my home</button></div>'+gest()+'</div>'};
+ case 'T13':return {key:'T13',html:'<div class="screen">'+sb()+childHome(false)+gest()+'</div>'};
+ }
+ return {key:'T0',html:''};
+}
+
+/* ---------- render ---------- */
+var $=function(i){return document.getElementById(i);};
+var SZ={cover:[344,882],open:[673,841],tab:[800,1280]};
+function setPairing(){}
+function render(){
+ var b=BEATS[st.idx];
+ if(st.idx<HOME_IDX)st.pairLater=false;
+ var ps=phoneScreen(b.p), ts=tabletScreen(b.c);
+ var pk=ps.key, tk=ts.key;
+ /* phone */
+ var pd=$('pd'); pd.innerHTML='<div class="screen">'+ps.html+(st.minute?minuteSheet():'')+(st.resume?resumeScreen():'')+'</div>';
+ pd.setAttribute('aria-label','Her phone screen: '+b.t);
+ var td=$('td'); td.innerHTML=ts.html; td.setAttribute('aria-label','Her tablet screen: '+tk);
+ /* corner badges */
+ var pr=pd.firstChild; if(!N[pk])pk='A1';
+ $('pp').className='pill '+STATUS[N[pk].s][2]; $('pp').innerHTML=ic(STATUS[N[pk].s][1])+STATUS[N[pk].s][0];
+ if(!N[tk])tk='T0';
+ $('tp').className='pill '+STATUS[N[tk].s][2]; $('tp').innerHTML=ic(STATUS[N[tk].s][1])+STATUS[N[tk].s][0];
+ /* caption */
+ $('cap').innerHTML='<b>Moment '+(st.idx+1)+' of '+BEATS.length+': '+esc(b.t)+'</b><small>'+esc(b.cap)+' <span class="hint" style="color:inherit;opacity:.8">('+GROUPS[b.g]+')</span></small>';
+ $('prev').disabled=st.idx===0; $('next').disabled=st.idx===BEATS.length-1;
+ $('jump').value=String(st.idx);
+ var cur=document.querySelector('#all [aria-current]'); if(cur)cur.removeAttribute('aria-current'); var nb=document.querySelector('#all [data-i="'+st.idx+'"]'); if(nb)nb.setAttribute('aria-current','step');
+ notes('nphone','Phone',pk,pr,pd); notes('ntab','Tablet',tk,null,td);
+ pressed();
+ layout();
+ var sh=pd.querySelector('.sheet button');if(sh&&st.minute)sh.focus();
+ var sc=pd.querySelector('[data-scroll]'); if(sc){var t=sc.querySelector('.tg'); if(t)sc.scrollTop=Math.max(0,t.offsetTop-80);}
+}
+function minuteSheet(){return '<div class="sheet" role="dialog" aria-modal="true" aria-label="I need a minute"><div><div class="h1">Take your time</div><div class="intro">Your place is saved. Nothing is waiting on you and nothing will expire.</div><button class="b big p w" type="button" data-a="keepgoing">Keep going</button><button class="b big w" type="button" data-a="leave">Leave it here for now</button></div></div>';}
+function resumeScreen(){var b=BEATS[st.idx],m=/^A(\d)/.exec(b.p),step=m?m[1]:'';return '<div class="sheet" style="background:var(--bg);align-items:center"><div style="background:transparent;box-shadow:none;text-align:center;border-radius:0;gap:14px"><div class="big-ic">'+ic('leaf').replace('<svg','<svg width="64" height="64"')+'</div><div class="h1">Welcome back</div><div class="intro">Your place is saved. Pick up at Step '+step+' of 9: '+esc(STEPNAME[step]||'')+'.</div><button class="b big p w" type="button" data-a="resume">Continue</button></div></div>';}
+function copyOf(root){
+ if(!root)return [];var out=[],seen={},w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);var n;
+ while((n=w.nextNode())){var p=n.parentNode;if(p.closest('[aria-hidden="true"]')||p.closest('.sbar')||p.closest('script'))continue;var t=n.nodeValue.replace(/\s+/g,' ').trim();if(!t||seen[t])continue;seen[t]=1;out.push(t);}
+ return out;}
+function notes(id,who,k,root,dev){
+ var o=N[k]||N.T0,screen=dev.firstChild;
+ var copy=copyOf(dev);
+ var tm=/^T/.test(k)||who==='Tablet';
+ $(id).innerHTML='<h3>'+who+': '+esc(o.id)+' '+status(k)+'</h3><dl>'
+  +'<div><dt>Screen id</dt><dd><code>'+esc(k)+'</code></dd></div>'
+  +'<div><dt>Exact copy on screen</dt><dd>'+(copy.length?'<ul>'+copy.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>':'None.')+'<div class="hint">Copy status: '+esc(o.copy)+'</div></dd></div>'
+  +'<div><dt>What is saved</dt><dd>'+esc(o.saves)+'</dd></div>'
+  +'<div><dt>Back</dt><dd>'+esc(o.back)+'</dd></div>'
+  +'<div><dt>Skip or do this later</dt><dd>'+esc(o.skip)+'</dd></div>'
+  +'<div><dt>Accessibility</dt><dd>'+esc(o.a11y)+'</dd></div>'
+  +'<div><dt>Code</dt><dd>'+esc(o.file)+'</dd></div></dl>';
+}
+function pressed(){
+ document.querySelectorAll('[data-th]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.th===st.theme));});
+ document.querySelectorAll('[data-ph]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.ph===st.phone));});
+ document.querySelectorAll('[data-pair]').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.pair===st.pair));});
+ document.querySelectorAll('[data-co]').forEach(function(b){b.setAttribute('aria-pressed',String((b.dataset.co==='1')===st.coach));});
+ document.querySelectorAll('[data-mag]').forEach(function(b){b.setAttribute('aria-pressed',String((b.dataset.mag==='1')===st.mag));});
+}
+function fit(dev,wrap,sizer,dp,colW,mag){
+ var s=Math.min(1,colW/dp[0]); if(mag)s=Math.max(s,0.85);
+ var h=dp[1]*s,w=dp[0]*s; sizer.style.width=w+'px'; sizer.style.height=h+'px'; dev.style.width=dp[0]+'px'; dev.style.height=dp[1]+'px'; dev.style.transform='scale('+s+')';
+ wrap.style.width=(mag?'100%':w+'px'); wrap.style.maxHeight=(mag?'85vh':'none'); if(mag){wrap.setAttribute('tabindex','0');wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Tablet, scrolls inside');}else{wrap.removeAttribute('tabindex');wrap.removeAttribute('role');wrap.removeAttribute('aria-label');}
+}
+function layout(){
+ var stage=$('stage'),narrow=stage.clientWidth<860;
+ var pdp=st.phone==='cover'?SZ.cover:SZ.open;
+ var pw=st.phone==='cover'?360:460;
+ stage.style.setProperty('--pw',pw+'px');
+ var pcol=$('pd').closest('.col').clientWidth;
+ var tcol=$('td').closest('.col').clientWidth;
+ fit($('pd'),$('pw'),$('ps'),[pdp[0]+24,pdp[1]+24],pcol,false);
+ fit($('td'),$('tw'),$('ts'),[SZ.tab[0]+32,SZ.tab[1]+32],tcol,st.mag);
+ /* bezel padding is inside the dev width; make screens fill */
+ $('pd').style.boxSizing='border-box';$('td').style.boxSizing='border-box';
+}
+/* ---------- actions ---------- */
+function go(i){st.idx=Math.max(0,Math.min(BEATS.length-1,i));st.minute=false;st.resume=false;st.pick=-1;st.myDay=false;st.held='';st.gdots=0;st.hearing='';render();}
+function next(){st.hist.push(st.idx);go(st.idx+1);}
+function back(){var p=st.hist.pop();go(p!==undefined?p:st.idx-1);}
+var timers=[];
+function clearT(){timers.forEach(clearTimeout);timers=[];document.querySelectorAll('.w.hl').forEach(function(e){e.classList.remove('hl');});}
+function readIds(ids){clearT();var words=[];ids.split(',').forEach(function(id){var e=$(id);if(e)e.querySelectorAll('.w').forEach(function(w){words.push(w);});});
+ words.forEach(function(w,i){timers.push(setTimeout(function(){words.forEach(function(x){x.classList.remove('hl');});w.classList.add('hl');},i*420));});
+ timers.push(setTimeout(function(){words.forEach(function(x){x.classList.remove('hl');});},words.length*420+300));}
+function hearAll(){clearT();var i=0;CHILD_TILES.forEach(function(t,n){timers.push(setTimeout(function(){st.hearing=t[0];var tl=document.querySelectorAll('#td .tile');tl.forEach(function(e){e.classList.toggle('sp-on',e.dataset.tile===t[0]);});},n*900));});
+ timers.push(setTimeout(function(){document.querySelectorAll('#td .tile').forEach(function(e){e.classList.remove('sp-on');});},CHILD_TILES.length*900));}
+var EASY=['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999'];
+function easy(p){if(EASY.indexOf(p)>-1)return true;var asc='0123456789',desc='9876543210';return asc.indexOf(p)>-1||desc.indexOf(p)>-1;}
+function act(a,el){
+ switch(a){
+ case 'next':next();break;
+ case 'back':back();break;
+ case 'later':st.pairLater=true;st.hist.push(st.idx);go(HOME_IDX);st.pairLater=true;render();break;
+ case 'skiptablet':st.hist.push(st.idx);go(HOME_IDX);break;
+ case 'skiptour':st.hist.push(st.idx);go(BEATS[st.idx].g==='wn'?BEATS.length-1:DONE_IDX);break;
+ case 'toend':go(26);break;
+ case 'wnnot':go(29);break;
+ case 'connectnow':st.pairLater=false;go(5);break;
+ case 'minute':st.minute=true;render();break;
+ case 'keepgoing':st.minute=false;render();break;
+ case 'leave':st.minute=false;st.resume=true;render();break;
+ case 'resume':st.resume=false;render();break;
+ case 'lab':st.label=el.dataset.v;render();break;
+ case 'age':st.age=+el.dataset.v;render();break;
+ case 'zone':st.zone=el.dataset.v;render();break;
+ case 'pin':if(st.idx===3){if(st.pin.length<8){st.pin+=el.dataset.d;st.pinMsg='';}}else{if(st.pin2.length<8)st.pin2+=el.dataset.d;}render();break;
+ case 'pindel':if(st.idx===3)st.pin=st.pin.slice(0,-1);else st.pin2=st.pin2.slice(0,-1);render();break;
+ case 'pinok':if(easy(st.pin)){st.pinMsg='That PIN is easy to guess. Please choose one that is harder for someone else to work out.';st.pin='';render();}else{st.pinMsg='';next();}break;
+ case 'pin2ok':if(st.pin2!==st.pin){st.pinMsg="The two PINs don't match.";st.pin2='';render();}else{st.pinMsg='';st.pin='';st.pin2='';next();}break;
+ case 'pick':st.pick=+el.dataset.v;render();break;
+ case 'none':st.pick=-1;render();break;
+ case 'notmine':go(6);break;
+ case 'pairnormal':st.pair='normal';render();break;
+ case 'retry':st.pair='normal';go(6);break;
+ case 'okfail':st.pair='normal';render();break;
+ case 'grownup':next();break;
+ case 'gd':if(st.gdots<4){st.gdots++;render();if(st.gdots===4){var at=st.idx;setTimeout(function(){if(st.idx===at)next();},350);}}break;
+ case 'read':readIds(el.dataset.t);break;
+ case 'hearall':hearAll();break;
+ case 'myback':st.myDay=false;render();break;
+ case 'hold':st.held=el.dataset.v;render();break;
+ }
+}
+var hold=null;
+document.addEventListener('click',function(e){
+ var t=e.target.closest('[data-a]');
+ if(t&&!t.disabled&&(t.closest('#pd')||t.closest('#td')))act(t.dataset.a,t);
+ var tl=e.target.closest('.tile');
+ if(tl&&tl.closest('#td')&&st.idx===15){st.myDay=true;render();}
+});
+document.addEventListener('input',function(e){var d=e.target.dataset&&e.target.dataset.in;if(!d)return;if(d==='child')st.child=e.target.value;else if(d==='name')st.name=e.target.value;else if(d==='label2'&&e.target.value){st.label=e.target.value;}});
+document.addEventListener('keydown',function(e){
+ if(e.key==='Escape'&&st.minute){st.minute=false;render();return;}
+ var tg=e.target.tagName;if(tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT')return;
+ if(e.key==='ArrowRight'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){if(st.idx<BEATS.length-1){e.preventDefault();next();}}
+ if(e.key==='ArrowLeft'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){if(st.idx>0){e.preventDefault();back();}}
+});
+$('prev').onclick=function(){st.hist=[];go(st.idx-1);};
+$('next').onclick=function(){st.hist=[];go(st.idx+1);};
+$('jump').onchange=function(){st.hist=[];go(+this.value);};
+document.querySelectorAll('[data-th]').forEach(function(b){b.onclick=function(){st.theme=b.dataset.th;var r=document.documentElement;if(st.theme==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',st.theme);pressed();};});
+document.querySelectorAll('[data-ph]').forEach(function(b){b.onclick=function(){st.phone=b.dataset.ph;render();};});
+document.querySelectorAll('[data-pair]').forEach(function(b){b.onclick=function(){st.pair=b.dataset.pair;render();};});
+document.querySelectorAll('[data-co]').forEach(function(b){b.onclick=function(){st.coach=b.dataset.co==='1';render();};});
+document.querySelectorAll('[data-mag]').forEach(function(b){b.onclick=function(){st.mag=b.dataset.mag==='1';render();};});
+window.addEventListener('resize',layout);
+if(window.ResizeObserver){new ResizeObserver(layout).observe($('stage'));}
+
+/* ---------- build lists ---------- */
+(function(){
+ var sel='',all='',lastg='';
+ BEATS.forEach(function(b,i){
+  if(b.g!==lastg){if(lastg){sel+='</optgroup>';}sel+='<optgroup label="'+esc(GROUPS[b.g])+'">';all+='<div class="g">'+esc(GROUPS[b.g])+'</div>';lastg=b.g;}
+  sel+='<option value="'+i+'">'+(i+1)+'. '+esc(b.t)+'</option>';
+  all+='<button type="button" data-i="'+i+'"><span class="n">'+(i+1)+'</span>'+esc(b.t)+'</button>';
+ });
+ sel+='</optgroup>';$('jump').innerHTML=sel;$('all').innerHTML=all;
+ $('all').addEventListener('click',function(e){var b=e.target.closest('[data-i]');if(b){st.hist=[];go(+b.dataset.i);}});
+ ['exists','lane','pin','later','example'].forEach(function(k,i){var x=STATUS[k];$('lg'+(i+1)).innerHTML=ic(x[1])+x[0];});
+})();
+render();
+})();
+</script>
+</body>
+</html>
