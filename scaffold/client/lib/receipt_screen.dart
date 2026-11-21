@@ -195,7 +195,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
     if (!_isLive) {
       setState(() {
         _state = _SendState.error;
-        _errorMessage = "This screen isn't connected to a server yet.";
+        _errorMessage = 'This could not be sent right now. Nothing has changed.';
       });
       return;
     }
@@ -221,7 +221,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       if (!mounted) return;
       setState(() {
         _state = _SendState.error;
-        _errorMessage = '$e';
+        _errorMessage = 'The video could not be recorded. Nothing has changed.';
       });
       return;
     }
@@ -319,7 +319,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         setState(() {
           _outbox = outbox.sent(_outbox, item.id); // stop trying either way
           _state = _SendState.error;
-          _errorMessage = '${e.statusCode}: ${e.error}';
+          _errorMessage = 'This could not be sent. Nothing has changed.';
         });
         return;
       }

@@ -244,9 +244,10 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
               'family has on file for you.',
             'already_handed_over' => 'This has already been done. Nothing has changed.',
             'child_deceased' => 'This could not be completed.',
-            _ => 'Could not complete this (${e.error}). Nothing has changed.',
+            // Never the server's reason word: a child reads this.
+            _ => 'Could not complete this. Nothing has changed.',
           }
-        : 'Could not reach the server. Nothing has changed.';
+        : 'Could not complete this. Nothing has changed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message), duration: const Duration(seconds: 5)));
     }

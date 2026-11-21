@@ -70,7 +70,7 @@ void main() {
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school')));
       await tester.tap(find.text('Send one back'));
       await tester.pump();
-      expect(find.textContaining("isn't connected to a server yet"), findsOneWidget);
+      expect(find.textContaining("could not be sent right now"), findsOneWidget);
       expect(find.textContaining('Sent!'), findsNothing);
     });
 
@@ -206,8 +206,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Sent!'), findsNothing);
-      expect(find.textContaining('403'), findsOneWidget);
-      expect(find.textContaining('not_authorized'), findsOneWidget);
+      expect(find.textContaining('403'), findsNothing);
+      expect(find.textContaining('not_authorized'), findsNothing);
+      expect(find.text('This could not be sent. Nothing has changed.'), findsOneWidget);
       // Recoverable — a real retry affordance, not a dead end.
       expect(find.text('Try again'), findsOneWidget);
     });
@@ -351,7 +352,7 @@ void main() {
       expect(find.text('Kept safe'), findsNothing);
       expect(find.text('It will go when you have internet again. It is safe.'),
           findsNothing);
-      expect(find.textContaining('403'), findsOneWidget);
+      expect(find.textContaining('403'), findsNothing);
       expect(find.text('Try again'), findsOneWidget);
 
       // No silent background retry for a genuine rejection -- waiting past

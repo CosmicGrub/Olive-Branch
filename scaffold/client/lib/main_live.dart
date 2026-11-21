@@ -53,6 +53,7 @@
 // account of the new pre-KioskShell onboarding branch this adds.
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'font_licences.dart';
 import 'access_shell.dart';
 import 'api_client.dart';
@@ -629,17 +630,19 @@ class _RolePickerApp extends StatelessWidget {
   );
 }
 
-/// The code screen alone, for a device that WAS connected and has been cut off
+/// The signed-out child boot, for a device that WAS connected and has been cut off
 /// ([_returnToPairing]): it has already been through the welcome questions, so
-/// they are not asked again.
+/// they are not asked again. It is the calm closing-step card ("A grown-up does this") and nothing else: a child
+/// sees no code field and no error sentence; the grown-up's deliberate tap opens the adult-only keypad.
 ///
 /// A minimal MaterialApp wrapper (this build's real theme/kiosk tree doesn't
 /// exist yet at this point — there is no identity to fetch a theme FOR),
 /// matching invitation_screen.dart's own convention of a screen owning its own
 /// Scaffold with no assumed ancestor chrome.
 class _PairingBootApp extends StatelessWidget {
-  const _PairingBootApp({required this.baseUrl});
+  const _PairingBootApp({required this.baseUrl, this.httpClient});
   final String baseUrl;
+  final http.Client? httpClient;
 
   /// Persists the real identity this device just redeemed, then re-enters
   /// the app via the SAME [_bootWithOnboardingGate] the dart-define path
@@ -656,9 +659,16 @@ class _PairingBootApp extends StatelessWidget {
     title: 'Olive (pairing)',
     theme: buildThemeData(defaultAppTheme),
     builder: childShieldBuilder,
-    home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', onRedeemed: _onRedeemed),
+    // closingStep: the calm grown-up card (adult gate behind a deliberate tap). No code field, no error sentence.
+    home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', closingStep: true, httpClient: httpClient,
+        onRedeemed: _onRedeemed),
   );
 }
+
+/// The signed-out child boot as a widget, so a test can look at exactly what a child would see.
+@visibleForTesting
+Widget signedOutChildBootForTest(String baseUrl, {http.Client? httpClient}) =>
+    _PairingBootApp(baseUrl: baseUrl, httpClient: httpClient);
 
 /// Shown at boot when identity is resolved but `GET /v1/me`'s `hasOnboarded`
 /// is false — Automatic First-Run Detection (docs/superpowers/specs/

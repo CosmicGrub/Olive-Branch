@@ -81,6 +81,7 @@ import 'growing_care_store.dart';
 import 'growing_screens.dart';
 import 'her_colour_home.dart';
 import 'homework_screen.dart';
+import 'local_services.dart' show LocalServices;
 import 'inbox_screen.dart';
 import 'jokebook_screen.dart';
 import 'feelings_corner_screen.dart';
@@ -186,6 +187,12 @@ class ChildHome extends StatelessWidget {
   /// Null = only a live build removes anything (see [_purge]); a demo build never does.
   final Future<void> Function()? handoverPurge;
   bool _fam(String tile) => family == null || family!.view.hasTile(tile);
+
+  /// Homework needs a live session: the photo is read by the server, so a locally paired or offline home has
+  /// nothing real to offer and shows no Homework entry at all (not a tile that opens a pretend capture). The
+  /// preview/test build ([LocalServices.demoSeeds]) keeps its sample flow.
+  bool get _homeworkAvailable =>
+      (baseUrl != null && childId != null && sessionToken != null) || LocalServices.current.demoSeeds;
   String get _greeting => family?.view.plainGreeting == true ? 'Hey $childName' : 'Hi $childName';
 
   /// ONE door onto every real choice she has — the age-gated Play Together grid AND the rest of the catalogue
@@ -374,7 +381,7 @@ class ChildHome extends StatelessWidget {
             BandMoreExtra(
               key: 'moreMyDay', icon: Icons.wb_sunny_outlined, label: 'My day',
               build: (BuildContext c) => _bandDestination(c, 'day', f, band)!),
-          if (isTileVisible(overrides, 'tile:homework') && _fam('homework'))
+          if (_homeworkAvailable && isTileVisible(overrides, 'tile:homework') && _fam('homework'))
             BandMoreExtra(
               key: 'moreHomework', icon: Icons.edit, label: 'Homework',
               build: (BuildContext c) => HomeworkScreen(childName: childName,
@@ -610,7 +617,7 @@ class ChildHome extends StatelessWidget {
               TieredTile(key: const Key('childHomeMyPeople'), icon: Icons.people_outline, label: 'My people',
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => MyPeopleScreen(snapshot: family!, childName: childName)))),
-            if (isTileVisible(overrides, 'tile:homework') && _fam('homework'))
+            if (_homeworkAvailable && isTileVisible(overrides, 'tile:homework') && _fam('homework'))
               TieredTile(icon: Icons.edit, label: 'Homework',
                 onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => HomeworkScreen(childName: childName,
