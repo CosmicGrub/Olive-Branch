@@ -201,7 +201,9 @@ if [ -x "$FLUTTER_BIN" ]; then
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
+  # The data-loss harness (client/test/dataloss, tag "dataloss") has its own gate row below, so it is left out of this
+  # run to avoid running it twice; its assertions are counted there.
+  out=$(cd client && "$FLUTTER_BIN" test --reporter compact --exclude-tags dataloss 2>&1)
   # p/f must come from the compact reporter's own progress-counter PREFIX at
   # the very START of a line (e.g. "03:29 +1291 -2: ..."), never from a bare
   # "-[0-9]+" search anywhere in the captured blob. That is what this block
@@ -238,9 +240,27 @@ if [ -x "$FLUTTER_BIN" ]; then
          printf '%s\n' "$lines" | tail -40 | sed 's/^/    /'; fi
     [ "$lrc" = "3" ] && echo "    list-test-failures: counter shows failures but no [E] frame was found"
   fi
+  echo ""
+  echo "── Data-loss harness (nothing is ever lost) ───────────────────"
+  # Counted into TOTAL_PASS (the total is still only ever what the suites report; set it from CI, never by hand).
+  # Crash injection at every step of a save, a sync merge, a backup and a restore; a three-device simulation
+  # (two grown-up phones and a tablet) with partitions, delays, reordering and duplicates; lost-phone, recovery and
+  # restore scenarios; and the restore-equivalence digest of every area. A suite that reports zero assertions fails,
+  # like every other row here. docs/planning/OPERATIONS-RUNBOOK.md, "Data-loss harness".
+  dl=$(cd client && "$FLUTTER_BIN" test --reporter compact --tags dataloss test/dataloss 2>&1)
+  dlines=$(printf '%s' "$dl" | tr '\r' '\n')
+  dp=$(printf '%s' "$dlines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+' | tail -1 | grep -oE '[0-9]+$')
+  df=$(printf '%s' "$dlines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+ -[0-9]+' | tail -1 | grep -oE '\-[0-9]+$' | tr -d '-')
+  record "data-loss harness" "${dp:-0}" "${df:-0}"
+  if [ "${df:-0}" != "0" ]; then
+    dnames=$(printf '%s' "$dlines" | bash tools/list-test-failures.sh)
+    if [ -n "$dnames" ]; then printf '%s\n' "$dnames" | head -60 | sed 's/^/    /'
+    else printf '%s\n' "$dlines" | tail -40 | sed 's/^/    /'; fi
+  fi
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
   echo "  dart widget invariants     MISSING TOOLCHAIN — not a skip, a gap"
+  echo "  data-loss harness          MISSING TOOLCHAIN — not a skip, a gap"
   PROBLEMS=$((PROBLEMS+1))
 fi
 

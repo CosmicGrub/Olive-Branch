@@ -117,6 +117,33 @@ bash scaffold/tools/slot.sh status                                     # slot1 F
 - A lock whose directory exists but has no readable stamp is `UNSTAMPED` and counts as held.
 - Always release in a `trap ... EXIT` so a failed test run does not strand the slot. Heavy Gradle builds belong to the device lane only; run `flutter test -j 1`.
 
+## Data-loss harness (`scaffold/client/test/dataloss`)
+
+The proof behind "nothing is ever lost" (MASTERFILE 8.16.8). It gates every release: it is a counted row of `tools/verify.sh` ("data-loss harness"), which the required `verify` job runs, and a row that runs zero assertions fails like any other. The general widget run leaves the tag `dataloss` out (`--exclude-tags dataloss`) so nothing runs twice; a plain `flutter test` still runs everything.
+
+```
+cd scaffold/client
+flutter test -j 1 --tags dataloss test/dataloss          # the whole harness, about a minute and a half
+flutter test -j 1 test/dataloss/crash_sync_test.dart     # one file
+```
+
+Take a heavy-job slot first (section above); it is one `flutter test`.
+
+What each file proves:
+- `crash_save_test.dart`: the app is killed at every storage step of a save, a rewrite, a delete and the offline outbox (on an in-memory disk where every storage call is a kill point, and on real files where each step inside a write is, with the temporary file also torn). After every kill the restart finds every acknowledged write, the interrupted one wholly old or wholly new, nothing half-written, nothing quarantined, and the next save works.
+- `crash_sync_test.dart`: the same for a family-sync merge (events taken in, held out of order, released, a refused duplicate counter, a note of what the other phone holds, an own write); the restarted phone then shares again and both phones end with one record.
+- `crash_backup_restore_test.dart`: a backup (read-only: a kill changes nothing), a restore onto an empty phone, onto a phone that already holds some of the same things, and onto one that already caught up (the sealed family record and the waiting list are joined); and the restore-equivalence check.
+- `mesh_convergence_test.dart` and `mesh_lost_device_test.dart` (support: `mesh_sim.dart`): two grown-up phones and a tablet in one process over a fake network that is cut, delays messages so they overtake each other, repeats and loses them, with apps killed and reopened; a lost phone and a new one from a backup, the old phone found again, a backup put back twice, an old backup on a phone that moved on, and the whole family starting over.
+- `backup_policy_test.dart`: every catalogued area has a decided place in the family backup (a new area cannot be added without deciding), her private areas and a device's own keys never travel, a damaged or hostile snapshot is refused whole or by area, and restore never deletes or overwrites.
+
+Reading a failure:
+- Every run is seeded; the failing test's name carries the seed. Rerun that one test and the same run replays. A sweep names the step it killed.
+- "an acknowledged write was lost or altered" or "an acknowledged item is missing" is a real loss: do not loosen the check, find the write path that acknowledged before it was safe. "neither the old nor the new value" is a half-seen write.
+- "at risk" in the lost-phone log line is a count, not a failure: things made on a phone that was lost before they reached another device or a backup. It is expected with backups taken now and then, and must be zero in the group that backs up as part of saving.
+- The sweeps' width checks ("the sweep must be wide") fail when a change makes a workload stop touching storage, so a sweep cannot quietly become empty.
+
+Totals: this row is counted into `COMPUTED TOTAL`. When a test is added or removed, take the new total from the first CI run's `COMPUTED TOTAL` and set it in the three places the markup check names, once; never from a local run or by hand.
+
 ## Privacy gate (`scaffold/tools/privacy-gate.mjs`)
 
 The repository is public. The gate reads the lines a change **adds** and exits non-zero (1) on any hit; exit 2 means it could not read the diff, which also fails (it does not say clean when it cannot look). It catches:

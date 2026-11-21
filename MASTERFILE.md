@@ -7141,8 +7141,51 @@ and showcase (demo datasets and other-parent asks, not on-device user data);
 siblings (the sibling set is demo data; real sibling editing belongs to the
 family-structure work); the offline outbox is persisted by a repository but
 `receipt_screen.dart` still holds its own list in memory (its payload carries
-raw recorded bytes, and network semantics are out of scope here). No sync,
-backup or cloud restore of on-device data exists or is implied.
+raw recorded bytes, and network semantics are out of scope here). No screen
+backs up or restores on-device data and nothing is uploaded; what exists is the
+on-device snapshot and its tests, §8.16.8.
+
+### 8.16.8 Nothing is ever lost: the data-loss harness and the on-device snapshot
+
+**The promise, in the words a grown-up would use.** Anything the app has told you is saved is still there after the app
+is closed in the middle of anything, after a phone is lost and another takes its place, and after a backup is put back
+(once or twice, or onto a phone that has already moved on). Putting a backup back adds what a phone does not have; it
+never deletes and never replaces what the phone already holds. Her private areas are never in a family backup, and a
+phone's own key, PIN and role are never copied to another phone.
+
+**What is built (tests and a plain library; no screen).**
+- `client/lib/local_snapshot.dart`: `takeSnapshot` (a read-only, consistent copy of every family area, each read under its
+  own lock so a write in flight is wholly in or wholly out), `restoreSnapshot`, `areaDigests` and `compareDigests` (the
+  restore-equivalence check: a digest per area, order-independent, naming any area that went missing, changed or
+  appeared). A table, `kBackupClass`, gives every catalogued area (§8.16.4) one of three places: family (carried), her
+  private areas (never carried: no grown-up key opens them) or this device's own (never copied to another phone); a test
+  fails when an area is added without a decision. Every area left out is listed with its reason, so "not in the backup"
+  is something a screen can say plainly.
+- `LocalNamespace.mergeMissing` and `readAll` (local_store.dart): the one-write add-what-is-missing used by restore.
+  A key held with a different value keeps the held value and the other is first written to the store's quarantine, kept
+  and never deleted. Two areas keep a whole record under one key (the sealed family record, and the waiting-to-send
+  list): for those the two copies are joined, so a backup put onto a phone that already caught up from the other
+  grown-up brings back everything both held (keeping one copy and parking the other in quarantine would hide it from the
+  family record; the harness holds the restore to joining).
+- The harness, `client/test/dataloss/`, tagged `dataloss` and run as its own counted row of `tools/verify.sh` (the general
+  widget run leaves the tag out so nothing runs twice). Kill-at-every-step sweeps over a save, a rewrite and a delete, the
+  offline outbox, a family-sync merge, a backup and a restore, on an in-memory disk and on real files with the temporary
+  file torn; a three-device simulation (two grown-up phones and a tablet) over a network that cuts, delays so messages
+  overtake each other, repeats, loses, and has the app killed and reopened; lost phone, found phone, a new phone from a
+  backup, an old backup on a phone that has moved on, and the whole family starting over, each ending with the same
+  record everywhere and a digest of every area before and after. How to run and read it: OPERATIONS-RUNBOOK.md, "Data-loss
+  harness".
+- `DirectoryStoreBackend.onStep` is a no-op hook the sweeps use to stop a write between its steps; the app never sets it.
+
+**What it showed.** (1) Why the join above is needed. (2) A thing made on a phone that is then lost before it reached any other device
+or any backup exists only on that phone. The harness counts these ("at risk") and proves the setting that closes the gap:
+when saving includes backing up, nothing acknowledged before the loss is at risk, and the old phone, if found, brings
+back anything it alone held. A restore from an old backup onto a phone that has moved on never takes anything back.
+
+**Not built.** Encryption of a backup, its upload, the waiting period, the second grown-up's yes, the printed recovery
+sheet and every screen for any of this (the recovery lane); the snapshot is not reachable from the app. Raw recorded
+bytes are not written to the on-device store (§8.16.7); a recording the child has not yet sent is not in a snapshot.
+
 
 ---
 
@@ -8594,7 +8637,7 @@ above are entirely untouched — presentation-layer only, exactly as scoped.
 
 ### 22.1 Local data
 
-Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **50 areas, 30 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7).
+Everything the client keeps on the device is **one table, §8.16.4**, whose single source of truth is `localDataCatalogue` in `client/lib/local_services.dart`: **50 areas, 30 of them sealed** with AES-256-GCM (a test fails if the table and the catalogue drift). The mechanics are in §8.16.1 (the store), §8.16.2 (encryption), §8.16.3 (scoping), §8.16.5 (offline-first first run), §8.16.6 (**"Data on this device"**, the guardian-only screen that lists exactly what is kept and clears it) and §8.16.7 (what is not stored). What each area holds is described where its suite is: §8.19 (Growing and Care), §8.20 (Rhythm and Voice), §8.21 (accessibility), §8.22 (Village and Compass), §8.24 (the local emergency card and the memory box from a grown-up). Nothing in it is uploaded, synced, backed up or added to the court export (P7); the on-device snapshot of §8.16.8 is a library and tests, reachable from no screen.
 
 ### 22.2 Not built yet
 

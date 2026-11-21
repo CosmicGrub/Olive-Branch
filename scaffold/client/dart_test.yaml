@@ -1,0 +1,5 @@
+# Tags used by tools/verify.sh. The data-loss harness (test/dataloss) is its own gate row there and is left out of the
+# general run; a plain `flutter test` still runs everything.
+tags:
+  dataloss:
+    timeout: 6x
