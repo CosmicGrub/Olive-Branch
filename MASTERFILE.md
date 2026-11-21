@@ -1272,6 +1272,16 @@ Drives the guard prompt:
 > ⏰ It's **10:40 PM** for Maya — she's asleep.
 > **Send now** · **Deliver at breakfast (7:00 AM her time)**
 
+> **Day-part bounds keep their seconds (fix, 2026-11).** A day-part is a
+> half-open window `[starts, ends)` compared to the child's LOCAL clock to the
+> second. `childCtxFor()` used to cut a Postgres `time` to `HH:mm`, so an
+> all-day unreachable part ending `23:59:59` stopped covering the last minute
+> of the local day and a call or push reached a sleeping child at 23:59 (found
+> by CI at 05:59 UTC = 23:59 America/Chicago). Bounds now keep non-zero
+> seconds, the engine normalises `HH:mm` and `HH:mm:ss`, and `24:00` is the
+> way to end a window at the end of the day. Calls get no bypass: only
+> `priority: 'emergency'` skips the gate, and nothing sets it yet.
+
 > **Status, v0.49.63 — the recipient-side half is real and wired, the
 > sender-side half is real but only partly wired.** `gate()`
 > (`packages/delivery-engine/src/gate.ts`) has existed, faithfully ported
