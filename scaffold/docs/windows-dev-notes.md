@@ -66,7 +66,7 @@ kotlin.incremental=false
 
 ```powershell
 cd client/android
-./gradlew -q :app:compileDebugKotlin
+./gradlew -q :app:compileDirectDebugKotlin :app:compilePlayDebugKotlin
 ```
 
 Once that build is clean, delete the `kotlin.incremental=false` line again.

@@ -1,0 +1,151 @@
+name: release-artifacts
+# BUILDS the release artifacts for a version tag and ATTACHES them to a GitHub release. It does NOT sign anything and holds
+# NO secret. That is the design (docs/RELEASING.md, "Publishing an update"):
+#   - There is no keystore here, so the APK this workflow builds is signed with Flutter's public DEBUG key (the explicit
+#     olive.allowDebugSignedRelease opt-in in android/app/build.gradle.kts). It is a BUILD ARTIFACT: it proves the release
+#     compiles and gives someone without a Flutter toolchain the bytes to re-sign with their own keystore (apksigner). It is
+#     never what a phone is told to install, and an install of it over a real, release-signed install is refused by Android.
+#   - There is no update-signing key here either. The signed update manifest (the thing an installed app trusts) is made
+#     offline by the owner with tools/update/sign-update-manifest.mjs and uploaded by the owner. A compromised workflow, runner,
+#     action or repository setting therefore cannot make any installed app believe an update exists.
+#   - The only credential is the run's own short-lived GITHUB_TOKEN, used to upload the files to the release (contents: write,
+#     on the release job only). The build job has a read-only token.
+# Files made: the direct-flavor arm64 APK (named *.ci-build.apk), SHA256SUMS, and build-info.txt. The play flavor's app bundle
+# is built to prove that flavor assembles, and is kept as a workflow artifact only (a debug-signed bundle is no use to anyone).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An existing version tag (vMAJOR.MINOR.PATCH) to build and attach to its release'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+      # The tag must name the version this checkout really is (the five version places agree, pubspec carries the derived
+      # build number). A mistyped or moved tag stops here, before anything is built under the wrong version.
+      - name: the tag matches this checkout
+        id: ver
+        working-directory: scaffold
+        run: |
+          node tools/update/check-release-tag.mjs "$TAG"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.44.8', channel: stable, cache: true }
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: artifacts-${{ runner.os }}-${{ hashFiles('scaffold/client/pubspec.lock', 'scaffold/client/android/**/*.gradle*', 'scaffold/client/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: artifacts-${{ runner.os }}-
+
+      # The same build tools/cut-release.mjs documents: the live entry point (never the offline demo), no server address, and
+      # none of the developer defines. NO update key and NO manifest address are baked in here: those belong to the build the
+      # owner makes with tools/update/build-update-package.mjs (it needs the owner's PUBLIC key). This build proves the code
+      # assembles and gives the bytes to re-sign.
+      - name: build the direct flavor APK (arm64)
+        working-directory: scaffold/client
+        run: |
+          flutter pub get
+          flutter build apk --release --flavor direct --target-platform android-arm64 --target=lib/main_live.dart \
+            --android-project-arg=olive.allowDebugSignedRelease=true
+      - name: build the play flavor app bundle (proves the flavor assembles)
+        working-directory: scaffold/client
+        run: |
+          flutter build appbundle --release --flavor play --target=lib/main_live.dart \
+            --android-project-arg=olive.allowDebugSignedRelease=true
+
+      - name: name the files and hash them
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out"; mkdir -p "$out"
+          cp scaffold/client/build/app/outputs/flutter-apk/app-direct-release.apk "$out/olive-${VERSION}-direct-arm64-v8a.ci-build.apk"
+          cp scaffold/client/build/app/outputs/bundle/playRelease/app-play-release.aab "$RUNNER_TEMP/olive-${VERSION}-play.ci-build.aab"
+          (cd "$out" && sha256sum olive-*.apk > SHA256SUMS)
+          {
+            echo "Olive Branch ${VERSION} - CI build artifacts"
+            echo "commit: ${GITHUB_SHA}"
+            echo "workflow run: ${GITHUB_RUN_ID}"
+            echo "flutter: 3.44.8"
+            echo
+            echo "These files are signed with Flutter's public DEBUG key because CI holds no release key."
+            echo "They are build artifacts, not releases. To publish an update: re-sign the APK with your own release key (apksigner),"
+            echo "package it with tools/update/build-update-package.mjs, sign the manifest offline, upload both (docs/RELEASING.md)."
+          } > "$out/build-info.txt"
+          ls -l "$out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ steps.ver.outputs.version }}
+          path: ${{ runner.temp }}/out
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: play-bundle-ci-build-${{ steps.ver.outputs.version }}
+          path: ${{ runner.temp }}/olive-${{ steps.ver.outputs.version }}-play.ci-build.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  attach:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The one place a write token exists. It uploads the files; it signs nothing.
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-${{ needs.build.outputs.version }}
+          path: out
+      # Attaches to the release for the tag. If the owner has not made one yet, a DRAFT PRE-RELEASE is created so nothing is
+      # announced by a robot; the owner publishes it. Existing files are never replaced (no --clobber): a published asset is
+      # not something a workflow may overwrite.
+      - name: attach to the release
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
+              --title "$TAG (CI build artifacts)" \
+              --notes "Build artifacts only, signed with the public debug key. Not an update: the signed update manifest is made offline and uploaded by the owner (docs/RELEASING.md)."
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" out/olive-*.apk out/SHA256SUMS out/build-info.txt
