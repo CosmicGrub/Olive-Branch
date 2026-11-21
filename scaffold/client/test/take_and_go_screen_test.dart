@@ -312,9 +312,9 @@ void main() {
         baseUrl: 'http://api.test', childId: 'child-a',
         httpClient: mock, documentsDirectory: () async => tempDir));
       await ackAndConfirm(t);
-      await pumpUntil(t, find.textContaining('Could not reach the server'));
+      await pumpUntil(t, find.textContaining('Could not complete this'));
 
-      expect(find.textContaining('Could not reach the server'), findsOneWidget);
+      expect(find.textContaining('Could not complete this'), findsOneWidget);
       expect(find.textContaining('Nothing has changed'), findsOneWidget);
       expect(find.text('Done'), findsNothing);
       expect(tempDir.listSync(), isEmpty);

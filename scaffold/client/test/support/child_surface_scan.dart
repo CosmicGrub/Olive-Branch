@@ -71,7 +71,6 @@ const Map<String, Set<String>> allowedPinNameFiles = <String, Set<String>>{
 /// Known exception-text sites that are not fixed yet, kept visible rather than hidden: a NEW one still fails the
 /// scan. Remove an entry when its file is fixed.
 const Map<String, String> knownExceptionText = <String, String>{
-  'receipt_screen.dart': 'the send-one-back screen still prints the caught exception; the durable-outbox rework replaces it',
   'networked_checkers_lobby_screen.dart': 'a developer lobby (base-address fields) still reachable from the games hub',
 };
 

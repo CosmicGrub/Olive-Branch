@@ -247,7 +247,7 @@ class _TakeAndGoScreenState extends State<TakeAndGoScreen> {
             // Never the server's reason word: a child reads this.
             _ => 'Could not complete this. Nothing has changed.',
           }
-        : 'Could not reach the server. Nothing has changed.';
+        : 'Could not complete this. Nothing has changed.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message), duration: const Duration(seconds: 5)));
     }
