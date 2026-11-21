@@ -445,8 +445,19 @@ void main() {
             await OutboxRepository(LocalServices.current.area('outbox', ownerId: 'child-a')).load();
         expect(stored.map((OutboxItem i) => i.id).toSet(), <String>{'d1', 'receipt:m1'});
 
+        // The restart is inside the receipt's backoff window (its failure time was stored): nothing is sent and no try
+        // is spent.
         final List<String> sent = <String>[];
         await ReceiptQueue.forChild('child-a').drain((String id) async => sent.add(id));
+        expect(sent, isEmpty);
+        final OutboxRepository repo = OutboxRepository(LocalServices.current.area('outbox', ownerId: 'child-a'));
+        expect((await repo.load()).firstWhere((OutboxItem i) => i.id == 'receipt:m1').attempts, 1);
+
+        // Once the window has passed, the same stored row is sent and removed.
+        final ReceiptQueue later = ReceiptQueue.over(
+            load: repo.load, save: (List<OutboxItem> l) async => repo.save(l),
+            now: () => DateTime.now().add(const Duration(days: 1)));
+        await later.drain((String id) async => sent.add(id));
         expect(sent, <String>['m1']);
         final List<OutboxItem> after =
             await OutboxRepository(LocalServices.current.area('outbox', ownerId: 'child-a')).load();

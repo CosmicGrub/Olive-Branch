@@ -41,7 +41,6 @@
 // A call site without a live session ([baseUrl]/[childId]/[sessionToken] all
 // supplied) gets the same calm line: there is nowhere to keep or send it.
 import 'dart:async';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';

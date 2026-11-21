@@ -76,7 +76,8 @@ void main() {
         watchedAtLabel: '7:04 AM', dayPartKind: 'before_school')));
       await tester.tap(find.text('Send one back'));
       await tester.pump();
-      expect(find.textContaining("isn't connected to a server yet"), findsOneWidget);
+      expect(find.text("That didn't go. Let's try again."), findsOneWidget);
+      expect(find.textContaining('server'), findsNothing);
       expect(find.textContaining('Sent!'), findsNothing);
     });
 
