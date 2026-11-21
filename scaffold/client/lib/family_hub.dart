@@ -64,7 +64,7 @@ class FamilyHub extends ChangeNotifier {
   FamilyHub({
     required this.familyRepo,
     required this.syncRepo,
-    required Future<DeviceKey> Function() deviceKey,
+    required Future<DeviceKey> Function() this._deviceKey,
     required this.shareBox,
     this.kidsRepo,
     RoadDiscovery? discovery,
@@ -72,12 +72,10 @@ class FamilyHub extends ChangeNotifier {
     this.bindAddresses,
     this.allowLoopback = false,
     this.settleHours,
-    Duration discoverWait = const Duration(seconds: 3),
+    Duration this._discoverWait = const Duration(seconds: 3),
     this.readvertiseEvery = const Duration(minutes: 4),
-  }) : _deviceKey = deviceKey,
-       _discovery = discovery ?? BonsoirRoadDiscovery(),
-       _now = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch),
-       _discoverWait = discoverWait {
+  }) : _discovery = discovery ?? BonsoirRoadDiscovery(),
+       _now = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch) {
     shares = ScreenShareService(
       box: shareBox,
       identity: _shareIdentity,

@@ -15,6 +15,7 @@ import 'package:olive_client/family_sync_lan.dart';
 import 'package:olive_client/guardian_local_scope.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/local_family.dart';
+import 'package:olive_client/screen_privacy.dart' show SensitiveScreen;
 import 'package:olive_client/screen_share.dart' show ScreenShareService;
 import 'package:olive_client/screen_share_ui.dart' show ShareCaptureScope, ShareScreenAction;
 
@@ -108,6 +109,20 @@ void main() {
     expect(find.byKey(const Key('phonesIntro')), findsOneWidget);
   });
 
+  testWidgets('the screens that show or take a code can never be captured, whatever the phone allows', (WidgetTester t) async {
+    final Phone mom = await mk(t, 1);
+    await show(t, mom);
+    expect(find.byType(SensitiveScreen), findsNothing, reason: 'the plain list is not a code screen');
+    await t.tap(find.byKey(const Key('phonesAdd')));
+    await settle(t, rounds: 3);
+    expect(find.byType(SensitiveScreen), findsOneWidget);
+    await t.pageBack();
+    await settle(t, rounds: 3);
+    await t.tap(find.byKey(const Key('phonesJoin')));
+    await settle(t, rounds: 3);
+    expect(find.byType(SensitiveScreen), findsOneWidget);
+  });
+
   testWidgets('add a grown-up: a code and a two-word label appear, and leaving the screen closes the window', (
     WidgetTester t,
   ) async {
@@ -157,7 +172,7 @@ void main() {
       expect(allText(t).where((String s) => s.contains(_technical)), isEmpty);
       await t.tap(find.byKey(const Key('addApprove')));
       await settle(t, rounds: 30);
-      final JoinOutcome o = (await t.runAsync(() => joined))!;
+      final JoinOutcome o = (await t.runAsync(() async => (await joined)!))!;
       expect(o.ok, isTrue, reason: o.reason);
       await settle(t, rounds: 6);
       expect(find.byKey(const Key('addDone')), findsOneWidget);
@@ -184,7 +199,7 @@ void main() {
     await settle(t, rounds: 25);
     await t.tap(find.byKey(const Key('addDecline')));
     await settle(t, rounds: 20);
-    final JoinOutcome o = (await t.runAsync(() => joined))!;
+    final JoinOutcome o = (await t.runAsync(() async => (await joined)!))!;
     expect(o.ok, isFalse);
     expect(o.reason, 'declined');
     expect((await t.runAsync(() => dad.fam.hasRecord()))!, isFalse);

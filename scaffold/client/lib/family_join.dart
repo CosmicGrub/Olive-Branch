@@ -315,7 +315,7 @@ class FamilyJoinWindow extends ChangeNotifier {
     );
     if (c == null) return null;
     final LedgerState after = await c.state(nowMs: nowMs());
-    if (!after.isActiveGuardianDevice(_offer!.dev.key)) { print('DBG vote not taken ok=${after.ok} pend=${after.pending.map((p) => '${p.status}').toList()} rej=${after.rejected} devs=${after.devices.length}'); return null; } // the vote did not take: say nothing
+    if (!after.isActiveGuardianDevice(_offer!.dev.key)) return null; // the vote did not take: say nothing
     _set(JoinState.done);
     _timer?.cancel();
     return <String, dynamic>{'t': 'j4', 'ok': 1};

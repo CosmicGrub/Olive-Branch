@@ -25,6 +25,7 @@ import 'family_sync_engine.dart';
 import 'family_sync_lan.dart';
 import 'family_sync_screen.dart';
 import 'pairing_protocol.dart' show Sas;
+import 'screen_privacy.dart' show SensitiveScreen;
 import 'screen_share_ui.dart';
 
 /// What the screen says after "Share now". Pure, so it is tested without a phone.
@@ -197,8 +198,8 @@ class _FamilyPhonesScreenState extends State<FamilyPhonesScreen> {
         return <Widget>[
           Text('Shared with ${_names(s.others)}.', key: const Key('phonesPair')),
           if (s.settlingHours > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
               child: Text(
                 'A newly added phone settles in for a while. Until then you can share the emergency card with it, but not '
                 'pictures of a screen.',
@@ -287,7 +288,7 @@ class _AddGrownUpScreenState extends State<AddGrownUpScreen> {
   @override
   Widget build(BuildContext context) {
     final FamilyJoinWindow? w = _w;
-    return Scaffold(
+    return SensitiveScreen(child: Scaffold(
       appBar: AppBar(title: const Text("Add another grown-up's phone")),
       body: SafeArea(
         child: ListView(
@@ -304,7 +305,7 @@ class _AddGrownUpScreenState extends State<AddGrownUpScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   List<Widget> _start() => <Widget>[
@@ -468,7 +469,7 @@ class _JoinGrownUpScreenState extends State<JoinGrownUpScreen> {
   @override
   Widget build(BuildContext context) {
     final String? sel = _picked ?? (_windows.length == 1 ? _windows.first.key : null);
-    return Scaffold(
+    return SensitiveScreen(child: Scaffold(
       appBar: AppBar(title: const Text("Join another grown-up's phone")),
       body: SafeArea(
         child: ListView(
@@ -543,7 +544,7 @@ class _JoinGrownUpScreenState extends State<JoinGrownUpScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -605,6 +606,8 @@ class _FamilyRoadKeeperState extends State<FamilyRoadKeeper> with WidgetsBinding
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.hub?.removeListener(_changed);
+    // The road exists only while the app is up (a tree torn down leaves no listening socket behind).
+    unawaited(widget.hub?.stopRoad());
     super.dispose();
   }
 
