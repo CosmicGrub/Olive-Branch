@@ -165,6 +165,12 @@ for spec in \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
   "privacy gate: rules, hostile encodings, diff parsing, real CLI (public-repo hygiene)|tools/test/privacy_gate.test.mjs" \
   "slot lock tool: acquire/release/stale/refuse (heavy-job slots)|tools/test/slot.test.mjs" \
+  "update manifest: canonical form, shared vectors, tamper/wrong key/rollback/replay/huge/zip bomb, schema drift|tools/test/update_manifest.test.mjs" \
+  "update tools: key generator refuses the repo, signing script, notes, build-and-package|tools/test/update_tools.test.mjs" \
+  "update verifier: hostile servers (MITM mirror, truncation, endless stream, redirects, bad cert)|tools/test/update_verify.test.mjs" \
+  "flavor guard: direct/play split, install permission only in direct, signing guard matches flavored tasks|tools/test/check_flavors.test.mjs" \
+  "release-artifacts workflow: no secret, no signing, read-only except one upload job; release tag check|tools/test/release_artifacts_workflow.test.mjs" \
+  "update docs: scripts, flags and limits the docs name are the ones the tools have|tools/test/update_docs.test.mjs" \
   "list-test-failures: names failing tests from a flutter compact log|tools/test/list_test_failures.test.mjs" \
   "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
@@ -253,8 +259,9 @@ echo "── Android native (kiosk bridge, §5.20) ─────────�
 ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 GRADLEW="client/android/gradlew"
 if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
-  if (cd client/android && ./gradlew -q :app:compileDebugKotlin >/tmp/gradle.out 2>&1); then
-    echo "  android kotlin compile      clean"
+  # Two distribution flavors (direct, play): each has its own Kotlin source set and its own merged manifest, so both compile.
+  if (cd client/android && ./gradlew -q :app:compileDirectDebugKotlin :app:compilePlayDebugKotlin >/tmp/gradle.out 2>&1); then
+    echo "  android kotlin compile      clean (direct and play flavors)"
   else
     tail -15 /tmp/gradle.out | sed 's/^/  /'
     echo "  ANDROID KOTLIN COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
@@ -640,6 +647,19 @@ if node tools/test/dev_cleartext_guard.test.mjs >/tmp/dc.out 2>&1 && node tools/
 else
   sed 's/^/  /' /tmp/dc.out
   echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
+echo "── Distribution flavors ───────────────────────────────────────"
+# Not counted into TOTAL_PASS (its own suite is counted above). The direct/play split must stay a real one: the install
+# permission declared only in the direct flavor and removed from play, no applicationId suffix (a direct update replaces the
+# installed app in place), the release-signing refusal still matching flavored task names, installer code kept out of the
+# shared source set, and CI compiling and launching BOTH flavors. See tools/check-flavors.mjs.
+if node tools/check-flavors.mjs >/tmp/fl.out 2>&1; then
+  echo "  distribution flavors        $(grep -c 'PASS' /tmp/fl.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/fl.out
+  echo "  FLAVOR GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
 echo ""

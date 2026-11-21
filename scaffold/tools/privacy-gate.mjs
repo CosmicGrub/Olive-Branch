@@ -137,6 +137,8 @@ const SENSITIVE_FILE_BASENAMES = [
   /\.(?:keystore|jks|pem|p12|pfx|p8|mobileprovision|gpg|asc)$/i,
   /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/i, /^\.npmrc$/i, /^\.netrc$/i,
   /^service-?account.*\.json$/i, /^credentials\.json$/i,
+  // The offline update-signing key (tools/update/gen-update-key.mjs): never a file in a repository, whatever it is called.
+  /\.key$/i, /^olive-update/i,
 ];
 const SENSITIVE_CONTENT = /"(?:mobilesdk_app_id|current_key|client_secret|private_key_id)"\s*:\s*"[^"]{6,}"/;
 

@@ -26,6 +26,7 @@ Related documents elsewhere in the repo:
 - `docs/superpowers/specs/` — design specs (adult gate and pairing, server snoop hardening, and others).
 - `docs/care-guides/` — the care guide drafts and the clinician review packet (merged, PR #200; `DRAFT_UNREVIEWED`, not for use by anyone yet) and `CLINICIAN-COVER-LETTER.md`, the ready-to-send letter and one-page checklist for the reviewers.
 - `docs/RELEASING.md` — how a version is cut and published.
+- `docs/UPDATE-MANIFEST.md` and `docs/update-manifest.schema.json` — the signed update manifest an installed app trusts; `docs/release-notes/` — the plain-words notes it carries. Publishing one: RELEASING.md, "Publishing an update".
 - `docs/operators/` — operator notes (proxy and TLS, certificate pinning, and others).
 
 ## Keeping this folder in sync

@@ -38,6 +38,11 @@ scaffold/.env.prod
 # A Firebase client config file is the owner's, never the repository's. The client reads its Firebase settings from
 # --dart-define values (client/lib/push_config.dart), made by tools/fcm-defines.mjs into scaffold/secrets/.
 **/google-services.json
+
+# The offline update-signing key and its public half are the owner's, kept outside every repository (docs/RELEASING.md).
+# tools/update/gen-update-key.mjs refuses a path inside a working tree; these lines are the second fence.
+*.key
+olive-update*
 **/GoogleService-Info.plist
 
 # Push credential (FCM service-account JSON) mounted read-only into the server
