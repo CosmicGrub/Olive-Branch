@@ -84,6 +84,13 @@
 #     anything because an operator didn't know to pass a second flag)
 #     dominates instead.
 #
+# 10. OPERATOR PASSWORDS ARE HEX ONLY. APP_OWNER_PASSWORD / APP_RUNTIME_PASSWORD /
+#     BACKUP_READER_PASSWORD are interpolated straight into postgres:// URLs below, so a password
+#     containing @ : / ? # % or a space is a DIFFERENT URL (another host, port or database), not a
+#     strong password. Generate each with `openssl rand -hex 24` (or -hex 32). The server checks
+#     the URL shape at boot (server/boot_config.mjs) and refuses a malformed one with a message
+#     that says so. See .env.prod.example.
+#
 # WHAT IS DELIBERATELY UNCHANGED / STILL OUT OF SCOPE:
 #   No reverse proxy or TLS termination — this repository has no domain and
 #   no certificate material (tools/docker-dev/README.md's own scope note:
@@ -164,6 +171,7 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
+      # A whole number from 1 to 65535; the server refuses to boot on anything else (server/boot_config.mjs).
       PORT: "8123"
       # S-B11: the RUNNING process connects as app_runtime (owns nothing, DML only,
       # bound by every RLS policy), never as app_owner. Only `migrate` uses app_owner.
@@ -218,7 +226,10 @@ services:
       # delivery worker, `tools/scheduler.mjs deliver-loop`), so the server does not host a
       # second copy of it: DELIVERY_IN_SERVER=0. Set it to 1 (and drop the `delivery`
       # service) for a single-container deployment; running both is safe (one advisory lock)
-      # but wasted work. Sign-up is invite-only through `POST /v1/auth/signup`, gated by
+      # but wasted work. NEVER turn both off: with DELIVERY_IN_SERVER=0 and no `delivery` service
+      # nothing delivers, so the server logs WARNING delivery_worker_missing a minute after boot
+      # (server/delivery_watch.mjs) and tools/health-alert.mjs raises delivery_worker_missing;
+      # server/test/delivery_ops.test.mjs fails a compose file that does this. Sign-up is invite-only through `POST /v1/auth/signup`, gated by
       # allowance tokens the operator issues with `node tools/provision-signup.mjs issue`.
       # INTERNAL_METRICS_TOKEN lets a scraper on the docker network reach
       # /internal/metrics (it is loopback-only otherwise, and a published port does not
@@ -473,6 +484,16 @@ services:
     volumes:
       - ${FCM_SECRETS_DIR:-./secrets}:/run/olive-secrets:ro
     command: ["node", "tools/scheduler.mjs", "deliver-loop"]
+    # ISS-069: a worker that stops ticking, or fails every tick, turns this container `unhealthy`
+    # (tools/delivery-healthcheck.mjs reads the heartbeat file tools/scheduler.mjs deliver-loop writes;
+    # no database needed). The worker also EXITS after 20 failed ticks in a row or a hung one, so
+    # `restart` brings back a fresh process; Docker alone never restarts an unhealthy container.
+    healthcheck:
+      test: ["CMD", "node", "tools/delivery-healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:

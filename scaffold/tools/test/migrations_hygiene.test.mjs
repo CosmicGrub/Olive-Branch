@@ -10,7 +10,7 @@
  *    `00NN_name.sql` must match the REAL file name for that number (S-D22).
  *    Comments citing "0042 re-states the rules" or "0019_child_message_sender"
  *    when no such file existed misled every later reader.
- *  - Migration numbers are contiguous from 0001 except for the documented gap.
+ *  - Migration numbers are contiguous from 0001 except for the documented gap (0019 only).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -62,11 +62,25 @@ const testFixtures = new Set(readdirSync(join(SCAFFOLD, 'db', 'test')).filter(f 
   const nums = files.map(f => Number(f.slice(0, 4)));
   check(g, 'every file is NNNN_name.sql', files.every(f => /^\d{4}_[a-z0-9_]+\.sql$/.test(f)), true);
   check(g, 'numbers are unique', new Set(nums).size, nums.length);
-  const missing = [];
-  for (let n = 1; n <= nums[nums.length - 1]; n++) if (!nums.includes(n)) missing.push(n);
   // 0019 never existed (a number skipped when the guardian-invite work was
-  // renumbered); any new gap must be added here on purpose.
-  check(g, 'the only gaps are the documented ones (19 never existed; 39-41 are reserved for a parallel branch and absent until it merges)', missing.filter(n => ![19, 39, 40, 41].includes(n)).join(',') || 'none', 'none');
+  // renumbered); any new gap must be added here on purpose. 0039 to 0041 were once listed as
+  // "reserved for a parallel branch"; that branch merged, the files exist, and an allowance
+  // that is no longer needed only hides a deleted migration (ISS-075), so it is gone.
+  const ALLOWED_GAPS = [19];
+  const gapsIn = (list) => {
+    const out = [];
+    for (let n = 1; n <= list[list.length - 1]; n++) if (!list.includes(n)) out.push(n);
+    return out.filter(n => !ALLOWED_GAPS.includes(n)).join(',') || 'none';
+  };
+  check(g, 'the only gap is 0019, which never existed', gapsIn(nums), 'none');
+  check(g, 'the allow-list is exactly [19] (39, 40 and 41 are NOT allowed to be missing)', JSON.stringify(ALLOWED_GAPS), '[19]');
+  for (const n of [39, 40, 41]) {
+    check(g, `0${n} exists on disk`, nums.includes(n), true);
+    // The test must be able to fail: the same check over the real list with one file deleted.
+    check(g, `a deleted 0${n} is reported as a gap`, gapsIn(nums.filter(x => x !== n)), String(n));
+  }
+  check(g, 'a deleted 0019-adjacent file (0020) is reported too', gapsIn(nums.filter(x => x !== 20)), '20');
+  check(g, 'a gap in the middle of 0039-0041 is not hidden by a trailing file', gapsIn([...nums.filter(x => x !== 40)]), '40');
 }
 
 // ------------------------------------------------- S-D22 reference checking --
