@@ -53,8 +53,8 @@ CHANGELOG paragraph below has to be true.
    cut; correct any "not built" line that later work built.
 6. **Assertion total.** Adding a test changes the computed total (`verify.sh` sums every suite). Push, read CI's
    `COMPUTED TOTAL` from the verify job log (`gh api --allow-escape-sequences repos/CosmicGrub/Olive-Branch/actions/jobs/<id>/logs`),
-   and set it in `MARKUP.html` line 20 (the `assertions` figure), `scaffold/demo/shell.html` (`"assertions"`) and
-   `scaffold/package.json` (`check:markup --total`). Never guess it. A cut that adds no test leaves it unchanged.
+   and apply it with `node tools/apply-total.mjs <total>` from `scaffold` (the verify log prints that exact command on the
+   `APPLY` line; it rewrites `MARKUP.html` line 20 and `scaffold/demo/shell.html` `"assertions"` and nothing else). Never guess it. A cut that adds no test leaves it unchanged.
 7. **Pull request** titled `Cut X.Y.Z ...`, CI green (rerun only transient infrastructure failures: the postgresql.org key
    download, a GitHub download). **Merge.**
 8. **Dry run, from the merge commit.** In a worktree of `origin/main` (or `main` pulled):

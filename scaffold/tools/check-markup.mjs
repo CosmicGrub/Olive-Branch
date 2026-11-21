@@ -38,7 +38,14 @@
  *   D7  No fixed pixel width in the demo's own chrome exceeds the cover screen,
  *       which at 344 CSS px is narrower than almost any other phone.
  *
- * Usage: node tools/check-markup.mjs [--total N]
+ * Usage: node tools/check-markup.mjs [--total N | --skip-total]
+ *
+ *   --skip-total  verify.sh passes this when a suite failed or ran nothing. The computed total is then not final
+ *                 (a failed suite pulls it down), so C7 and D2 are reported SKIP rather than FAIL: otherwise one
+ *                 failing suite showed up as three failures (the suite, C7 and D2) and the two figures looked wrong
+ *                 when they were not. The run is still NOT GREEN because the suite failed; this only stops the
+ *                 cascade. With every suite green, C7 and D2 are strict, on every branch and on main.
+ *   apply-total   when they ARE stale, `node tools/apply-total.mjs N` rewrites exactly those two figures.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +60,8 @@ const argTotal = (() => {
   const i = process.argv.indexOf('--total');
   return i > -1 ? Number(process.argv[i + 1]) : null;
 })();
+
+const skipTotal = process.argv.includes('--skip-total');
 
 let pass = 0, fail = 0;
 const out = [];
@@ -128,7 +137,10 @@ check('C6', `all ${pRefs.length} prohibition refs exist in §2.1`,
 
 // ---------------------------------------------------------------- assertions --
 const claimed = Number((MK.match(/<strong>(\d+) assertions<\/strong>/) || [])[1]);
-if (argTotal === null) {
+if (skipTotal) {
+  out.push({ id: 'C7', name: 'assertion count vs verify.sh — SKIPPED (a suite failed: the total is not final)',
+             ok: true, skipped: true });
+} else if (argTotal === null) {
   out.push({ id: 'C7', name: 'assertion count vs verify.sh — SKIPPED (no --total)',
              ok: false, actual: 'not checked', expected: 'a number' });
   fail++;
@@ -154,8 +166,13 @@ if (!DEMO) {
     check('D0', 'demo manifest parses', 'unparseable', 'valid JSON');
   } else {
     check('D1', 'demo version tracks the newest CHANGELOG entry', man.version, newest);
-    check('D2', 'demo assertion count matches verify.sh',
-      argTotal === null ? 'not checked' : man.assertions, argTotal === null ? 'a number' : argTotal);
+    if (skipTotal) {
+      out.push({ id: 'D2', name: 'demo assertion count vs verify.sh — SKIPPED (a suite failed: the total is not final)',
+                 ok: true, skipped: true });
+    } else {
+      check('D2', 'demo assertion count matches verify.sh',
+        argTotal === null ? 'not checked' : man.assertions, argTotal === null ? 'a number' : argTotal);
+    }
 
     // D3 — every MARKUP screen is accounted for, one way or the other.
     const markupScreens = [...MK.matchAll(/data-screen="([^"]+)"/g)].map(m => m[1]);
@@ -509,7 +526,7 @@ if (!DEMO) {
 
 console.log('\nMARKUP ↔ CHANGELOG ↔ DEMO correspondence');
 for (const r of out) {
-  console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.id}  ${r.name}` +
+  console.log(`  ${r.skipped ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'}  ${r.id}  ${r.name}` +
     (r.ok ? '' : `\n              expected ${r.expected}, got ${r.actual}`));
 }
 console.log(`\n  ${pass} passed, ${fail} failed`);

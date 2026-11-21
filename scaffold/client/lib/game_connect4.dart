@@ -48,9 +48,12 @@ import 'play_widgets.dart';
 const double _foldTabletopPad = 12.0;
 
 class GameConnect4Screen extends StatefulWidget {
-  const GameConnect4Screen({super.key, required this.role, required this.displayName});
+  const GameConnect4Screen({super.key, required this.role, required this.displayName, this.random});
   final String role;
   final String displayName;
+  /// The source of the computer opponent's choices. Null in the app (a fresh Random); a test passes a seeded or
+  /// scripted one so a game is reproducible.
+  final Random? random;
 
   @override
   State<GameConnect4Screen> createState() => _GameConnect4ScreenState();
@@ -66,7 +69,7 @@ class _GameConnect4ScreenState extends State<GameConnect4Screen> {
   LocalPairingTransport? _transport;
   Connect4PlayGame? _game;
   PlaySessionController? _session;
-  final _rand = Random();
+  late final Random _rand = widget.random ?? Random();
 
   _Mode _mode = _Mode.none;
   Connect4Board _board = Connect4Board.empty();

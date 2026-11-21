@@ -17,8 +17,16 @@ on:
 # a `push` to main is the post-merge verification publish-image.yml chains
 # off, and one merge landing right after another must not silently cancel the
 # earlier commit's verification.
+#
+# ISS-029: cancel-in-progress alone was not enough. A concurrency group holds
+# ONE running and ONE pending run; a third arrival cancels the PENDING one even
+# when cancel-in-progress is false. Two quick merges therefore left the first
+# merged commit with a run that was cancelled before it started, i.e. an
+# unverified commit on main (run 43648573422). The group for a push is now the
+# COMMIT, so every merged commit owns a group of its own and none can displace
+# another; a pull_request keeps the per-ref group (and the cancellation).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -104,10 +112,19 @@ jobs:
       # explicitly on the next line, so `tools` was never actually needed
       # here — dropping it from the packages list is the fix, not a
       # workaround for anything this repo did.
+      #
+      # log-accepted-android-sdk-licenses: false (ISS-036): the action accepts the licences itself and, by default,
+      # PRINTS every licence text it accepts, about 2,000 lines that buried the real log. Acceptance is unchanged;
+      # only the echo is off. The install below keeps its output in a file and prints it only if it fails.
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
-      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+          log-accepted-android-sdk-licenses: false
+      - name: install SDK platform and build-tools
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > "$RUNNER_TEMP/sdkmanager.log" 2>&1 \
+            || { cat "$RUNNER_TEMP/sdkmanager.log"; exit 1; }
+          tail -n 3 "$RUNNER_TEMP/sdkmanager.log"
       # tesseract is a REAL dependency of the homework suite, not a nicety —
       # the OCR assertions shell out to it. imagemagick is a real dependency
       # too: make-fixtures.sh shells out to `magick`/`convert` to generate the
@@ -196,6 +213,21 @@ jobs:
       # any suite reports zero assertions.
       - run: bash tools/verify.sh
         working-directory: scaffold
+        env:
+          # The Dart suite's JSON reporter file, its compact log and every failing suite's full output land here
+          # (tools/verify.sh, REPORT_DIR), so a red run names its failing test.
+          TEST_REPORT_DIR: ${{ runner.temp }}/test-reports
+
+      # Always, pass or fail (ISS-026): two red runs on main had no dart change and no test name in the log. The JSON
+      # stream names every test and its error, and survives a log that lost the line.
+      - name: upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-test-reports
+          path: ${{ runner.temp }}/test-reports
+          if-no-files-found: warn
+          retention-days: 14
 
       # A monitoring view nobody queries is a comment.
       - run: node tools/healthcheck.mjs

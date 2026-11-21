@@ -31,6 +31,21 @@ cd "$ROOT"
 TOTAL_PASS=0; TOTAL_FAIL=0; PROBLEMS=0
 row() { printf "  %-26s %5s passed  %5s failed  %s\n" "$1" "$2" "$3" "$4"; }
 
+# Where a failing run leaves the evidence that NAMES what failed (ISS-026): the Dart suite's JSON reporter file, its
+# compact log, the analyzer output, and the full output of any failing Node suite. .github/workflows/verify.yml uploads
+# this directory as an artifact whether or not the run passed. Absolute, because the Dart run is started from client/.
+mkdir -p "${TEST_REPORT_DIR:-/tmp/olive-test-reports}"
+REPORT_DIR="$(cd "${TEST_REPORT_DIR:-/tmp/olive-test-reports}" && pwd)"
+
+# A suite that failed or ran nothing: print the tail of its output (a bare count names nothing) and keep all of it.
+suite_detail() { # name output passed failed
+  local n="$1" o="$2" p="${3:-}" f="${4:-0}"
+  if [ "${f:-0}" != "0" ] || [ -z "$p" ]; then
+    printf '%s\n' "$o" | tail -40 | sed 's/^/    /'
+    printf '%s\n' "$o" > "$REPORT_DIR/suite-$(printf '%s' "$n" | tr -c 'A-Za-z0-9' '_' | cut -c1-80).log"
+  fi
+}
+
 record() { # name pass fail
   local n="$1" p="${2:-0}" f="${3:-0}" note=""
   if [ "$p" = "0" ] && [ "$f" = "0" ]; then note="◀ NO ASSERTIONS RAN"; PROBLEMS=$((PROBLEMS+1));
@@ -166,12 +181,21 @@ for spec in \
   "privacy gate: rules, hostile encodings, diff parsing, real CLI (public-repo hygiene)|tools/test/privacy_gate.test.mjs" \
   "slot lock tool: acquire/release/stale/refuse (heavy-job slots)|tools/test/slot.test.mjs" \
   "list-test-failures: names failing tests from a flutter compact log|tools/test/list_test_failures.test.mjs" \
-  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs" \
+  "game-sync table: sealed table lifecycle, join tokens, rate bucket, adversarial (pure)|packages/game-sync/test/table.test.mjs" \
+  "game tables: real HTTP + WebSocket wiring, upgrade handler, sweep timer (real sockets)|server/test/game_tables.test.mjs" \
+  "family ledger golden vectors (Node reference for the Dart port)|tools/test/family_ledger_vectors.test.mjs" \
+  "every test file is run by this script or allow-listed with a reason|tools/test/test_files_listed.test.mjs" \
+  "apply-total: rewrites exactly the two quoted figures, line endings untouched|tools/test/apply_total.test.mjs" \
+  "verify gate: a failing suite is one failure not three; C7/D2 strict when green; APPLY line|tools/test/verify_finish.test.mjs" \
+  "CI workflows: smoke can go red, per-commit push concurrency, installs logged, reporter artifact|tools/test/ci_workflows.test.mjs" \
+  "release smoke install: logged uninstall, update-incompatible retry, final uninstall (fake adb)|tools/test/release_smoke_install.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "$name" "${p:-0}" "${f:-0}"
+  suite_detail "$name" "$out" "$p" "$f"
 done
 
 echo ""
@@ -181,6 +205,7 @@ out=$(node demo/test/drive.test.mjs 2>&1)
 p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
 f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
 record "demo drive (19 screens)" "${p:-0}" "${f:-0}"
+suite_detail "demo drive" "$out" "$p" "$f"
 
 echo ""
 echo "── Dart client ────────────────────────────────────────────────"
@@ -195,13 +220,18 @@ FLUTTER_BIN="${FLUTTER_BIN:-${FLUTTER_ROOT:-/tmp/flutter}/bin/flutter}"
 if [ -x "$FLUTTER_BIN" ]; then
   export FLUTTER_ROOT="${FLUTTER_ROOT:-/tmp/flutter}"
   (cd client && "$FLUTTER_BIN" analyze >/tmp/da.out 2>&1)
+  cp /tmp/da.out "$REPORT_DIR/flutter-analyze.txt" 2>/dev/null || true
   if grep -q "No issues found" /tmp/da.out; then
     echo "  dart analyze                clean"
   else
     grep -E "error|warning" /tmp/da.out | head -5 | sed 's/^/  /'
     echo "  DART ANALYZE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
-  out=$(cd client && "$FLUTTER_BIN" test --reporter compact 2>&1)
+  # --file-reporter writes the machine-readable JSON stream (every test's name, result and error) next to the compact
+  # console reporter, whether the run passes or not: the compact reporter's own line is overwritten in place and a CI
+  # log of it can lose the name of a failing test (ISS-026). The workflow uploads $REPORT_DIR as an artifact, always.
+  out=$(cd client && "$FLUTTER_BIN" test --reporter compact --file-reporter "json:$REPORT_DIR/flutter-test.json" 2>&1)
+  printf '%s' "$out" | tr '\r' '\n' > "$REPORT_DIR/flutter-test-compact.txt"
   # p/f must come from the compact reporter's own progress-counter PREFIX at
   # the very START of a line (e.g. "03:29 +1291 -2: ..."), never from a bare
   # "-[0-9]+" search anywhere in the captured blob. That is what this block
@@ -259,6 +289,19 @@ if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
     tail -15 /tmp/gradle.out | sed 's/^/  /'
     echo "  ANDROID KOTLIN COMPILE FAILED"; PROBLEMS=$((PROBLEMS+1))
   fi
+  # The RELEASE variant, which the debug compile above never touches. :app:checkReleaseDuplicateClasses is the AGP task
+  # that refuses an APK carrying two copies of one class (two libraries bundling the same package); it failed a release
+  # build on the media3 rtsp collision (video_player_android vs the Jitsi SDK, fixed by the exclude in
+  # app/build.gradle.kts) while this gate stayed green, and only the advisory release-smoke saw it (ISS-032). It checks
+  # dependency jars, it does not compile or package the app, so it is the cheap half of a release build. Re-adding the
+  # rtsp dependency makes this fail, naming the class and both modules.
+  if (cd client/android && ./gradlew -q :app:checkReleaseDuplicateClasses >/tmp/gradle-dup.out 2>&1); then
+    echo "  android release duplicate-class check   clean"
+  else
+    grep -E 'Duplicate class' /tmp/gradle-dup.out | sort -u | head -10 | sed 's/^/  /'
+    tail -15 /tmp/gradle-dup.out | sed 's/^/  /'
+    echo "  ANDROID RELEASE DUPLICATE-CLASS CHECK FAILED"; PROBLEMS=$((PROBLEMS+1))
+  fi
   # Galaxy Watch6 Classic companion (§21.5) — a separate Gradle module, native
   # Wear Compose rather than Flutter (see client/android/wear/build.gradle.kts
   # for why). Same gate, same posture: a real compile check, not a skip.
@@ -272,7 +315,8 @@ else
   # Not a skip. The SDK is a declared dependency of this suite.
   echo "  android kotlin compile      MISSING TOOLCHAIN — not a skip, a gap"
   echo "  wear os compile             MISSING TOOLCHAIN — not a skip, a gap"
-  PROBLEMS=$((PROBLEMS+2))
+  echo "  android release duplicate-class check   MISSING TOOLCHAIN — not a skip, a gap"
+  PROBLEMS=$((PROBLEMS+3))
 fi
 
 echo ""
@@ -282,6 +326,7 @@ if [ -x "${LIVEKIT_BIN:-/tmp/livekit-server}" ]; then
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "livekit (live server)" "${p:-0}" "${f:-0}"
+  suite_detail "livekit" "$out" "$p" "$f"
 else
   # Not a skip. The binary is a declared dependency of this suite.
   echo "  livekit (live server)      MISSING BINARY — not a skip, a gap"
@@ -534,7 +579,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "$name" "${p:-0}" "${f:-0}"
-  if [ "${f:-0}" != "0" ] || [ -z "$p" ]; then printf '%s\n' "$out" | tail -40 | sed 's/^/    /'; fi
+  suite_detail "$name" "$out" "$p" "$f"
 done
 
 echo ""
@@ -561,7 +606,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
   f=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\2/p' | tail -1)
   record "$name" "${p:-0}" "${f:-0}"
-  if [ "${f:-0}" != "0" ] || [ -z "$p" ]; then printf '%s\n' "$out" | tail -40 | sed 's/^/    /'; fi
+  suite_detail "$name" "$out" "$p" "$f"
 done
 
 echo ""
@@ -642,23 +687,7 @@ else
   echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
-echo ""
-echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
-# Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
-# is passed in so C7 compares MARKUP's quoted figure against what was actually
-# computed above, rather than against a number typed into a document.
-if node tools/check-markup.mjs --total "$TOTAL_PASS" >/tmp/mk.out 2>&1; then
-  echo "  markup correspondence      $(grep -c 'PASS' /tmp/mk.out) passed      0 failed"
-else
-  grep -E '^  (PASS|FAIL)' /tmp/mk.out | sed 's/^/  /'
-  echo "  MARKUP DRIFT — see above"; PROBLEMS=$((PROBLEMS+1))
-fi
-
-echo ""
-echo "──────────────────────────────────────────────────────────────"
-printf "  %-26s %5s passed  %5s failed\n" "COMPUTED TOTAL" "$TOTAL_PASS" "$TOTAL_FAIL"
-if [ "$PROBLEMS" = "0" ] && [ "$TOTAL_FAIL" = "0" ]; then
-  echo "  ALL GREEN"; exit 0
-else
-  echo "  NOT GREEN — $PROBLEMS suite(s) failed or ran nothing"; exit 1
-fi
+# The last two steps (MARKUP/DEMO correspondence, totals, the APPLY line, the exit code) live in verify-finish.sh so the
+# gate's decisions are testable on their own. When a suite failed, the assertion-count checks (C7, D2) are skipped there
+# rather than reported as two more failures; see that script's header (ISS-023).
+exec bash tools/verify-finish.sh "$TOTAL_PASS" "$TOTAL_FAIL" "$PROBLEMS"

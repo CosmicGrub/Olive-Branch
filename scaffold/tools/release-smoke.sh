@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Install a RELEASE APK on the already-booted emulator, launch MainActivity, watch it for a fixed window and
 # save the evidence. Run inside reactivecircus/android-emulator-runner (.github/workflows/release-smoke.yml);
-# it can also be run by hand against any adb device:  bash tools/release-smoke.sh <apk> <outdir> [seconds]
+# it can also be run by hand against an emulator:  bash tools/release-smoke.sh <apk> <outdir> [seconds]
 #
 # Evidence written to <outdir>: logcat.txt, alive.txt (one "<second> <pid>" per second; empty pid = process gone),
 # am-start.txt, activities.txt, screenshot.png. The verdict is tools/release-smoke-eval.mjs (unit-tested).
-# Never uninstalls anything from a real device: it is meant for a throwaway emulator.
+# EMULATOR ONLY. It uninstalls the app (before, on a signature clash, and at exit) and runs pm clear, which destroys the
+# app's data, so it refuses to run unless adb's target is an emulator (serial emulator-NNNN). Exit 2 otherwise.
+#
+# Install (ISS-025): the result of every uninstall is LOGGED (install.txt is the single record, also echoed), because
+# it used to be thrown away and a failed run said only "adb install failed". When the install is refused with
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE (a copy of the app signed with another key is still on the device) the script does
+# what that error asks for: pm uninstall, pm clear, then installs once more, logging each step. After the verdict the
+# app is uninstalled again (an EXIT trap, so a failed run cleans up too), so nothing is left behind in the emulator.
 set -u
 APK="${1:?apk path}"; OUT="${2:?output dir}"; WINDOW="${3:-20}"
 PKG=com.olivebranch.olive_client
@@ -14,11 +21,44 @@ mkdir -p "$OUT"
 : > "$OUT/alive.txt"
 
 adb wait-for-device
+# Guard (before the EXIT trap exists, so a refusal touches nothing): never act on a physical device.
+SERIAL="$(adb get-serialno 2>/dev/null | tr -d '\r' | head -n1)"
+case "$SERIAL" in
+  emulator-*) ;;
+  *) echo "REFUSED  target '${SERIAL:-<none>}' is not an emulator (serial must start with emulator-). This script uninstalls the app and wipes its data; run it only against a throwaway emulator." >&2; exit 2 ;;
+esac
 adb logcat -G 16M >/dev/null 2>&1 || true
-# A cached AVD can carry the app from an earlier run signed with a different debug key (INSTALL_FAILED_UPDATE_INCOMPATIBLE when
-# the cached snapshot is stale and the emulator cold-boots from the saved userdata). A smoke test wants a fresh install.
-adb uninstall "$PKG" >/dev/null 2>&1 || true
-adb install -r "$APK" > "$OUT/install.txt" 2>&1 || { cat "$OUT/install.txt"; echo "FAIL  adb install failed"; exit 1; }
+# Whatever happens next, leave the emulator without the app. Logged, never silent, never fatal.
+final_uninstall() {
+  local r; r="$(adb uninstall "$PKG" 2>&1 | tr -d '\r')"
+  echo "final uninstall: ${r:-<no output>}" | tee -a "$OUT/install.txt"
+}
+trap final_uninstall EXIT
+
+# log <text...>: one line into install.txt and the console.
+log() { echo "$*" | tee -a "$OUT/install.txt"; }
+: > "$OUT/install.txt"
+
+# A cached AVD can carry the app from an earlier run signed with a different debug key. A smoke test wants a fresh install.
+pre="$(adb uninstall "$PKG" 2>&1 | tr -d '\r')"
+log "pre-install uninstall: ${pre:-<no output>}"
+
+try_install() { # prints adb's whole answer, returns its status
+  local r rc; r="$(adb install -r "$APK" 2>&1)"; rc=$?
+  r="$(printf '%s' "$r" | tr -d '\r')"
+  log "adb install -r (exit $rc): ${r:-<no output>}"
+  return "$rc"
+}
+if ! try_install; then
+  if grep -q 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' "$OUT/install.txt"; then
+    log "install refused as INSTALL_FAILED_UPDATE_INCOMPATIBLE: removing the other copy with pm uninstall / pm clear, then retrying once"
+    log "pm uninstall: $(adb shell pm uninstall "$PKG" 2>&1 | tr -d '\r')"
+    log "pm clear: $(adb shell pm clear "$PKG" 2>&1 | tr -d '\r')"
+    try_install || { echo "FAIL  adb install failed again after pm uninstall / pm clear (see $OUT/install.txt)"; exit 1; }
+  else
+    echo "FAIL  adb install failed (see $OUT/install.txt)"; exit 1
+  fi
+fi
 adb logcat -b all -c
 adb shell am start -W -n "$PKG/.MainActivity" > "$OUT/am-start.txt" 2>&1 || true
 cat "$OUT/am-start.txt"

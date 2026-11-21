@@ -145,11 +145,13 @@ const hex = (n) => randomBytes(n).toString('hex');
   check('E image limits', 'JPEG SOF dimensions are read past the APP0 segment', `${jd.width}x${jd.height}`, '6000x4000');
   check('E image limits', 'non-images have no dimensions', imageDimensions(Buffer.from('hello world, not an image at all')), null);
 
-  const t0 = Date.now();
+  const buf0 = process.memoryUsage().arrayBuffers;
   let msg = '';
   try { decodeImage(pngHeader(8000, 8000)); } catch (e) { msg = String(e.message); }
   check('E image limits', 'an 8000x8000 PNG header is refused as image_too_large (64 Mpx)', /^image_too_large/.test(msg), true);
-  check('E image limits', 'refused without allocating (instant, no ~830 MB decode)', Date.now() - t0 < 500, true);
+  // Behaviour, not the clock: a decode of 8000x8000 RGBA would allocate ~256 MB of ArrayBuffer; refusing from the header
+  // allocates nothing of that order. 50 MB of slack covers unrelated test-process allocation.
+  check('E image limits', 'refused without allocating a decode buffer (arrayBuffers grew by under 50 MB)', process.memoryUsage().arrayBuffers - buf0 < 50 * 1024 * 1024, true);
   msg = '';
   try { decodeImage(jpegHeader(9000, 9000)); } catch (e) { msg = String(e.message); }
   check('E image limits', 'an oversize JPEG is refused too', /^image_too_large/.test(msg), true);

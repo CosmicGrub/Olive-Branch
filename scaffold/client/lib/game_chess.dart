@@ -557,10 +557,14 @@ class GameChess extends StatefulWidget {
     this.childName = 'Ivy',
     this.parentName = neutralGrownUp,
     this.botThinkDelay = const Duration(milliseconds: 550),
+    this.random,
   });
 
   final String childName;
   final String parentName;
+  /// The source of the simulated opponent's choices. Null in the app (a fresh Random); a test passes a seeded or
+  /// scripted one so a game is reproducible.
+  final Random? random;
   /// How long the simulated opponent "thinks" before replying. Exposed for
   /// tests, not because a settings affordance belongs on this screen —
   /// there is none, anywhere in this file.
@@ -571,6 +575,7 @@ class GameChess extends StatefulWidget {
 }
 
 class _GameChessState extends State<GameChess> {
+  late final Random _rand = widget.random ?? Random();
   bool _setupDone = false;
   String? _handicapId;
   ChessState _state = newChess();
@@ -656,7 +661,7 @@ class _GameChessState extends State<GameChess> {
       if (!mounted) return;
       final moves = chessLegalMoves(_state);
       if (moves.isEmpty) { setState(() => _parentThinking = false); return; }
-      final pick = moves[Random().nextInt(moves.length)];
+      final pick = moves[_rand.nextInt(moves.length)];
       final result = chessMove(_state, pick.from, pick.to, promotion: pick.promotion);
       setState(() {
         _parentThinking = false;
