@@ -333,6 +333,23 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
           '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
           'needed to use Olive on this phone, and a device wipe removes it.'),
+  LocalDataEntry(
+      area: 'backup', scope: LocalScope.device, encrypted: true, maxBytes: 64 * 1024,
+      what: 'Backup on this device: where backups go (a folder on this phone, or your own Olive server), whether '
+          'they run by themselves, how the last try went (when, how many things, what it said), a backup that is '
+          'part way through, the PUBLIC half of the backup key (it can only lock a backup, never open one), '
+          'when the recovery sheet was made and checked, and the count of wrong sheet tries toward a 15 minute '
+          'rest. Never the sheet or any secret that opens a backup. Sealed on the device.'),
+  LocalDataEntry(
+      area: 'backupkept', scope: LocalScope.device, encrypted: true, maxBytes: 6 * _mib,
+      what: 'Earlier versions kept after a restore: when a backup and this phone held different versions of the '
+          'same thing, this phone\'s was kept and the backup\'s was set aside here, so nothing is lost. Taken from '
+          'a backup of this family only; never shown to her. Sealed on the device; never uploaded.'),
+  LocalDataEntry(
+      area: 'childkeys', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
+      what: 'On her tablet only: the two secrets that lock her own backups (one for her pictures and memories, one '
+          'for her private areas). They stay on the tablet, are never part of any backup, and are shown only to a '
+          'grown-up, behind the grown-up gate, when moving her to a new tablet. Sealed on the device.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a

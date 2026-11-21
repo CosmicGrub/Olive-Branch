@@ -350,6 +350,31 @@ class LocalNamespace {
         _recovery = RecoveryKind.none;
       });
 
+  /// Every key and value at once, as a private copy (a backup reads a whole
+  /// namespace in one consistent pass).
+  Future<Map<String, Object?>> snapshot() => _locked(() async {
+        final Map<String, Object?> data = await _load();
+        return Map<String, Object?>.from(jsonDecode(jsonEncode(data)) as Map<String, dynamic>);
+      });
+
+  /// Replaces the WHOLE document with [data] in ONE atomic write (a restore
+  /// uses this so a namespace is never half old, half new). Refused with
+  /// [LocalStoreFull], leaving the stored data untouched, past the ceiling.
+  Future<void> replaceAll(Map<String, Object?> data) => _locked(() async {
+        for (final String k in data.keys) {
+          _checkKey(k);
+        }
+        final Map<String, Object?> plain = Map<String, Object?>.from(
+            _plainJson(spec.name, data) as Map<String, dynamic>);
+        await _load();
+        final String json = jsonEncode(plain);
+        if (utf8.encode(json).length > spec.maxBytes) {
+          throw LocalStoreFull(spec.name, spec.maxBytes);
+        }
+        await _flush(plain, json: json);
+        _cache = plain;
+      });
+
   /// Typed read. A value this codec cannot decode is treated as absent.
   Future<T?> getTyped<T>(String key, StoreCodec<T> codec) async {
     final Object? json = await get(key);
@@ -430,6 +455,15 @@ class LocalStore {
 
   /// Every namespace that currently has a document on disk.
   Future<List<String>> namespaces() => backend.names();
+
+  /// Drops every in-memory copy so the next read goes back to the documents on
+  /// disk. A rollback that put old documents back directly calls this.
+  void forgetCaches() {
+    for (final LocalNamespace n in _open.values) {
+      n._forget();
+      n._recovery = RecoveryKind.none;
+    }
+  }
 
   /// How many damaged documents are held in quarantine.
   Future<int> quarantined() => backend.quarantineCount();
