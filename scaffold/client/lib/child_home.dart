@@ -103,6 +103,10 @@ import 'tiered_tile.dart';
 import 'wants_needs.dart';
 import 'weeks_screen.dart';
 
+/// DEV-ONLY simulation switch (a build-time define, off in every normal build): shows the example messages on a
+/// device that has no server session, so the Messages screen can be exercised on hardware. Must be exactly 'true'.
+const bool kSimInbox = bool.fromEnvironment('OLIVE_SIM_INBOX');
+
 class ChildHome extends StatelessWidget {
   const ChildHome({super.key, required this.childName, required this.presence,
     required this.sleepsUntilHandover, this.unreadCount = 0,
@@ -262,7 +266,7 @@ class ChildHome extends StatelessWidget {
         baseUrl: baseUrl, childId: childId, sessionToken: sessionToken, httpClient: httpClient);
 
   List<InboxMessage> get _exampleMessages =>
-      baseUrl == null ? List<InboxMessage>.of(demoInboxMessages) : <InboxMessage>[];
+      (baseUrl == null || kSimInbox) ? List<InboxMessage>.of(demoInboxMessages) : <InboxMessage>[];
 
   /// Where each band-home tile goes. Null = no destination (the tile is not drawn anywhere).
   Widget? _bandDestination(BuildContext context, String id, FamilyChildSnapshot f, String band) {
