@@ -90,6 +90,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'localfamily': 'Your family, set up on this phone',
   'localpin': 'Your PIN for this phone',
   'account': 'Your optional Olive account: how far you got',
+  'sendoutbox': 'Messages waiting to send to her',
 };
 
 class ClearLocalDataScreen extends StatefulWidget {

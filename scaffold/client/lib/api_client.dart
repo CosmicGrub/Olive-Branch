@@ -1580,6 +1580,7 @@ class OliveApi {
     String? targetLocalDate,
     String daypart = 'bedtime',
     bool? preserve,
+    String? delivery,
   }) =>
       _post(messages, {
         'storageKey': storageKey,
@@ -1587,6 +1588,11 @@ class OliveApi {
         'captionKey': ?captionKey,
         'targetLocalDate': ?targetLocalDate,
         'daypart': daypart,
+        // The grown-up's choice named outright: `now`, `daypart` or `date`. OMITTED when null so a send that
+        // does not use it (the child's "Send one back") is byte-for-byte what it always was. A server too
+        // old to know the field ignores it and schedules by `daypart`/`targetLocalDate`, which is why the
+        // 201 body's own `delivery` is what a caller must read before it says "right away".
+        'delivery': ?delivery,
         // S-D2 -- null (the default) is OMITTED so the server applies the
         // standing rule by sender: anything a GUARDIAN sends is preserved
         // (MASTERFILE §16.2 #5, "preservation is a standing rule"); a CHILD's
@@ -1594,6 +1600,23 @@ class OliveApi {
         // message unpreserved; true from a child is refused by the server.
         'preserve': ?preserve,
       }, childId: childId);
+
+  /// `{messages: [{id, kind, state, sentAt, deliversAt, deliveredAt, openedAt, receipt}, ...]}` — GET
+  /// [sentMessages], the sender's own view of what she sent (guardian only; the last 50, newest first).
+  /// `state` is waiting / delivered / opened / expired / revoked; `receipt` (only once opened) is
+  /// `{localTime, zone, phrase}` in HER frame. A child session is refused with 403.
+  Future<Map<String, dynamic>> fetchSentMessages(String childId) => _get(sentMessages, childId: childId);
+
+  /// `{dayParts: [{kind, startsLocal, endsLocal, daysOfWeek, reachable}, ...], hasBedtime}` — GET [dayParts],
+  /// the child's whole schedule as wall-clock "HH:MM" in her zone. Guardian only.
+  Future<Map<String, dynamic>> fetchDayParts(String childId) => _get(dayParts, childId: childId);
+
+  /// PUT [dayParts] — REPLACES the child's whole schedule in one transaction under a per-child
+  /// writer lock, then re-times every queued message. [parts] are the same shape [fetchDayParts]
+  /// returns (without `hasBedtime`). An empty list is refused (400 `day_parts_required`); two parts of
+  /// the same kind that overlap are refused (409 `day_parts_overlap`). Needs the `settings` grant.
+  Future<Map<String, dynamic>> putDayParts(String childId, List<Map<String, Object?>> parts) =>
+      _put(dayParts, childId: childId, body: <String, Object?>{'dayParts': parts});
 
   /// POST .../media — server/routes.mjs's real upload route, the other real
   /// half of [sendMessage]'s own header comment ("the real backend for

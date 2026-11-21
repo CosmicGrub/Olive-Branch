@@ -58,12 +58,15 @@
 //     "unstructured, not necessarily reachable"?) has no confirmed answer
 //     yet. A wrong invented definition here would be worse than the honest
 //     absence GuardianHome's own nullable field already renders as nothing.
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'calendar_day_logic.dart';
 import 'guardian_home.dart';
+import 'guardian_send_service.dart';
 
 enum _LoadState { loading, error, ready }
 
@@ -148,6 +151,9 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
         _actorLocalTime = _formatNowLocal();
         _state = _LoadState.ready;
       });
+      // The server just answered, so anything a grown-up saved on this phone for her while it could
+      // not (guardian_send_service.dart) gets another try now. Costs no network when nothing waits.
+      unawaited(_retryWaitingSends());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -155,6 +161,14 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
         _state = _LoadState.error;
       });
     }
+  }
+
+  Future<void> _retryWaitingSends() async {
+    try {
+      await GuardianSendService.live(
+        baseUrl: widget.baseUrl, guardianId: widget.guardianId, childId: widget.childId,
+        httpClient: widget.httpClient).flush();
+    } catch (_) {/* shown, honestly, on the Sent screen */}
   }
 
   String _formatNowLocal() => formatTimeOfDay(hhmmNow());

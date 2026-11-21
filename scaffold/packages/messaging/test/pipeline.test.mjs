@@ -279,6 +279,42 @@ const cap = (o={}) => captureMessage({
     openReceipt(overlap, NOW, null).zone, CHI);
 }
 
+// -------------------------------------------------------------------------
+// M13 -- "send now": a grown-up's explicit choice, scheduled for the moment of sending.
+// -------------------------------------------------------------------------
+{
+  const now = cap({ immediate: true });
+  check('M13 send now', 'a grown-up can send right away', now.ok, 'true');
+  check('M13 send now', 'the policy stored is immediate', now.intent.policy, 'immediate');
+  check('M13 send now', 'it is due at the instant of sending, not at bedtime',
+    DateTime.fromISO(now.intent.scheduledAt).toMillis(), NOW.toMillis());
+  check('M13 send now', 'it names no night', String(now.intent.targetLocalDate), 'null');
+  check('M13 send now', 'the guardian still keeps it by the standing rule (artifact has an expiry only when unpreserved)',
+    cap({ immediate: true, preserve: true }).artifact.expiresAt, 'null');
+  // "now" works with no bedtime configured: it is the way out for a family whose day is not set up yet.
+  const bare = captureMessage({ childId: CHILD, senderId: DAD, senderRole: 'guardian', storageKey: 'k/1', durationMs: 1,
+    targetLocalDate: null, daypart: 'bedtime', preserve: false, immediate: true },
+    [edge()], { homeTz: NYC, tzIntervals: [], dayParts: [] }, NOW);
+  check('M13 send now', 'now needs no day-parts at all', bare.ok, 'true');
+  check('M13 send now', 'the same family with no bedtime still cannot schedule "at bedtime"',
+    captureMessage({ childId: CHILD, senderId: DAD, senderRole: 'guardian', storageKey: 'k/1', durationMs: 1,
+      targetLocalDate: null, daypart: 'bedtime', preserve: false }, [edge()],
+      { homeTz: NYC, tzIntervals: [], dayParts: [] }, NOW).reason, 'daypart_undefined');
+  // hostile combinations
+  check('M13 send now', 'now with a night is refused, not guessed', cap({ immediate: true, targetLocalDate: '2026-08-01' }).reason, 'now_has_no_date');
+  check('M13 send now', 'a stranger cannot send now', captureMessage({ childId: CHILD, senderId: 'stranger',
+    senderRole: 'guardian', storageKey: 'k', durationMs: 1, targetLocalDate: null, daypart: 'bedtime',
+    preserve: false, immediate: true }, [], CTX, NOW).reason, 'not_authorized');
+  check('M13 send now', 'a child cannot send now (her reply always rides the schedule)',
+    captureMessage({ childId: CHILD, senderId: null, senderRole: 'child', senderChildId: CHILD, storageKey: 'k',
+      durationMs: 1, targetLocalDate: null, daypart: 'bedtime', preserve: false, immediate: true }, [], CTX, NOW).reason,
+    'child_cannot_send_now');
+  check('M13 send now', 'an empty recording is still refused when sent now', cap({ immediate: true, durationMs: 0 }).reason, 'empty_recording');
+  check('M13 send now', 'omitting immediate keeps the old behaviour (at_daypart)', cap().intent.policy, 'at_daypart');
+  check('M13 send now', 'a dated send keeps the old behaviour (on_local_date)',
+    cap({ targetLocalDate: '2026-08-01' }).intent.policy, 'on_local_date');
+}
+
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }

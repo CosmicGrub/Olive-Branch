@@ -118,7 +118,7 @@ AnchorPreview resolveAnchor(SendAnchor anchor, {
 /// guards live rather than just describing them.
 class SendTimeGuardScreen extends StatefulWidget {
   const SendTimeGuardScreen({super.key, this.childName = 'Ivy',
-    this.childLocalTime, this.zoneAbbr, this.dayPart, this.reachable});
+    this.childLocalTime, this.zoneAbbr, this.dayPart, this.reachable, this.onCompose});
 
   final String childName;
 
@@ -132,6 +132,13 @@ class SendTimeGuardScreen extends StatefulWidget {
   final String? zoneAbbr;
   final String? dayPart;
   final bool? reachable;
+
+  /// Set only by a real, connected guardian home. When present (and the data above is live) this
+  /// screen is the honest front door to the real composer (guardian_send_screens.dart): its
+  /// buttons open it instead of showing a "Sent" line for a message that was never sent, and the
+  /// demo-only anchor section below (an invented "June 1st" and a fake bedtime shift) is not drawn.
+  /// Null in the preview build and in tests of the demo, which keep the original behaviour.
+  final void Function(BuildContext context)? onCompose;
 
   /// True only when guardian_home_live.dart's real /now fetch supplied
   /// BOTH a local-time string and a real (non-null) reachable verdict —
@@ -172,7 +179,13 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
     _bedtimeLabel = _scheduleShifted ? '8:00 PM' : '8:30 PM';
   });
 
-  void _sendNow() => setState(() => _confirmation = 'Sent — landing with ${widget.childName} now.');
+  void _sendNow() {
+    if (widget._isLive && widget.onCompose != null) {
+      widget.onCompose!(context);
+      return;
+    }
+    setState(() => _confirmation = 'Sent — landing with ${widget.childName} now.');
+  }
 
   void _deferSend(String label) =>
     setState(() => _confirmation = 'Set to deliver at $label.');
@@ -197,6 +210,7 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
           deferLabel: null,
         )
       : recipientContext(_localHour, _demoHours[_localHour]!, 'her time');
+    final bool real = widget._isLive && widget.onCompose != null;
     final anchorPreview = resolveAnchor(_anchor,
       currentBedtimeLabel: _bedtimeLabel, specificDateLabel: 'June 1st');
 
@@ -205,10 +219,14 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: _controller, maxLines: 3,
-            decoration: const InputDecoration(border: OutlineInputBorder(),
-              hintText: 'Type a message…')),
-          const SizedBox(height: 16),
+          // A typed note that goes nowhere has no place in a connected build: a message is a
+          // recorded video (the server has no text route), written in the real composer.
+          if (!real) ...[
+            TextField(controller: _controller, maxLines: 3,
+              decoration: const InputDecoration(border: OutlineInputBorder(),
+                hintText: 'Type a message…')),
+            const SizedBox(height: 16),
+          ],
 
           // --- guard 1: the notification gate --------------------------
           Container(
@@ -224,7 +242,11 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
                   '${prompt.reachable ? '' : ' — she is ${prompt.dayPartName}.'}',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 12),
-              if (prompt.reachable)
+              if (real)
+                SizedBox(width: double.infinity, height: 48,
+                  child: FilledButton(key: const Key('guardOpenComposer'), onPressed: _sendNow,
+                    child: Text(prompt.reachable ? 'Write a message' : 'Choose when it arrives')))
+              else if (prompt.reachable)
                 SizedBox(width: double.infinity, height: 48,
                   child: FilledButton(onPressed: _sendNow, child: const Text('Send now')))
               else
@@ -257,6 +279,13 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
             ])),
           ],
 
+          if (real) ...[
+            const SizedBox(height: 20),
+            Text('A message can go right away, or arrive when a part of her day starts, such as her bedtime. '
+                'Choosing "next time" follows her routine if you change it; choosing a night keeps it on that night.',
+              key: const Key('guardRealNote'), style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (!real) ...[
           const SizedBox(height: 28),
           const Divider(),
           const SizedBox(height: 12),
@@ -287,6 +316,7 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
             label: Text(_scheduleShifted
               ? 'Undo: put her bedtime back to 8:30 PM'
               : 'Preview: her bedtime moves 30 minutes earlier this week')),
+          ],
         ]),
       )),
     );
