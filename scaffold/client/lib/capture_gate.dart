@@ -18,11 +18,13 @@
 //  homework_quality_gate.dart's own header used to warn could drift from
 //  the TypeScript source of truth).
 //
-//  SIMULATED PATH — everything else: either a test supplies
-//  [simulateCapture] directly (capture_gate_test.dart,
-//  capture-route-adjacent widget tests), or no live baseUrl/session is
-//  configured yet (e.g. the offline demo build, lib/main.dart, which has no
-//  backend to call at all — see that file's own header). Runs
+//  SIMULATED PATH — only for a test that supplies [simulateCapture]
+//  directly (capture_gate_test.dart, capture-route-adjacent widget tests), or
+//  the preview build with no live session ([LocalServices.demoSeeds], e.g.
+//  lib/main.dart, which has no backend to call at all — see that file's own
+//  header). A live build (demoSeeds false) with no live session never
+//  simulates anything: the child home does not offer Homework then, and this
+//  screen, if it is ever reached anyway, shows the calm try-again card. Runs
 //  homework_quality_gate.dart's local port of gateImage() against the
 //  supplied/demo [ImageStats] exactly as this file always has. Honestly
 //  labelled on screen either way — the copy at the bottom of this screen
@@ -39,7 +41,9 @@ import 'package:image_picker/image_picker.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'capture_downscale.dart';
+import 'adult_gate.dart' show CalmTryAgainCard;
 import 'homework_quality_gate.dart';
+import 'local_services.dart' show LocalServices;
 import 'retake_screen.dart';
 
 /// Cycles through a deliberately mixed sequence so a reviewer tapping the
@@ -135,16 +139,21 @@ class CaptureGateScreen extends StatefulWidget {
 class _CaptureGateScreenState extends State<CaptureGateScreen> {
   int _attempt = 0;
   bool _checking = false;
-  String? _networkError;
+  // A failed capture shows the one calm try-again card: never a sentence about servers or connections.
+  bool _failed = false;
 
   bool get _hasRealConfig =>
       widget.baseUrl != null && widget.childId != null && widget.sessionToken != null;
+
+  /// No real session, no test hook and no preview build: there is nothing true to show, so nothing is pretended.
+  bool get _unavailable =>
+      widget.simulateCapture == null && !_hasRealConfig && !LocalServices.current.demoSeeds;
 
   Future<void> _takePhoto() async {
     if (_checking) return;
     setState(() {
       _checking = true;
-      _networkError = null;
+      _failed = false;
     });
     if (widget.simulateCapture == null && _hasRealConfig) {
       await _takePhotoReal();
@@ -216,12 +225,12 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
         ),
       ));
     } catch (_) {
-      // A real network/camera failure — surfaced plainly, not silently
-      // swallowed and not pretended into a fabricated quality-gate verdict.
+      // A real network/camera failure — not silently swallowed and not pretended into a fabricated quality-gate
+      // verdict, and never worded for a child: the build shows the one calm try-again card.
       if (!mounted) return;
       setState(() {
         _checking = false;
-        _networkError = "Couldn't reach the server. Check your connection and try again.";
+        _failed = true;
       });
     }
   }
@@ -239,6 +248,8 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_unavailable) return CalmTryAgainCard(onOk: () => Navigator.of(context).maybePop());
+    if (_failed) return CalmTryAgainCard(onOk: () => setState(() => _failed = false));
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Photograph your worksheet')),
@@ -283,23 +294,14 @@ class _CaptureGateScreenState extends State<CaptureGateScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              // Accurate either way, per file header: the real path only
-              // ever runs when simulateCapture is unset AND a live
-              // baseUrl/childId/sessionToken were actually supplied.
-              widget.simulateCapture == null && _hasRealConfig
-                  ? 'This photo is sent to the server for real recognition.'
-                  : 'Demo capture — this preview build simulates the photo; there is '
-                      'no camera wired up yet.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
-            if (_networkError != null) ...[
-              const SizedBox(height: 8),
-              Text(_networkError!,
+            // The real path says nothing about servers (a child reads this screen). Only the preview/test build
+            // labels its simulated capture, and only there.
+            if (widget.simulateCapture != null || !_hasRealConfig)
+              Text(
+                'Demo capture — this preview build simulates the photo; there is '
+                'no camera wired up yet.',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelSmall
-                  ?.copyWith(color: Theme.of(context).colorScheme.error)),
-            ],
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
           ]),
         ),
       ),

@@ -55,7 +55,9 @@ import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'capture_gate.dart';
 import 'form_factors.dart' as ff;
+import 'adult_gate.dart' show CalmTryAgainCard;
 import 'homework_quality_gate.dart';
+import 'local_services.dart' show LocalServices;
 import 'motion_rules.dart';
 import 'tabletop_split.dart';
 
@@ -124,7 +126,11 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
   /// visible).
   final Set<int> _realRevealed = <int>{};
 
-  int get _problemCount => _realProblems?.length ?? _demoProblems.length;
+  /// The canned problems exist only for the preview/test build ([LocalServices.demoSeeds]); a live build with no
+  /// server answer shows none (and never a canned problem with its answer in it).
+  int get _problemCount => _realProblems?.length ?? (LocalServices.current.demoSeeds ? _demoProblems.length : 0);
+
+  bool get _live => widget.baseUrl != null && widget.childId != null && widget.sessionToken != null;
 
   Future<void> _startCapture() async {
     final bool? ok = await Navigator.of(context).push<bool>(
@@ -214,6 +220,10 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Reached without a live session in a live build (the home does not offer it): the calm card, nothing pretended.
+    if (!_live && !LocalServices.current.demoSeeds) {
+      return CalmTryAgainCard(onOk: () => Navigator.of(context).maybePop());
+    }
     final int fadeMs = durationFor(quietnessOf('homework'), crossfadeMs);
     return Scaffold(
       appBar: AppBar(title: const Text('Homework')),
