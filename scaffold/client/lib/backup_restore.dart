@@ -33,6 +33,7 @@ import 'backup_header.dart';
 import 'backup_merge.dart';
 import 'backup_sink.dart';
 import 'backup_state.dart';
+import 'backup_words.dart' show RecoveryKey;
 import 'local_services.dart';
 import 'local_store.dart';
 import 'store_cipher.dart';
@@ -267,10 +268,9 @@ class RestoreEngine {
     required this.role,
     RestoreClearanceGate? gate,
     DateTime Function()? clock,
-    Random? random,
+    this._random,
   })  : gate = gate ?? const AlwaysCleared(),
-        _clock = clock ?? DateTime.now,
-        _random = random;
+        _clock = clock ?? DateTime.now;
 
   final LocalServices services;
   final BackupStateStore state;

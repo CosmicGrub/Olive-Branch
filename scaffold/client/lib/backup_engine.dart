@@ -101,11 +101,10 @@ class BackupEngine {
     required this.writer,
     required this.role,
     DateTime Function()? clock,
-    Random? random,
+    this._random,
     this.chunkBytes = kBackupChunkBytes,
     this.keepGenerations = kKeepGenerations,
-  })  : _clock = clock ?? DateTime.now,
-        _random = random;
+  })  : _clock = clock ?? DateTime.now;
 
   final LocalServices services;
   final BackupStateStore state;

@@ -148,7 +148,7 @@ Future<MergeResult> mergeLedgerDocuments({
 
   MergeResult withFamily(Object? value, List<MergeConflict> extra) {
     final MergeResult r = rest();
-    return MergeResult(<String, Object?>{...r.merged, if (value != null) key: value}, <MergeConflict>[...extra, ...r.conflicts]);
+    return MergeResult(<String, Object?>{...r.merged, key: ?value}, <MergeConflict>[...extra, ...r.conflicts]);
   }
 
   if (b == null) return withFamily(_copy(l), const <MergeConflict>[]);
