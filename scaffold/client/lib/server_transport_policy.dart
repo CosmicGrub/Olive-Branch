@@ -20,6 +20,14 @@
 //      than two pins fails closed.
 //   3. Pins and the base URL are build-time values (--dart-define), never
 //      committed: OLIVE_API_PINS=pin1,pin2.
+//
+// One narrow, developer-only exception to rule 1 ([kAllowDevCleartext]): the
+// device lane installs RELEASE builds and reaches the dev server over `adb
+// reverse`, which is plain http on the phone's own loopback. A build made with
+// --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true (tools/device-sync.sh, and no
+// other script; tools/check-dev-cleartext.mjs enforces that in CI) may speak
+// http to the literal addresses 127.0.0.1 and ::1 and to nothing else. Without
+// the define the rule is unchanged for every build.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -39,10 +47,21 @@ class TransportPolicyViolation implements Exception {
   String toString() => 'TransportPolicyViolation: $reason';
 }
 
+/// True only in a development device build made with
+/// --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true (bool.fromEnvironment reads
+/// exactly "true"). A store or release cut never passes it, so the default is
+/// "cleartext refused in release". See [OliveTransportPolicy.isLiteralLoopback].
+const bool kAllowDevCleartext = bool.fromEnvironment('OLIVE_ALLOW_DEV_CLEARTEXT');
+
 /// Pure scheme/host policy. No sockets, no globals: [release] is injected.
 class OliveTransportPolicy {
-  const OliveTransportPolicy({required this.release});
+  const OliveTransportPolicy({required this.release, this.allowDevCleartext = kAllowDevCleartext});
   final bool release;
+
+  /// Permits cleartext http to a literal loopback address (and nothing else)
+  /// even in a release build. Defaults to the build-time define; only tests
+  /// pass it.
+  final bool allowDevCleartext;
 
   /// null when [base] is allowed, otherwise the reason it is refused.
   String? violation(Uri base) {
@@ -52,9 +71,21 @@ class OliveTransportPolicy {
     }
     if (base.scheme == 'https') return null;
     if (base.scheme != 'http') return 'unsupported scheme "${base.scheme}"';
-    if (release) return 'cleartext http is refused in release builds';
+    if (release) {
+      if (allowDevCleartext && isLiteralLoopback(base.host)) return null;
+      return 'cleartext http is refused in release builds';
+    }
     if (isDevHost(base.host)) return null;
     return 'cleartext http to a public host is refused (debug builds may use http only for loopback, 10.0.2.2, private LAN or .local hosts)';
+  }
+
+  /// Exactly the literal addresses 127.0.0.1 and ::1: the only hosts the dev
+  /// cleartext exception covers. Deliberately NOT localhost (a name resolves
+  /// however the network says), not the rest of 127.0.0.0/8, not other
+  /// spellings of ::1, not a private LAN address.
+  static bool isLiteralLoopback(String host) {
+    final h = host.replaceAll(RegExp(r'^\[|\]$'), '');
+    return h == '127.0.0.1' || h == '::1';
   }
 
   /// Loopback, the Android emulator's host alias, private LAN ranges,

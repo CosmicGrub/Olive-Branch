@@ -597,6 +597,19 @@ else
 fi
 
 echo ""
+echo "── Dev-only cleartext define ──────────────────────────────────"
+# Not counted into TOTAL_PASS. The dev-only cleartext define (see tools/check-dev-cleartext.mjs) lets a RELEASE build speak http to the literal loopback
+# addresses (127.0.0.1, ::1) so the device lane can reach the dev server over `adb reverse`. Only tools/device-sync.sh
+# may pass it; this fails if any other script, workflow, Dockerfile or release config does (a store build must never
+# carry it) or if device-sync.sh stops passing it as exactly `=true`.
+if node tools/test/dev_cleartext_guard.test.mjs >/tmp/dc.out 2>&1 && node tools/check-dev-cleartext.mjs >>/tmp/dc.out 2>&1; then
+  echo "  dev cleartext define       $(grep -c 'PASS' /tmp/dc.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/dc.out
+  echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually
