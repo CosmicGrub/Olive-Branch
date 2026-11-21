@@ -162,8 +162,8 @@ void main() {
 
     test('a missing parent makes an orphan, and supplying the parent later resolves it', () async {
       final Fam f = await Fam.found(mom);
-      final LedgerEntry a = await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': mom.gid});
-      final LedgerEntry b = await f.add(mom, EntryType.accessResume, <String, Object?>{'gid': mom.gid});
+      final LedgerEntry a = await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 0});
+      final LedgerEntry b = await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 1});
       final LedgerState partial = await reduceLedger(entries: <LedgerEntry>[f.genesis, b], nowMs: t0 + day, pin: f.pin);
       expect(partial.orphans, <String>[b.hashHex]);
       final LedgerState full = await reduceLedger(entries: <LedgerEntry>[f.genesis, b, a], nowMs: t0 + day, pin: f.pin);
@@ -173,12 +173,12 @@ void main() {
 
     test('an entry from the future (clock far ahead) is "not yet", and one that goes back before its parent is refused', () async {
       final Fam f = await Fam.found(mom);
-      final LedgerEntry future = await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': mom.gid}, at: t0 + 3 * day);
+      final LedgerEntry future = await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 0}, at: t0 + 3 * day);
       final LedgerState now = await f.state(t0 + hour);
       expect(now.rejected[future.hashHex], 'from-the-future');
       final LedgerState later = await f.state(t0 + 4 * day);
       expect(later.rejected.containsKey(future.hashHex), isFalse);
-      final LedgerEntry back = await f.add(mom, EntryType.accessResume, <String, Object?>{'gid': mom.gid}, prev: <List<int>>[future.hash], at: t0 + day);
+      final LedgerEntry back = await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 1}, prev: <List<int>>[future.hash], at: t0 + day);
       expect((await f.state(t0 + 4 * day)).rejected[back.hashHex], 'time-goes-backwards');
     });
 
@@ -269,7 +269,7 @@ void main() {
       expect(s.hasFork, isTrue);
       expect(s.childDeviceKeys.length, 2, reason: 'nothing dropped');
       // The next entry that names both heads is the merge: one head again, the fork still on record.
-      await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': mom.gid}, prev: s.heads);
+      await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 0}, prev: s.heads);
       final LedgerState merged = await f.state(f.clock + hour);
       expect(merged.heads.length, 1);
     });
@@ -277,8 +277,8 @@ void main() {
     test('one device signing two different entries at one position is called out as a same-signer fork', () async {
       final Fam f = await Fam.found(mom);
       final List<Uint8List> head = (await f.state()).heads;
-      await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': mom.gid}, prev: head);
-      await f.add(mom, EntryType.accessResume, <String, Object?>{'gid': mom.gid}, prev: head);
+      await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 0}, prev: head);
+      await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': mom.gid, 'until': 1}, prev: head);
       final LedgerState s = await f.state(t0 + 2 * day);
       expect(s.forks.single.sameSigner, isTrue);
     });
@@ -947,23 +947,21 @@ void main() {
     });
   });
 
-  group('reserved entry types change nothing', () {
-    test('pause, resume, end, limits and standing OK are recorded and grant nothing', () async {
+  group('entries about people the family does not have', () {
+    test('a pause, an end, limits and a Standing OK about someone who is not a member are refused, not recorded as effects', () async {
       final Fam f = await Fam.found(mom);
       await f.welcomeParent(mom, dad, others: <P>[]);
       f.clock += 4 * day;
-      final String before = Fam.summary(await f.state()).split('\n').where((String l) => l.startsWith('members=') || l.startsWith('devices=') || l.startsWith('policy=')).join();
-      await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': dad.gid});
-      await f.add(mom, EntryType.accessEnd, <String, Object?>{'gid': dad.gid, 'reason': 'ended'});
-      await f.add(mom, EntryType.limitsAgree, <String, Object?>{'gid': dad.gid, 'limits': <int>[5], 'until': f.clock + day});
-      await f.add(mom, EntryType.limitsTighten, <String, Object?>{'gid': dad.gid, 'limits': <int>[5, 6]});
-      await f.add(mom, EntryType.standingOk, <String, Object?>{'gid': dad.gid, 'until': f.clock + day});
-      final LedgerEntry unknown = await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': stranger.gid});
+      final String before = Fam.summary(await f.state());
+      final LedgerEntry pause = await f.add(mom, EntryType.accessPause, <String, Object?>{'gid': stranger.gid});
+      final LedgerEntry end = await f.add(mom, EntryType.accessEnd, <String, Object?>{'gid': stranger.gid, 'reason': 'notice'});
+      final LedgerEntry lim = await f.add(mom, EntryType.limitsAgree, <String, Object?>{'gid': stranger.gid, 'limits': <int>[6], 'until': f.clock + 2 * day});
       final LedgerState s = await f.state();
-      final String after = Fam.summary(s).split('\n').where((String l) => l.startsWith('members=') || l.startsWith('devices=') || l.startsWith('policy=')).join();
-      expect(after, before);
-      expect(s.rejected[unknown.hashHex], 'unknown-subject');
-      expect(s.holdsAnything(dad.key.publicKey), isTrue, reason: 'a "pause" that is only reserved does not pause');
+      expect(s.rejected[pause.hashHex], 'unknown-subject');
+      expect(s.rejected[end.hashHex], 'unknown-subject');
+      expect(s.rejected[lim.hashHex], 'unknown-subject');
+      String core(String x) => x.split('\n').where((String l) => l.startsWith('members=') || l.startsWith('devices=') || l.startsWith('policy=')).join();
+      expect(core(Fam.summary(s)), core(before));
     });
   });
 

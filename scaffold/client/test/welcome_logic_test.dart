@@ -480,15 +480,32 @@ void main() {
     test('no file other than the welcome screens imports the welcome files, and no child file does', () {
       final List<File> libs = Directory('lib').listSync(recursive: true).whereType<File>().where((File f) => f.path.endsWith('.dart')).toList();
       final Set<String> importers = <String>{};
+      final RegExp imp = RegExp(r"^\s*(?:import|export)\s+'[^']*welcome_(?:logic|screens)\.dart'", multiLine: true);
       for (final File f in libs) {
-        final String src = f.readAsStringSync();
-        if (src.contains("'welcome_logic.dart'") || src.contains("'welcome_screens.dart'") || src.contains('/welcome_logic.dart') || src.contains('/welcome_screens.dart')) {
-          importers.add(f.path.replaceAll('\\', '/').split('/').last);
-        }
+        if (imp.hasMatch(f.readAsStringSync())) importers.add(f.path.replaceAll('\\', '/').split('/').last);
       }
-      expect(importers, <String>{'welcome_screens.dart'}, reason: 'only the welcome screens import the welcome logic; nothing else yet');
+      expect(importers, <String>{
+        'welcome_screens.dart',
+        'village_people.dart',
+        'village_people_screens.dart',
+        'village_welcome_flow.dart',
+        'village_welcome_host.dart',
+      }, reason: 'only the welcome screens and the grown-up village files import the welcome logic; nothing else');
       for (final String name in importers) {
         expect(name.startsWith('child_'), isFalse);
+      }
+    });
+
+    test('no child file imports a village file, and no village file imports a child file', () {
+      final List<File> libs = Directory('lib').listSync(recursive: true).whereType<File>().where((File f) => f.path.endsWith('.dart')).toList();
+      final RegExp imp = RegExp(r"^\s*(?:import|export)\s+'([^']+)'", multiLine: true);
+      for (final File f in libs) {
+        final String name = f.path.replaceAll('\\', '/').split('/').last;
+        for (final Match m in imp.allMatches(f.readAsStringSync())) {
+          final String target = m.group(1)!.split('/').last;
+          if (name.startsWith('child_')) expect(target.startsWith('village_'), isFalse, reason: '$name imports $target');
+          if (name.startsWith('village_')) expect(target.startsWith('child_'), isFalse, reason: '$name imports $target');
+        }
       }
     });
 

@@ -3,9 +3,11 @@
 // UNVERIFIED on a device; pure Dart, runs headless in CI. Spec: docs/planning/FAMILY-IDENTITY-DESIGN.md sections 3,
 // 4.1 and 5 (steps 1 and 2), and docs/planning/VILLAGE-WELCOME-DESIGN.md section 9 (PR 2).
 //
-// NOT WIRED. Nothing in the app calls [FamilyFounder] yet. The live pairing flow (pairing_protocol.dart,
-// lan_pairing_transport.dart, the connect screens) still computes `local-<fingerprint>` on the spot and still pins one
-// grown-up key; this file changes none of that and none of those files. The wiring is a later wave. Founding takes the
+// WIRED ONLY BY THE VILLAGE WELCOME. village_welcome_host.dart calls [FamilyFounder.ensure] when a grown-up chooses
+// "Welcome someone" and types the PIN (nothing calls it at start-up), and keeps an offered record on a new person's phone
+// after their yes. The live pairing flow (pairing_protocol.dart, lan_pairing_transport.dart, the connect screens) still
+// computes `local-<fingerprint>` on the spot and still pins one grown-up key; this file changes none of that and none of
+// those files. Joining pairing to the ledger is a later wave. Founding takes the
 // list of child devices the phone already certified as INPUT and only reads it: the paired-kids record is never
 // written, so a device that migrates and then does nothing else behaves exactly as before.
 //

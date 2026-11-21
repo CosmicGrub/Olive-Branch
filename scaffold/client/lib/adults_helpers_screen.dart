@@ -6,8 +6,8 @@
 // calls each, a way into "who is in her life" (the family builder), the helpers
 // you can write for (a sitter pass, a grandparent page, a school summary: all
 // written by you and shown on a screen, never sent or saved by anyone), and inviting
-// another adult. Inviting needs the network, which is not built, so that row opens
-// a PREVIEW that says "Nothing is sent" and sends nothing.
+// another adult. "Welcome someone" (in person, on the same Wi-Fi; see village_welcome_flow.dart) is the real way
+// in; the older "Invite a co-parent" row is kept as a PREVIEW that says "Nothing is sent" and sends nothing.
 //
 // This screen builds nothing of its own: every row opens the screen that already
 // exists, through a callback the settings hub supplies.
@@ -41,8 +41,9 @@ class AdultsHelpersScreen extends StatelessWidget {
   /// Opens the invitation PREVIEW.
   final VoidCallback onInvitePreview;
 
-  /// Opens "Your village" (welcome_screens.dart). Null hides the row. Nothing passes it yet: the family ledger is
-  /// not wired into the shell, so the preview row above is still the only invite entry in the running app.
+  /// Opens "Your village" (village_welcome_flow.dart). Null hides the row. The guardian More hub passes it wherever
+  /// this phone has its local services (the PIN lives there); a tree built without them (the preview) keeps the
+  /// "Invite a co-parent (preview)" row as the only invite entry.
   final VoidCallback? onWelcome;
 
   @override
