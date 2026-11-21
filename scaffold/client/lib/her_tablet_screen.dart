@@ -15,7 +15,7 @@
 // this phone scanning its picture (unlock_child_screen.dart), which also ends this phone's side.
 //
 // REUSABLE: [connectHerTabletRoute] is the stable entry point other flows (the guided first run) call, with an [onConnected]
-// callback; it needs no screen of this file. The PIN is asked in ONE place ([askAdultPin]) so a different keypad is a
+// callback; it needs no screen of this file. The PIN is asked in ONE place ([askPhonePin]) so a different keypad is a
 // one-function change, and nothing here forks it.
 import 'dart:async';
 
@@ -141,7 +141,7 @@ Route<void> connectHerTabletRoute(
 /// The one place the grown-up's PIN is asked on this phone for an act that needs it (here: disconnecting). Returns true only
 /// for a PIN the local PIN service accepted (lockout and constant-time compare included). A different keypad replaces this
 /// function and nothing else.
-Future<bool> askAdultPin(BuildContext context, LocalPinService pin, {required String title, required String body, required String action}) async {
+Future<bool> askPhonePin(BuildContext context, LocalPinService pin, {required String title, required String body, required String action}) async {
   final TextEditingController c = TextEditingController();
   String? err;
   bool busy = false;
@@ -283,7 +283,7 @@ class _HerTabletScreenState extends State<HerTabletScreen> {
   Future<void> _disconnect() async {
     final PairedKid? k = _view?.kid;
     if (k == null || _busy) return;
-    final bool ok = await askAdultPin(context, _s.pin,
+    final bool ok = await askPhonePin(context, _s.pin,
         title: "Disconnect ${widget.childName}'s tablet?",
         body: "This phone will stop treating it as hers. Her tablet is told the next time it meets this phone, or when a grown-up taps "
             '"Disconnect this tablet" on it. You can connect it again whenever you like.',
