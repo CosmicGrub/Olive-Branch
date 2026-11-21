@@ -210,7 +210,7 @@ void main() {
       await useNarrowSurface(tester);
       await tester.pumpWidget(wrap(StorytellerScreen(childName: 'Ivy', random: Random(kStoryTestSeed),
         initialFavourites: [
-          Favourite(code: 'the_thing_that_was_lost', title: 'The Thing That Was Lost',
+          const Favourite(code: 'the_thing_that_was_lost', title: 'The Thing That Was Lost',
             starredAt: '2026-01-01T00:00:00.000Z', timesRead: 1),
         ])));
       await tester.pump();
@@ -400,7 +400,7 @@ void main() {
       addTearDown(t.view.resetPhysicalSize);
       addTearDown(t.view.resetDevicePixelRatio);
       for (int seed = 0; seed < 50; seed++) {
-        await t.pumpWidget(scaled(StorytellerScreen(childName: 'Ivy', random: Random(seed))));
+        await t.pumpWidget(scaled(StorytellerScreen(key: ValueKey(seed), childName: 'Ivy', random: Random(seed))));
         await t.pumpAndSettle();
         await t.tap(find.text('Tell me a story!'));
         await t.pumpAndSettle();
@@ -429,7 +429,7 @@ void main() {
       await t.pumpAndSettle();
       final String code = RegExp(r'Story code · (\w+)')
           .firstMatch(t.widgetList<Text>(find.textContaining('Story code')).first.data!)!.group(1)!;
-      await t.pumpWidget(wrap(StorytellerScreen(childName: 'Ivy', storyCode: code, random: Random(99))));
+      await t.pumpWidget(wrap(StorytellerScreen(key: UniqueKey(), childName: 'Ivy', storyCode: code, random: Random(99))));
       await t.tap(find.text('Tell me a story!'));
       await t.pumpAndSettle();
       expect(find.text('Story code · $code'), findsOneWidget);

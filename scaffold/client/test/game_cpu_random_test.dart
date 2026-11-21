@@ -38,7 +38,7 @@ void main() {
   group('chess — the grown-up opponent draws from the injected Random', () {
     Future<List<String>> play(WidgetTester t, int seed) async {
       final r = _Recording(seed);
-      await t.pumpWidget(wrap(GameChess(botThinkDelay: Duration.zero, random: r)));
+      await t.pumpWidget(wrap(GameChess(key: UniqueKey(), botThinkDelay: Duration.zero, random: r)));
       await t.tap(find.text('Start game'));
       await t.pump();
       final cells = find.descendant(of: find.byType(GridView), matching: find.byType(GestureDetector));
@@ -60,7 +60,7 @@ void main() {
   group('checkers — the grown-up opponent draws from the injected Random', () {
     Future<List<String>> play(WidgetTester t, int seed) async {
       final r = _Recording(seed);
-      await t.pumpWidget(wrap(GameCheckers(botThinkDelay: Duration.zero, random: r)));
+      await t.pumpWidget(wrap(GameCheckers(key: UniqueKey(), botThinkDelay: Duration.zero, random: r)));
       await t.tap(find.byKey(const Key('ckCell_5_0')));
       await t.pump();
       await t.tap(find.byKey(const Key('ckCell_4_1')));
@@ -80,7 +80,7 @@ void main() {
   group('dots and boxes — the grown-up opponent draws from the injected Random', () {
     Future<List<String>> play(WidgetTester t, int seed) async {
       final r = _Recording(seed);
-      await t.pumpWidget(wrap(GameDotsBoxes(botThinkDelay: Duration.zero, random: r)));
+      await t.pumpWidget(wrap(GameDotsBoxes(key: UniqueKey(), botThinkDelay: Duration.zero, random: r)));
       await t.tap(find.byKey(const Key('dbH_0_0')));
       await t.pumpAndSettle();
       return r.calls;
@@ -98,7 +98,7 @@ void main() {
       await t.binding.setSurfaceSize(const Size(800, 1200));
       addTearDown(() => t.binding.setSurfaceSize(null));
       final r = _Recording(seed);
-      await t.pumpWidget(wrap(GameConnect4Screen(role: 'ivy', displayName: 'Ivy', random: r)));
+      await t.pumpWidget(wrap(GameConnect4Screen(key: UniqueKey(), role: 'ivy', displayName: 'Ivy', random: r)));
       await t.pump(const Duration(milliseconds: 300));
       await t.tap(find.text('Easy')); // Easy draws on every move, so the count is not zero by luck
       await t.pump();
@@ -121,7 +121,7 @@ void main() {
 
   group('Uno — every shuffle and the computer draw from the injected Random', () {
     Future<List<String>> dealt(WidgetTester t, int seed) async {
-      await t.pumpWidget(wrap(GameUnoScreen(role: 'dad', displayName: 'Dad', random: Random(seed))));
+      await t.pumpWidget(wrap(GameUnoScreen(key: UniqueKey(), role: 'dad', displayName: 'Dad', random: Random(seed))));
       await t.pumpAndSettle();
       await t.tap(find.text('2').last);
       await t.pumpAndSettle();

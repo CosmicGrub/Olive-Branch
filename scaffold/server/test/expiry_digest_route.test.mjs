@@ -112,7 +112,7 @@ const get = (childId, t) => api.handle('GET', `/v1/children/${childId}/expiry-di
     Object.keys(r.body.digests[0].items[0]).sort().join(','), 'artifactId,expiresAt,kind');
   check('B shape', 'the expired set is absent (its artifact id is in no digest)',
     artifactIdsOf(r.body).includes('a-0'), false);
-  check('B shape', 'the artifact ids returned are exactly the two live digests' items',
+  check('B shape', 'the artifact ids returned are exactly those of the two live digests',
     artifactIdsOf(r.body).join(','), 'a-1,a-2,a-1');
 }
 {
