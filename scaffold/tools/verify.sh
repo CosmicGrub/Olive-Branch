@@ -151,6 +151,7 @@ for spec in \
   "annotation canvas engine (undo/redo/erase)|packages/annotation/test/canvas.test.mjs" \
   "http hardening: body integrity, caps, rate limit, access log, metrics (P-05/07/08/19)|server/test/http_hardening.test.mjs" \
   "lifecycle: graceful shutdown + game-socket heartbeat (P-14/15)|server/test/lifecycle.test.mjs" \
+  "update hosting: public read-only /updates/* (manifest, signature, APK ranges, traversal, symlinks, rate limit)|server/test/update_hosting.test.mjs" \
   "security round 2 (pure): pairing budget, strict ids, image limits, sniffing, secrets, session kid/rotation|server/test/security_round2.test.mjs" \
   "backup lib: retention, stale alarm, encryption (P-04)|tools/test/backup_lib.test.mjs" \
   "infra: Dockerfile, compose, CI hygiene (P-13/14/16)|tools/test/infra.test.mjs" \

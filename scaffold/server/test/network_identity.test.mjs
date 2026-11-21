@@ -107,7 +107,9 @@ check('B proxy', 'rate_limit.clientIp delegates to the same parser',
 {
   const idx = rd(join(SCAFFOLD, 'server', 'index.mjs'));
   check('C limiters', 'index.mjs no longer passes clientIp() to a limiter', /clientIp\(/.test(idx), 'false');
-  check('C limiters', 'index.mjs keys limiters on netId.anonKey(req)', (idx.match(/netId\.anonKey\(req\)/g) ?? []).length, 2);
+  // Three limiters key on the pseudonym: the pre-session IP and identifier buckets, and the public /updates/* limiter
+  // (server/update_hosting.mjs, MASTERFILE 8.31), whose callerKey is the same pseudonym prefixed 'u:'.
+  check('C limiters', 'index.mjs keys limiters on netId.anonKey(req)', (idx.match(/netId\.anonKey\(req\)/g) ?? []).length, 3);
 }
 
 // ---- D · requests carry no network identity -------------------------------

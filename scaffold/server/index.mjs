@@ -25,6 +25,7 @@ import { assetLinks } from './webauthn_config.mjs';
 import { serveSignedMedia } from './signed_media.mjs';
 import { registerGameTableRoutes, attachGameSocketServer, deriveGameTableSecret } from './game_tables.mjs';
 import { createAuthLimiter, createWriteLimiter } from './rate_limit.mjs';
+import { resolveUpdatesConfig, createUpdateHosting } from './update_hosting.mjs';
 import { createNetIdentity } from './netid.mjs';
 import { checkBootTransport, httpsRequired, securityHeaders } from './transport.mjs';
 import { errorLine } from './safe_log.mjs';
@@ -109,6 +110,18 @@ if (bootTransport.problems.length) {
   process.exit(2);
 }
 const netId = createNetIdentity();
+
+// Optional self-hosted app updates (MASTERFILE 8.31, server/update_hosting.mjs): a public,
+// read-only, rate-limited /updates/* route set serving the offline-signed manifest and the
+// APKs it names from UPDATES_DIR. Unset = nothing is registered and /updates/* is an
+// ordinary unknown path. A malformed value refuses to boot like every other server config.
+const bootUpdates = await resolveUpdatesConfig(process.env);
+for (const w of bootUpdates.warnings) console.warn(`WARNING: updates: ${w}`);
+if (bootUpdates.problems.length) {
+  for (const p of bootUpdates.problems) console.error(`updates config check failed: ${p}`);
+  process.exit(2);
+}
+console.log(`updates: ${bootUpdates.enabled ? 'self-hosted from UPDATES_DIR' : 'not hosted (UPDATES_DIR unset)'}`);
 
 const pool = createPool(DATABASE_URL);
 // S-B11 -- refuse to run as a role that owns the schema / bypasses RLS (server/db_role.mjs).
@@ -335,6 +348,11 @@ const readiness = createReadinessCache({
     ? Number(READYZ_CACHE_RAW) : 2000,
 });
 const authLimiter = createAuthLimiter();
+// Null when UPDATES_DIR is unset: the dispatch below and routeLabel() then see nothing.
+const updates = bootUpdates.enabled
+  ? createUpdateHosting({ dir: bootUpdates.dir, maxApkBytes: bootUpdates.maxApkBytes,
+    callerKey: (req) => `u:${netId.anonKey(req)}`, onRateLimited: () => metrics.inc('rate_limited_total') })
+  : null;
 const ACCESS_LOG = process.env.ACCESS_LOG !== '0';
 const ACCESS_LOG_HEALTHZ = process.env.ACCESS_LOG_HEALTHZ === '1';
 // The three raw pre-session login routes (dispatched here, outside Api).
@@ -351,6 +369,12 @@ function routeLabel(method, pathname, url) {
   if (pathname === '/readyz') return '/readyz';
   if (pathname === '/internal/metrics') return '/internal/metrics';
   if (pathname.startsWith('/media/')) return '/media/:key';
+  if (updates) {
+    if (pathname === '/updates/manifest.json') return pathname;
+    if (pathname === '/updates/manifest.json.sig') return pathname;
+    if (pathname.startsWith('/updates/apk/')) return '/updates/apk/:file';
+    if (pathname === '/updates' || pathname.startsWith('/updates/')) return '/updates/unmatched';
+  }
   if (RAW_AUTH_PATHS.has(url)) return url;
   return api.routeTemplate(method, url) ?? 'unmatched';
 }
@@ -464,6 +488,10 @@ const server = createServer(async (req, res) => {
         push: describePushConfig(resolvePushConfig(process.env)),
       }) });
     }
+
+    // Public, no session, no database (server/update_hosting.mjs). Dispatched before the
+    // body read: these are GET/HEAD only and the handler refuses anything else itself.
+    if (updates && await updates.handle(req, res, pathname)) return;
 
     if (method === 'GET' && pathname.startsWith('/media/')) {
       return await serveSignedMedia(url, res, defaultMediaStorage,

@@ -1614,6 +1614,11 @@ POST   /v1/guardian-invites/:inviteId/confirm
                               live, unrestricted guardian edge: otherwise 403 and the invite is
                               not burned.
 GET    /readyz                readiness, as distinct from /healthz liveness (§7.18).
+GET    /updates/manifest.json     PUBLIC, read-only, no session, no database; only when UPDATES_DIR is set
+                              (otherwise an ordinary 404). The signed update manifest, byte for byte (§8.31).
+GET    /updates/manifest.json.sig  its detached signature, if the release step made one.
+GET    /updates/apk/:file     an APK the CURRENT manifest names, single byte ranges for a resumable download.
+                              HEAD works on all three. Raw routes, not Api routes, not under /v1 (§8.31).
 ```
 
 A family is the set of children and adults joined by guardianship edges, which is
@@ -10092,3 +10097,40 @@ whether the guides' authorities have changed since they were read (each draft re
 **The child never sees any of it.** No child-side file imports a care-guide file (`test/care_guide_structure_test.dart` allows exactly one importer outside the care-guide files, the guardian hub, and only for the hub tile).
 
 **What review must still do.** Rewrite the 66 parent-facing strings the current lint flags (who-to-call 4, choking 8, head-injury 24, high-fever 26, childproofing-home 4; the first, narrower lint found 20, and the rest are dangling pointers such as "see disagreements" and "see the emergency list", plus helpline numbers that carry prose), settle the open questions in `docs/care-guides/CLINICIAN-REVIEW-PACKET.md` and `SCHEMA.md` (including whether the high-fever items filed under `callEmergencyNow` with the action words `urgent` and `emergencyOrCare` belong in the urgent tier), sign off every app-written heading and each guide-and-heading pairing in `docs/care-guides/HEADING-SIGNOFF.md` (the choking aftercare block now sits under the neutral "After the episode", not "Same-day doctor"; the headings are labels but can change how a sentence reads), decide the high-fever tier question for real (the app drops the per-item action word, so all `callEmergencyNow` items are drawn identically under "Emergency signs"), then fill each guide's `review` block and set its status. Nothing else changes in the app.
+
+## §8.31 App updates: the server half, self-hosted update files (BUILT, server only; the in-app updater is a separate change)
+
+> **Status.** Built and tested in CI (a real HTTP server against a real temporary directory, and the real `server/index.mjs` booted with no database). **Not verified against a real signed release, a real device, or a real reverse proxy.** This section covers ONLY the optional server that hands the files out. The in-app finder, downloader and installer, the manifest format and signing tools and the tablet hand-over are separate changes and are described where they land; nothing here depends on them except the three file names below.
+
+**Why it exists.** The app can fetch its own updates from GitHub Releases. A family that runs its own server should not need GitHub for that. With one environment variable the server serves the signed update manifest and the APKs it names from a directory the operator controls. The owner's goal for the whole pipeline (find and download updates inside the running app, working on a weak Wi-Fi link, roaming or an offline-first tablet) needs a source that is reachable on the family's own network; this is that source.
+
+**What is served (`server/update_hosting.mjs`, wired in `server/index.mjs`).**
+
+```
+GET|HEAD /updates/manifest.json      the signed manifest, exactly the bytes on disk
+GET|HEAD /updates/manifest.json.sig  its detached signature, if the release step made one (404 otherwise)
+GET|HEAD /updates/apk/:file          an APK the CURRENT manifest names, with single byte ranges
+```
+
+These are raw routes dispatched before the session and `Api` dispatch, never `api.register()` routes, never under `/v1`, and never in the Dart `/v1` client contract. They carry no per-family data, take no session, read no database and set no cookie. The class is deliberately different from every authenticated route and `packages/api/test/contract.test.mjs` (section D) pins that: the route list, that none is registered on the `Api`, that none is a `/v1` path or a Dart constant, that the dispatch sits before the `Api` dispatch, that each has a fixed access-log label and that each is named in this document.
+
+**Off unless configured.** `UPDATES_DIR` unset or empty: `resolveUpdatesConfig()` reports disabled, `index.mjs` never builds the handler and `/updates/*` is an ordinary unknown path (404). Set but malformed (relative, a filesystem root, a path that is, contains or sits inside `MEDIA_STORAGE_ROOT`, a non-positive size cap) refuses to boot with exit 2 like every other server config. A directory that does not exist yet is a warning.
+
+**Public by design, and why that is safe.** The server never signs, never verifies and never edits a byte. The manifest is signed offline by the owner's Ed25519 key; the app checks that signature against the public key built into it, then the APK's size and sha256, that its version is strictly greater, and that its signing certificate matches the installed app. A hostile or broken server can at worst withhold an update. The private key and any signing material never touch the server, this repository or CI.
+
+**The strict part (every line has a test in `server/test/update_hosting.test.mjs`).**
+
+- **Paths.** Three shapes only, matched against the raw path with anchored expressions. `..`, any `%` (so every percent-encoding of a dot or slash, a NUL, a space), a backslash, a doubled or trailing slash, an upper-case `.APK` and any other shape do not match: 404, nothing decoded.
+- **Only what the manifest names.** An APK is served only if its name is a plain name (letters, digits, dot, dash, underscore, at most 128 characters, `.apk`) that occurs as the last path segment of a string value in the current manifest. A stray or retired file in the directory is unreachable. The manifest and the signature are not reachable as APK names.
+- **No symlink escape.** The entry must be a regular file by `lstat`, its `realpath` must be exactly `<real root>/<name>` (so no link at any level), it is opened with `O_NOFOLLOW` where the platform has it and the opened descriptor must be the same file (device and inode) that was checked, so a link swapped in after the check is refused too. Links to outside files, to inside files and to directories are all 404.
+- **Size caps.** Manifest 256 KiB (the app's own cap), signature 8 KiB, APK `UPDATES_MAX_APK_MIB` (default 512; the app refuses over 500). Over the cap is a 404, never a partial file. A manifest that is not a JSON object is `503 update_manifest_unavailable` and serves no APK while it is broken.
+- **Ranges and resumable download.** One byte range, suffix and open-ended forms, an end past the file trimmed, a start past the file `416` with `Content-Range: bytes */size`; several ranges, another unit and malformed values are ignored (a whole-file `200`, never more than the file); 40-digit numbers cannot overflow; `If-Range` honours only the current strong ETag or the exact Last-Modified. A chunked re-assembly test rebuilds an APK byte-exact from awkward chunks and checks its sha256, and a cut-off download resumes from its length.
+- **Validators.** Strong `ETag` (size and mtime), `Last-Modified`, `If-None-Match` and `If-Modified-Since` (304, `If-None-Match` winning), `HEAD` with exact lengths and no body (also for ranges), correct content types (`application/json`, `application/vnd.android.package-archive`, nosniff, `Content-Disposition: attachment`), `Cache-Control: public, no-cache` on the manifest and `public, max-age=300` on APKs.
+- **Methods and bodies.** Only `GET` and `HEAD`; anything else is `405` before any body is read; a GET or HEAD that carries a body is `400`. No CORS headers, no cookies.
+- **Rate limit.** A per-caller token bucket keyed on the daily-salted pseudonym (never an address). Manifest, signature and unknown paths: burst 60, 60 a minute. `/updates/apk/*`: burst 600, 300 a minute, large on purpose because a resumable download is many small range requests and must not be starved by its own politeness (a test pushes 200 chunk requests through). Refused before any disk access, `429` with `Retry-After`, counted in `rate_limited_total`. Downloads also hold a per-caller (3) and a global (16) concurrent-stream slot, and a reader that stops reading for a minute or a stream over thirty minutes is cut and its slot freed.
+- **Logs.** The access log uses fixed labels (`/updates/manifest.json`, `/updates/manifest.json.sig`, `/updates/apk/:file`, `/updates/unmatched`), never a file name or query.
+- **In production** the routes sit behind the same TLS rule as everything else: a request that did not arrive over TLS is `400 https_required`, and HSTS is sent.
+
+**Self-hosting kit.** `docker-compose.updates.yml` is an override for the `server` service that mounts a host directory read-only at `/app/data/updates` (outside the private media directory) and sets `UPDATES_DIR`; it publishes no port and holds no secret. `docs/planning/OPERATIONS-RUNBOOK.md` ("Hosting app updates") covers turning it on, the settings, uploading a release signed offline (APKs first, manifest last, atomic swap, how to check it from outside and how to retire an old release) and why a request is refused. `docs/operators/proxy-and-tls.md` ("App updates") says what a proxy must not break (ranges, validators, manifest caching, redirects).
+
+**Not built here.** Signing, the manifest format and the release script (the release-tooling change); finding, downloading, verifying and installing on the phone, the adult-only screens, the minimum-version notice and the tablet hand-over (the in-app updater and tablet changes); a bytes-per-day budget per caller (the concurrent-stream caps and the request buckets bound abuse today; a family server is not a CDN and a determined caller can still read the APKs, which are public anyway); gzip or other content-coding (an APK is already compressed and a range over a transformed body would be wrong); serving from anything other than a flat directory. No migration, no database table and no new on-device data area, so the local data catalogue counts (8.16.4 and 22.1) are unchanged.

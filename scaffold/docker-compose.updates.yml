@@ -1,0 +1,36 @@
+# OLIVE BRANCH -- optional self-hosted app-update files (MASTERFILE 8.31).
+#
+# An OVERRIDE file: add it to the production (or dev) stack to let your own server
+# hand out the app's signed update manifest and APKs, so a family that runs its own
+# server does not depend on GitHub or anyone else for updates:
+#
+#   mkdir -p ./updates                       # on the host; put the release files in it
+#   UPDATES_HOST_DIR=./updates docker compose -f docker-compose.prod.yml \
+#       -f docker-compose.updates.yml up -d server
+#
+# WHAT THE DIRECTORY HOLDS (docs/planning/OPERATIONS-RUNBOOK.md, "Hosting app updates"):
+#   manifest.json        the signed update manifest, signed OFFLINE on the owner's own machine
+#   manifest.json.sig    optional detached signature, if your release step makes one
+#   olive-<version>.apk  every APK the manifest names (only files the manifest names are served)
+#
+# WHAT THIS DOES NOT DO. The server never signs and never verifies; the app checks the
+# signature, sha256, version and signing certificate itself. No key, no secret and no
+# family data belong in this directory: everything in it is PUBLIC by design, served
+# without a login to anyone who can reach the server. The mount is read-only, so even
+# a bug in the route cannot write to it.
+#
+# The path inside the container is deliberately NOT under the media directory
+# (/app/data/media, private family data); the server refuses to boot if UPDATES_DIR
+# is, contains or sits inside MEDIA_STORAGE_ROOT.
+#
+# Turn it off again by dropping this file from the command; with UPDATES_DIR unset the
+# server registers nothing and /updates/* is an ordinary 404.
+services:
+  server:
+    environment:
+      UPDATES_DIR: /app/data/updates
+      # Optional tuning, all with sane defaults (see the runbook): largest APK served
+      # (MiB), and the per-caller request budgets.
+      UPDATES_MAX_APK_MIB: "${UPDATES_MAX_APK_MIB:-512}"
+    volumes:
+      - ${UPDATES_HOST_DIR:?UPDATES_HOST_DIR must be set - the host directory holding manifest.json and the APKs, see docker-compose.updates.yml}:/app/data/updates:ro

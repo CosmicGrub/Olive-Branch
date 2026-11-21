@@ -119,6 +119,16 @@ With a single nginx hop, `proxy_set_header X-Forwarded-For $remote_addr` makes
 the rightmost (and only) entry the real peer, which is what `TRUST_PROXY_HOPS=1`
 reads.
 
+## App updates (optional)
+
+If you host update files (`UPDATES_DIR`, `docs/planning/OPERATIONS-RUNBOOK.md`, "Hosting app updates"), `/updates/*` is a public read-only route set behind the same proxy. It needs no special rule, but three things must not be broken:
+
+- **Do not strip `Range`, `If-Range`, `If-None-Match` or `If-Modified-Since`.** The app resumes a download from the byte it stopped at. A proxy that caches the whole APK and ignores ranges, or answers `200` to a range request, makes a weak-link download start over every time.
+- **Do not cache the manifest.** It is served `Cache-Control: public, no-cache` so every check revalidates; a CDN rule that holds it for hours delays every update by that long. Caching APKs is fine (a new release has a new file name).
+- **Do not put a login, a redirect or a captive-portal page in front of it.** A redirect to another host or to plain `http://` is refused by the app, deliberately, and looks like "no update available".
+
+The default `proxy_read_timeout 75s` and `client_max_body_size` above are fine for it (the routes are GET and HEAD only; a request that carries a body is refused).
+
 ## Verifying a deployment
 
 ```sh
