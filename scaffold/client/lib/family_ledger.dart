@@ -43,6 +43,24 @@ const int kRevokeNoticeMs = 72 * 60 * 60 * 1000;
 /// How long a loosening or a removal waits for its approvals before silence ends it.
 const int kApprovalLifetimeMs = 14 * kMsPerDay;
 
+/// The wait, with a notice on every device, before one parent's notice that another person's place in the village will
+/// end takes effect (the owner's co-parent rule: ending needs both parents, or this long wait). Only the one who gave the
+/// notice can take it back; the person it is about cannot, and can always leave or look.
+const int kEndNoticeMs = 14 * kMsPerDay;
+
+/// A limits agreement for a parent already in cannot take effect until the think-over has passed: the limited parent's
+/// yes before this time after the request is not counted.
+const int kThinkOverMs = 24 * 60 * 60 * 1000;
+
+/// A Standing OK lasts at most this long (design 5.2).
+const int kStandingMaxMs = 90 * kMsPerDay;
+
+/// The capabilities a limits agreement may switch off for a parent (design 4.4): settings (C6), connecting a child's
+/// device (C8) and welcoming others (C11). Everything else, including what a parent can SEE (C1 to C3, and the care notes
+/// and expenses that bundle seeing with doing, C4 and C5), their own PIN, their voice on welcomes (C12), pausing (C13),
+/// unlocking and messaging the child (C9, C10), is a floor that no limit can touch.
+const List<int> kLimitableCapabilities = <int>[6, 8, 11];
+
 /// Sizes (identity design question 11, "recommend"; owner decision pending). Carers: village design 13.10, pending.
 const int kMaxGuardians = 6;
 const int kMaxChildDevices = 12;
@@ -368,8 +386,9 @@ class AgreementKey {
 // Entries
 // ---------------------------------------------------------------------------------------------------------------
 
-/// Every entry type in v1. The last six are RESERVED: their bodies are checked and they are recorded, but they change
-/// nothing in the reduced state (the pause, limits and standing-OK behaviour is a later wave, W5 to W9).
+/// Every entry type in v1. The pause, end, limits and Standing OK types took effect in the wave that wired the village
+/// welcome into the guardian app (family_ledger_state.dart has the rules; village design 4.5, 5.2, 6.2 and the owner's
+/// co-parent rules: nobody removes another parent alone, either parent may pause, ending needs both or a 14 day notice).
 class EntryType {
   static const String genesis = 'genesis';
   static const String memberAdd = 'member.add';
@@ -386,13 +405,11 @@ class EntryType {
   static const String limitsAgree = 'limits.agree';
   static const String limitsTighten = 'limits.tighten';
   static const String standingOk = 'standing.ok';
+  static const String accessEndCancel = 'access.end.cancel';
 
-  static const List<String> reserved = <String>[
-    accessPause, accessResume, accessEnd, limitsAgree, limitsTighten, standingOk,
-  ];
   static const List<String> all = <String>[
     genesis, memberAdd, deviceAdd, deviceRevoke, deviceRevokeCancel, guardianLeave, guardianRemove, policySet,
-    keyRotate, accessPause, accessResume, accessEnd, limitsAgree, limitsTighten, standingOk,
+    keyRotate, accessPause, accessResume, accessEnd, accessEndCancel, limitsAgree, limitsTighten, standingOk,
   ];
 }
 
@@ -696,8 +713,10 @@ bool _bodyShapeOk(String type, Map<String, Object?> body) {
     case EntryType.accessEnd:
       return _shape(body, <String, _Chk>{
         'gid': (Object? x) => _b(x, 16),
-        'reason': (Object? x) => _oneOf(x, const <String>['ended', 'left', 'time_box', 'court']),
+        'reason': (Object? x) => _oneOf(x, const <String>['ended', 'notice', 'left', 'time_box', 'court']),
       });
+    case EntryType.accessEndCancel:
+      return _shape(body, <String, _Chk>{'end': (Object? x) => _b(x, 32)});
     case EntryType.limitsAgree:
       return _shape(body, <String, _Chk>{
         'gid': (Object? x) => _b(x, 16),

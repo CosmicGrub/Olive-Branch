@@ -301,8 +301,9 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'belong (public keys and the names a grown-up typed, no PIN), the votes on pending changes, and '
           'the two family keys that device holds. Nothing in it is shown to a child, and a child\'s device '
           'never holds the grown-ups-only key. It also remembers which welcome requests you asked to see again '
-          'later, and when (a reminder, never an answer). Sealed on the device; nothing is uploaded; not used by '
-          'the app yet.'),
+          'later, and when (a reminder, never an answer). Used only when a grown-up chooses to welcome someone, or '
+          'to join a village (Settings, Family, Adults and helpers): a phone that never does has no record here. '
+          'Sealed on the device; nothing is uploaded.'),
   LocalDataEntry(
       area: 'trust', scope: LocalScope.guardian, encrypted: true, maxBytes: 256 * 1024,
       what: 'On a grown-up\'s device: which child devices it added and when it last met them, the ones it stopped or '

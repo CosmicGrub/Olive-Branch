@@ -1,7 +1,7 @@
 # Village welcome: adults approving new adults, with and without limits
 
 Design only. No code in this change. Written 2026-11-14 against `origin/main` at 0d070f7.
-Status: DRAFT FOR OWNER REVIEW. Nothing here is built. Section 13 lists what needs the owner; section 14 lists what could not be verified.
+Status: DRAFT FOR OWNER REVIEW. Later builds: the request logic and screens, the in-person Meet, the new person's own yes, the local road between grown-up phones and the Settings entry are built (MASTERFILE 8.28.1); the rest of this document is not. Section 13 lists what needs the owner; section 14 lists what could not be verified.
 
 Companions (read first): `FAMILY-IDENTITY-DESIGN.md` (family object, signed ledger, second-guardian join, removal rules), `QR-VETTING-BRAINSTORM.md` (a scan is an introduction, never a key; Meet / Match / Approve / Settle in / Keep watch). MASTERFILE: section 2.1 (P1 to P11), 2.4, 2.5, 2.6, 5.1 (guardianship edge), 5.27.3, 8.5.7 to 8.5.10, 8.22 (Village), 10.2, 15, 17.1 to 17.5, 18.1, 21.9.
 

@@ -91,12 +91,15 @@ import 'push_channel.dart';
 import 'compass_repositories.dart';
 import 'compass_screens.dart';
 import 'growing_care_store.dart' show GrowingCareStores;
+import 'local_family.dart' show LocalFamily;
 import 'local_services.dart' show LocalServices;
 import 'rhythm_logic.dart' show RhythmDoc, RoutineStep;
 import 'rhythm_voice_guardian_screens.dart';
 import 'rhythm_voice_repositories.dart';
 import 'show_guardian.dart';
 import 'village_guardian_screens.dart';
+import 'village_welcome_flow.dart';
+import 'village_welcome_host.dart';
 import 'village_repositories.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
@@ -943,7 +946,19 @@ class GuardianMoreScreen extends StatelessWidget {
       onChangePeople: () => _open(context, FamilyPeopleScreen(ctx: _familyCtx())),
       onHelpers: () => _openVillage(context),
       onInvitePreview: () => _openInvitationPreview(context),
+      // "Welcome someone": reachable only where this phone has its local services (the PIN lives there). A tree built
+      // without them (the preview, old tests) keeps the preview row alone, exactly as before.
+      onWelcome: local == null ? null : () => _openYourVillage(context, local, f),
     ));
+  }
+
+  /// Your village (village_welcome_flow.dart): welcoming a new grown-up in person, answering requests, and sharing with
+  /// the other grown-ups' phones. Nothing runs until a grown-up chooses it; see village_welcome_host.dart.
+  void _openYourVillage(BuildContext context, GuardianLocalController local, LocalFamily? f) {
+    openYourVillage(context, VillageServices.from(LocalServices.current,
+      pin: local.services.pin, childId: childId, childName: childName,
+      guardianName: (f?.guardianName.trim().isNotEmpty ?? false) ? f!.guardianName.trim() : 'Grown-up',
+      openHelpers: () => _openVillage(context)));
   }
 
   /// The invitation PREVIEW: what another adult would be asked. Inviting needs the

@@ -3,11 +3,11 @@
 // Spec: docs/planning/VILLAGE-WELCOME-DESIGN.md sections 3, 4.2, 5.2 and 12 (screens 1 to 5). Adult words only: a
 // child never reaches any of these (they sit behind the adult gate, and no child file imports this one).
 //
-// NOT WIRED. The guardian shell does not open these yet: the family ledger is not wired into pairing, so there is no
-// family for them to read. The Adults and helpers screen shows a "Welcome someone" row only when a host passes
-// `onWelcome`; nothing does today, so the existing "Invite a co-parent (preview)" row is unchanged. The hosts for the
-// meet (an in-person introduction that gives the new person's phone), the settle-in cards, the "Welcome with limits"
-// summary, the limits agreement, pause and end screens, and the "Who must agree" settings are not built.
+// WIRED into the guardian app by village_welcome_flow.dart: Settings, Family, Adults and helpers, "Welcome someone"
+// opens "Your village", which hosts these screens (the meeting that introduces the new person's phone is
+// village_meet.dart). The existing "Invite a co-parent (preview)" row is unchanged. The settle-in cards, the "Welcome
+// with limits" summary and the "Who must agree" settings are not built; pause, end, the limits agreement and the
+// Standing OK are village_people.dart and village_people_screens.dart.
 //
 // WORDS. No "blocked", "refused", "denied", "controlling"; no "opened" or "seen" (the asker never learns whether a
 // request was looked at); no counts of how often someone answered. "Not this time" is the no.
@@ -525,7 +525,7 @@ class _WelcomeCentreScreenState extends State<WelcomeCentreScreen> {
         key: Key('welcomeWait_${r.hashHex.substring(0, 8)}'),
         icon: OliveIcons.user,
         title: r.personName,
-        sub: '${profileLine(r.profile)}. $who. Ends on ${_shortDate(r.expMs)} if nobody has answered.',
+        sub: '${profileLine(r.profile)}. $who. ${r.personName} ${r.candidateYes ? 'has said yes on their own phone' : 'has not said yes on their own phone yet'}. Ends on ${_shortDate(r.expMs)} if nobody has answered.',
       ),
       if (r.mine)
         Align(
