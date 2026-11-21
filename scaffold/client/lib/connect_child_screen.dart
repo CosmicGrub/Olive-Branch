@@ -30,6 +30,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInputFormatter;
 
+import 'connect_simulation.dart';
 import 'device_keys.dart';
 import 'lan_pairing_transport.dart';
 import 'local_pin.dart';
@@ -113,7 +114,12 @@ class ConnectChildScreen extends StatefulWidget {
     this.initialMethod = ConnectMethod.code,
     this.onConnected,
     this.deliveryPatience = kDeliveryPatience,
+    this.simulate = kSimulateConnect,
   });
+
+  /// DEV-ONLY (a build made with OLIVE_SIMULATE_CONNECT=true, see connect_simulation.dart): offers "Simulate her tablet" so one
+  /// device can show this whole flow with a simulated tablet. Always false in a normal build.
+  final bool simulate;
 
   /// The way preselected on the first screen.
   final ConnectMethod initialMethod;
@@ -172,6 +178,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
   bool _codeSent = false;
   int _lastAttempts = kWindowMaxAttempts;
   String? _codeNote;
+  SimulatedTablet? _sim;
   bool _offerQr = false;
   // On by default: a newly connected tablet holds no typed-code check at all (nothing to guess from a copy of its files).
   bool _phoneOnly = true;
@@ -194,6 +201,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     _pin.dispose();
     _code.dispose();
     _patience?.cancel();
+    _sim?.dispose();
     _teardown();
     super.dispose();
   }
@@ -695,6 +703,45 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     );
   }
 
+  Widget _simulatedTabletCard(AdultWindow w) {
+    final SimulatedTablet? sim = _sim;
+    return Card(
+      key: const Key('connectSimCard'),
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text('Simulated tablet (test build)', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          if (sim == null) ...<Widget>[
+            const Text('No second device? This pretends to be her tablet on this phone. It is simulated: the real steps run, the other device does not exist.'),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              key: const Key('connectSimulate'),
+              onPressed: () {
+                final SimulatedTablet t = SimulatedTablet(window: w);
+                t.changed.listen((_) {
+                  if (mounted) setState(() {});
+                });
+                setState(() => _sim = t);
+                unawaited(t.run());
+              },
+              child: const Text('Simulate her tablet'),
+            ),
+          ] else ...<Widget>[
+            const Text('The simulated tablet shows these numbers. Type them below, as you would from a real one.'),
+            Text(sim.code, key: const Key('connectSimCode'), style: const TextStyle(fontSize: 32, letterSpacing: 8, fontWeight: FontWeight.w700)),
+            if (sim.match != null && sim.match!.match != null) ...<Widget>[
+              const SizedBox(height: 8),
+              const Text('simulated tablet shows:'),
+              KeyedSubtree(key: const Key('connectSimMatch'), child: MatchCard(set: sim.match!.match!, iconSize: 36, forChild: true)),
+            ],
+          ],
+        ]),
+      ),
+    );
+  }
+
   Widget _codeEntry(AdultWindow w) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text('Type the six numbers her tablet shows', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
@@ -743,6 +790,7 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
                 : 'On her tablet: tap "A grown-up does this", then "I\'m the grown-up", then "Connect to a phone". Tap the picture shown here and type your PIN there.',
             key: const Key('connectSteps')),
         const SizedBox(height: 12),
+        if (viaCode && widget.simulate) _simulatedTabletCard(w),
         if (viaCode) _codeEntry(w),
         if (_scannedChild) const Padding(padding: EdgeInsets.only(top: 8), child: Text("Looking for the device whose picture you scanned. Nothing else can connect.", key: Key('connectScannedNote'))),
         if (_message != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_message!, key: const Key('connectMessage'))),

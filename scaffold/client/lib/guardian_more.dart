@@ -24,16 +24,8 @@ import 'parent_learn_screens.dart';
 import 'parent_learn_store.dart';
 import 'adults_helpers_screen.dart';
 import 'age_lock_screens.dart';
-import 'connect_child_screen.dart';
-import 'connected_devices_screen.dart';
-import 'unlock_challenge.dart' show UnlockResponder;
-import 'unlock_child_screen.dart';
-import 'device_keys.dart';
-import 'local_pin.dart' show kLocalGuardianScope;
+import 'her_tablet_screen.dart';
 import 'local_services.dart';
-import 'pairing_picture.dart';
-import 'pairing_records.dart';
-import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -998,72 +990,21 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _openSettingsHubGated(context)),
         const SizedBox(height: 8),
         HubSection(title: 'Her tablet', children: [
-          // Connect a child's device on the SAME network, no account or connection needed: you type your PIN here,
-          // tap the matching picture on her device and type it there (a key exchange; the PIN is never sent), pick the
-          // Match cards, then say yes.
-          // Spec 2026-11-08-adult-gate-and-simple-pairing-design.md.
-          HubTile(key: const Key('morePairTablet'), icon: Icons.phonelink_lock_outlined, title: "Pair $childName's tablet",
-            subtitle: 'Same wifi, no account. Open a short window here, then use "A grown-up does this" on her tablet',
+          // ONE tile (it replaced three that overlapped: connect, unlock and the list). It opens ONE screen that says where her
+          // tablet stands and offers only what fits (her_tablet_screen.dart): Connect her tablet (every way is behind it), or
+          // Unlock, Disconnect and See what changed. The local PIN and scope are checked there, not here.
+          HubTile(key: const Key('moreHerTablet'), icon: Icons.tablet_android_outlined, title: "$childName's tablet",
+            subtitle: 'Connect it, unlock it or disconnect it. Same Wi-Fi, no account',
             onTap: () {
-              final local = GuardianLocalScope.maybeOf(context);
-              if (local == null) {
+              final HerTabletServices? services = HerTabletServices.local(context);
+              if (services == null) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Connecting a device needs a PIN on this device. Set one up first.'),
                   duration: Duration(seconds: 3)));
                 return;
               }
-              final services = LocalServices.current;
-              _open(context, ConnectChildScreen(
-                pin: local.services.pin,
-                deviceKeys: LocalStoreDeviceKeyRepository(services.area('devicekey')),
-                kids: LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope)),
-                adultName: local.family?.guardianName ?? 'A grown-up',
-                childName: childName,
-                // Her real age or nothing: never the hub's stand-in default, which would seal a made-up age and
-                // open a wider band than hers. A missing age makes the tablet use the youngest band.
-                childAge: local.family?.age,
-                // The lasting pairing picture, who was added and the plain-language history
-                // (docs/planning/PERSISTENT-QR-PAIRING.md).
-                pictures: LocalStorePairingPictureRepository(services.area('devicekey')),
-                trust: TrustBook(LocalStoreTrustRepository(services.area('trust', ownerId: kLocalGuardianScope))),
-              ));
+              _open(context, HerTabletScreen(services: services, childName: childName));
             }),
-          HubTile(key: const Key('moreUnlockTablet'), icon: Icons.lock_open_outlined, title: "Unlock $childName's tablet",
-            subtitle: 'Scan the picture on her tablet, type your PIN, show it the answer',
-            onTap: () async {
-              final local = GuardianLocalScope.maybeOf(context);
-              if (local == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Unlocking needs a PIN on this device. Set one up first.'),
-                  duration: Duration(seconds: 3)));
-                return;
-              }
-              final services = LocalServices.current;
-              final kids = LocalStorePairedKidsRepository(services.area('pairedkids', ownerId: kLocalGuardianScope));
-              final key = await DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(services.area('devicekey')));
-              if (!context.mounted) return;
-              _open(context, UnlockChildScreen(
-                pin: local.services.pin,
-                // The trust book makes every meeting with a tablet a live "keeping watch" contact (and tells a
-                // stopped or forgotten tablet it is disconnected); the family id is what its certificates were issued under.
-                responder: UnlockResponder(
-                  adultKey: key,
-                  kids: kids.load,
-                  trust: TrustBook(LocalStoreTrustRepository(services.area('trust', ownerId: kLocalGuardianScope))),
-                  familyId: 'local-${b64(key.fingerprint)}',
-                ),
-                childName: childName,
-              ));
-            }),
-          HubTile(key: const Key('moreHerTablets'), icon: Icons.tablet_android_outlined, title: "$childName's tablets",
-            subtitle: 'See them, forget one, or let only your phone unlock it',
-            onTap: () => _open(context, ConnectedDevicesScreen(
-              kids: LocalStorePairedKidsRepository(
-                LocalServices.current.area('pairedkids', ownerId: kLocalGuardianScope)),
-              trust: TrustBook(LocalStoreTrustRepository(
-                LocalServices.current.area('trust', ownerId: kLocalGuardianScope))),
-              pin: GuardianLocalScope.maybeOf(context)?.services.pin,
-              childName: childName))),
         ]),
         HubSection(title: 'Archive', children: [
           HubTile(icon: Icons.hourglass_bottom, title: 'Expiry digest',

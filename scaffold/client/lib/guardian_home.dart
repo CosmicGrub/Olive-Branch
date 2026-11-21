@@ -37,6 +37,7 @@
 // pass. The existing crossAxisCount/effectiveColumnWidth/mainAxisExtent
 // computation below is ALSO unchanged — only which tiles land in which
 // grid, and each grid's fill color, changes.
+import 'her_tablet_screen.dart' show HerTabletBanner;
 import 'care_local_screens.dart' show CareDestination, localCareScreen;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -225,6 +226,8 @@ class GuardianHome extends StatelessWidget {
             _GuardianStateLine(childName: childName, sentence: childStateSentence,
                 connected: baseUrl != null, dayPart: dayPart,
                 serverTabletPresent: serverTabletPresent, pairedKids: pairedKids),
+            // The one button for her tablet: where it stands, and one tap to connect, unlock or disconnect it.
+            HerTabletBanner(childName: childName),
             const SizedBox(height: 4),
             // Actor time is subordinate, always.
             Text('you · $actorLocalTime', style: Theme.of(context).textTheme.bodySmall
