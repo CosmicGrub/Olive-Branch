@@ -1,5 +1,5 @@
 // OLIVE BRANCH — optional self-hosted app-update files (the server half of the
-// in-app update pipeline, MASTERFILE 9.4).
+// in-app update pipeline, MASTERFILE 8.31).
 //
 // WHAT THIS IS. A static, read-only, PUBLIC route set so a family that runs
 // its own server does not depend on a third-party host to get app updates:
@@ -35,7 +35,7 @@
 //     the opened descriptor must be the same file (dev + ino) that was
 //     checked. A symlink swapped in after the check is therefore refused too.
 //   - Size caps: a manifest over 256 KiB, a signature over 8 KiB, an APK over
-//     UPDATES_MAX_APK_MIB (default 256) is not served (404, never a partial).
+//     UPDATES_MAX_APK_MIB (default 512) is not served (404, never a partial).
 //   - Ranges (resumable download): single byte range only; suffix and open
 //     ended forms; an end past the file is clamped; a start past the file is
 //     416 with Content-Range: bytes */size; syntactically bad or multi-range
@@ -45,9 +45,13 @@
 //   - ETag (strong, from size + mtime) and Last-Modified, If-None-Match and
 //     If-Modified-Since (304), HEAD with no body.
 //   - Rate limit: every request spends a token from a per-caller bucket (the
-//     daily-salted pseudonym from netid.mjs, never an address); downloads also
-//     take a per-caller and a global concurrent-stream slot, and a stalled or
-//     very long stream is cut. 429 + Retry-After, before any disk access.
+//     daily-salted pseudonym from netid.mjs, never an address): a small one
+//     (60 per minute) for the manifest, the signature and anything unknown, and
+//     a roomier one (300 per minute, burst 600) for /updates/apk/*, because a
+//     resumable download on a weak link is MANY small range requests and must
+//     not be starved by its own politeness. Downloads also take a per-caller
+//     and a global concurrent-stream slot, and a stalled or very long stream
+//     is cut. 429 + Retry-After, before any disk access.
 
 import { createReadStream } from 'node:fs';
 import { open, lstat, realpath, stat } from 'node:fs/promises';
@@ -60,7 +64,7 @@ export const MANIFEST_NAME = 'manifest.json';
 export const SIGNATURE_NAME = 'manifest.json.sig';
 export const MAX_MANIFEST_BYTES = 256 * 1024;
 export const MAX_SIGNATURE_BYTES = 8 * 1024;
-export const DEFAULT_MAX_APK_MIB = 256;
+export const DEFAULT_MAX_APK_MIB = 512;
 /** The only URL shapes this module answers. Exported so the drift test can pin them. */
 export const UPDATE_ROUTES = Object.freeze([
   '/updates/manifest.json',
@@ -81,8 +85,11 @@ function posNum(raw, fallback) {
  * Reads UPDATES_DIR and friends. Pure but for one lstat of the directory.
  *   UPDATES_DIR            absolute directory holding manifest.json, its .sig and the APKs.
  *                          Unset/empty = feature off.
- *   UPDATES_MAX_APK_MIB    largest APK served (default 256).
- *   UPDATES_RATE_CAPACITY / UPDATES_RATE_PER_MIN   per-caller request bucket (60 / 60).
+ *   UPDATES_MAX_APK_MIB    largest APK served (default 512, the app refuses anything over 500).
+ *   UPDATES_RATE_CAPACITY / UPDATES_RATE_PER_MIN   per-caller bucket for the manifest,
+ *                          signature and unknown paths (60 / 60).
+ *   UPDATES_APK_RATE_CAPACITY / UPDATES_APK_RATE_PER_MIN   per-caller bucket for APK
+ *                          requests, which a chunked resume uses heavily (600 / 300).
  *   UPDATES_MAX_STREAMS_PER_CALLER (3), UPDATES_MAX_STREAMS (16).
  * Set-but-malformed is a boot PROBLEM (like the other server configs); a
  * directory that does not exist yet is only a warning (an operator may mount
@@ -200,6 +207,8 @@ export function createUpdateHosting({ dir, maxApkBytes = DEFAULT_MAX_APK_MIB * 1
   const cap = posNum(env.UPDATES_RATE_CAPACITY, 60);
   const perMin = posNum(env.UPDATES_RATE_PER_MIN, 60);
   const buckets = new TokenBuckets({ capacity: cap, refillPerSec: perMin / 60, now });
+  const apkBuckets = new TokenBuckets({ capacity: posNum(env.UPDATES_APK_RATE_CAPACITY, 600),
+    refillPerSec: posNum(env.UPDATES_APK_RATE_PER_MIN, 300) / 60, now });
   const perCaller = new InFlightLimiter({ max: posNum(env.UPDATES_MAX_STREAMS_PER_CALLER, 3) });
   const globalMax = posNum(env.UPDATES_MAX_STREAMS, 16);
   let globalActive = 0;
@@ -373,7 +382,8 @@ export function createUpdateHosting({ dir, maxApkBytes = DEFAULT_MAX_APK_MIB * 1
       return true;
     }
     const callerId = callerKey(req);
-    const t = buckets.take(callerId);
+    const isApkPath = pathname.startsWith('/updates/apk/');
+    const t = (isApkPath ? apkBuckets : buckets).take(callerId);
     if (!t.ok) {
       onRateLimited();
       json(res, 429, { error: 'rate_limited' }, { 'retry-after': String(t.retryAfterSec) });
@@ -398,5 +408,5 @@ export function createUpdateHosting({ dir, maxApkBytes = DEFAULT_MAX_APK_MIB * 1
     return true;
   }
 
-  return { handle, buckets, stats: () => ({ activeStreams: globalActive, bucketKeys: buckets.size }) };
+  return { handle, buckets, apkBuckets, stats: () => ({ activeStreams: globalActive, bucketKeys: buckets.size + apkBuckets.size }) };
 }

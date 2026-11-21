@@ -90,6 +90,7 @@
     "test:security-round2": "npm run build && node server/test/security_round2.test.mjs",
     "test:http-hardening": "npm run build && node server/test/http_hardening.test.mjs",
     "test:lifecycle": "npm run build && node server/test/lifecycle.test.mjs",
+    "test:update-hosting": "npm run build && node server/test/update_hosting.test.mjs",
     "test:backup-lib": "node tools/test/backup_lib.test.mjs",
     "test:infra": "node tools/test/infra.test.mjs",
     "test:design-tokens": "node tools/test/design_tokens.test.mjs",

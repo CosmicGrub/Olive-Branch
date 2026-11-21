@@ -32,6 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Api } from '../src/api.mjs';
 import { registerRoutes } from '../../../server/routes.mjs';
+import { UPDATE_ROUTES } from '../../../server/update_hosting.mjs';
 
 let pass = 0, fail = 0; const rows = [];
 const check = (g, n, a, e) => { const ok = String(a) === String(e); ok ? pass++ : fail++;
@@ -203,6 +204,39 @@ check('setup', 'api_client.dart declares at least one path constant', dartPaths.
   } catch { refused = true; }
   check('C A1', 'a :childId route with action:null and NO identityScopedByHandler still throws',
     refused, 'true');
+}
+
+// ---- D · the public self-hosted update routes (MASTERFILE 9.4) ---------------
+// /updates/* is a DELIBERATELY different class of route: public, no session, no
+// database, GET/HEAD only, off unless UPDATES_DIR is set. So it must be a raw
+// route dispatched from server/index.mjs and must NOT drift into the
+// authenticated surface (api.register(), the /v1 client contract) by accident,
+// and the fixed access-log labels and the spec must name every route it serves.
+{
+  const masterfile = readFileSync(root + '../MASTERFILE.md', 'utf8');
+  check('D updates', 'UPDATE_ROUTES lists exactly 3 public shapes',
+    UPDATE_ROUTES.length, 3);
+  check('D updates', 'every update route is under /updates/ and none is under /v1',
+    UPDATE_ROUTES.every((p) => p.startsWith('/updates/') && !p.startsWith('/v1')), 'true');
+  check('D updates', 'no update route is registered on the authenticated Api',
+    apiRegisteredPaths.filter((p) => p.startsWith('/updates')).join(','), '');
+  check('D updates', 'no api.register() route can shadow /updates (a prefix collision would be an auth bypass in reverse)',
+    api.routes.some((r) => r.path === '/updates' || r.path.startsWith('/updates/')), 'false');
+  check('D updates', 'the Dart /v1 contract does not claim an update route',
+    [...dartPaths].some((p) => p.includes('/updates')), 'false');
+  check('D updates', 'index.mjs dispatches them via the update handler, only when configured',
+    /if \(updates && await updates\.handle\(req, res, pathname\)\) return;/.test(indexSrc)
+      && /const updates = bootUpdates\.enabled/.test(indexSrc), 'true');
+  check('D updates', 'the update dispatch comes BEFORE the session/Api dispatch',
+    indexSrc.indexOf('updates.handle(req, res, pathname)') > 0
+      && indexSrc.indexOf('updates.handle(req, res, pathname)') < indexSrc.indexOf('await api.handle('), 'true');
+  for (const p of UPDATE_ROUTES) {
+    const label = p === '/updates/apk/:file' ? '/updates/apk/:file' : p;
+    check('D updates', `${p} has a fixed access-log label in routeLabel()`, indexSrc.includes(`'${label}'`), 'true');
+    check('D updates', `${p} is documented in MASTERFILE`, masterfile.includes(p), 'true');
+  }
+  check('D updates', 'the unmatched /updates bucket has a fixed label too (no per-path cardinality)',
+    indexSrc.includes("'/updates/unmatched'"), 'true');
 }
 
 let g = '';

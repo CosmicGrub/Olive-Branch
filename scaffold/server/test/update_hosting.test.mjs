@@ -109,7 +109,7 @@ function host(opts = {}) {
   const zeroMib = await resolveUpdatesConfig({ UPDATES_DIR: root, UPDATES_MAX_APK_MIB: '0' });
   check('A config', 'UPDATES_MAX_APK_MIB=0 is a boot problem', zeroMib.problems.length, 1);
   const ok = await resolveUpdatesConfig({ UPDATES_DIR: root });
-  check('A config', 'a real directory: enabled, default cap 256 MiB', `${ok.enabled}|${ok.maxApkBytes}`, `true|${DEFAULT_MAX_APK_MIB * 1024 * 1024}`);
+  check('A config', 'a real directory: enabled, default cap 512 MiB', `${ok.enabled}|${ok.maxApkBytes}`, `true|${DEFAULT_MAX_APK_MIB * 1024 * 1024}`);
   const small = await resolveUpdatesConfig({ UPDATES_DIR: root, UPDATES_MAX_APK_MIB: '10' });
   check('A config', 'UPDATES_MAX_APK_MIB is honoured', small.maxApkBytes, 10 * 1024 * 1024);
   const missing = await resolveUpdatesConfig({ UPDATES_DIR: join(root, 'not-yet') });
@@ -435,7 +435,7 @@ const etagCache = { v: (await get(port, '/updates/apk/olive-0.52.0.apk', { metho
 // ===========================================================================
 {
   let limited = 0;
-  const rl = host({ env: { UPDATES_RATE_CAPACITY: '3', UPDATES_RATE_PER_MIN: '60' }, onRateLimited: () => { limited++; } });
+  const rl = host({ env: { UPDATES_RATE_CAPACITY: '3', UPDATES_RATE_PER_MIN: '60', UPDATES_APK_RATE_CAPACITY: '3', UPDATES_APK_RATE_PER_MIN: '60' }, onRateLimited: () => { limited++; } });
   const pr = await rl.listen();
   const seen = [];
   for (let i = 0; i < 5; i++) seen.push((await get(pr, '/updates/manifest.json')).status);
@@ -451,8 +451,20 @@ const etagCache = { v: (await get(port, '/updates/apk/olive-0.52.0.apk', { metho
   const probe = [];
   rl.tick(10_000); // refill to capacity
   for (let i = 0; i < 5; i++) probe.push((await get(pr, `/updates/apk/guess-${i}.apk`)).status);
-  check('I rate', 'name guessing (404s) is rate limited exactly like real requests', probe.join(','), '404,404,404,429,429');
+  check('I rate', 'name guessing (404s) is rate limited exactly like real requests (the APK bucket)', probe.join(','), '404,404,404,429,429');
   check('I rate', 'HEAD and 304 spend tokens as well', (await (async () => { rl.tick(10_000); const s = []; for (let i = 0; i < 4; i++) s.push((await get(pr, '/updates/manifest.json', { method: 'HEAD' })).status); return s.join(','); })()), '200,200,200,429');
+  // A resumable download is many range requests: the default APK bucket must not starve a 200-chunk download,
+  // while the default metadata bucket stays small.
+  const dflt = host({ env: {} });
+  const pd = await dflt.listen();
+  const chunkStatuses = new Set();
+  for (let i = 0; i < 200; i++) chunkStatuses.add((await get(pd, '/updates/apk/olive-0.52.0.apk', { headers: { range: 'bytes=0-9' } })).status);
+  check('I rate', 'the default APK bucket lets 200 chunk requests through (resume on a weak link)', [...chunkStatuses].join(','), '206');
+  const metaSeen = []; for (let i = 0; i < 70; i++) metaSeen.push((await get(pd, '/updates/manifest.json')).status);
+  check('I rate', 'the default manifest bucket still stops a hammering client (60 then 429)', `${metaSeen.filter((x) => x === 200).length}|${metaSeen.at(-1)}`, '60|429');
+  const hugeBurst = []; for (let i = 0; i < 700; i++) hugeBurst.push((await get(pd, '/updates/apk/olive-0.52.0.apk', { method: 'HEAD' })).status);
+  check('I rate', 'but even the APK bucket is finite (burst 600, then 429)', hugeBurst.filter((x) => x === 429).length > 0, true);
+  await dflt.close();
   await rl.close();
 
   // Concurrent-stream caps. A paused reader holds its slot (the file is larger than the socket buffers).
@@ -580,6 +592,19 @@ async function boot(env = {}) {
 // K Â· the route list is the one the drift test pins
 // ===========================================================================
 check('K routes', 'UPDATE_ROUTES is exactly the three documented shapes', UPDATE_ROUTES.join(' '), '/updates/manifest.json /updates/manifest.json.sig /updates/apk/:file');
+
+// ===========================================================================
+// L · the compose override a self-hoster uses
+// ===========================================================================
+{
+  const { readFileSync } = await import('node:fs');
+  const ov = readFileSync(join(here, '..', '..', 'docker-compose.updates.yml'), 'utf8');
+  const code = ov.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  check('L compose', 'it is an override of the `server` service only', /^services:\s*\n {2}server:/m.test(code) && (code.match(/^ {2}\w+:/gm) ?? []).length === 1, true);
+  check('L compose', 'it sets UPDATES_DIR to a path inside the container, not under the private media directory', /UPDATES_DIR:\s*\/app\/data\/updates\s*$/m.test(code) && !/\/app\/data\/media/.test(code), true);
+  check('L compose', 'the host directory mount is READ-ONLY and required (fails fast when unset)', /\$\{UPDATES_HOST_DIR:\?[^}]+\}:\/app\/data\/updates:ro/.test(code), true);
+  check('L compose', 'it publishes no port and adds no secret (the route is public and static)', !/ports:|SECRET|PASSWORD|KEY/i.test(code), true);
+}
 
 rmSync(root, { recursive: true, force: true });
 rmSync(outside, { recursive: true, force: true });

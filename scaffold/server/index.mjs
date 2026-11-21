@@ -111,7 +111,7 @@ if (bootTransport.problems.length) {
 }
 const netId = createNetIdentity();
 
-// Optional self-hosted app updates (MASTERFILE 9.4, server/update_hosting.mjs): a public,
+// Optional self-hosted app updates (MASTERFILE 8.31, server/update_hosting.mjs): a public,
 // read-only, rate-limited /updates/* route set serving the offline-signed manifest and the
 // APKs it names from UPDATES_DIR. Unset = nothing is registered and /updates/* is an
 // ordinary unknown path. A malformed value refuses to boot like every other server config.
