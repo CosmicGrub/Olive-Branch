@@ -52,9 +52,13 @@ class FakeDiscovery implements RoadDiscovery {
   Stream<String> get gone => _g.stream;
 }
 
+/// A clock that moves a millisecond every time it is read, as a real one does: an answer given after a question is
+/// never dated at the same instant as the question.
 class Clk {
-  Clk(this.ms);
-  int ms;
+  Clk(this._ms);
+  int _ms;
+  int get ms => ++_ms;
+  set ms(int v) => _ms = v;
 }
 
 class Phone {

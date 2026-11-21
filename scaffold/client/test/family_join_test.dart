@@ -32,12 +32,12 @@ class Rig {
   Rig._(this.mom, this.momRepo, this.dad, this.dadRepo, this.clock, this.momCtx);
   final P mom, dad;
   final MemoryFamilyRepository momRepo, dadRepo;
-  final _Clk clock;
+  final Clk clock;
   FamilyContext momCtx;
 
   static Future<Rig> make({int settle = 24}) async {
     final P mom = await P.make(1), dad = await P.make(2);
-    final _Clk c = _Clk(t0 + 5 * day);
+    final Clk c = Clk(t0 + 5 * day);
     final MemoryFamilyRepository mr = MemoryFamilyRepository();
     final FamilyContext ctx = await FamilyFounder.found(
       device: mom.key,
@@ -75,8 +75,8 @@ class Rig {
   }
 }
 
-class _Clk {
-  _Clk(this.ms);
+class Clk {
+  Clk(this.ms);
   int ms;
 }
 
@@ -93,6 +93,7 @@ void main() {
           .join(code: '123456', name: 'Dad', onWords: (s) => words.add('$s'));
       expect(o.ok, isTrue, reason: o.reason);
       expect(w.state, JoinState.done);
+      r.clock.ms += 1000; // a moment passes: the other phone's yes is dated just after the question
       expect(words.single, '${w.sas}', reason: 'both screens show the same word and picture');
       final FamilyContext dad = o.context!;
       expect(dad.familyId, r.momCtx.familyId);
@@ -295,6 +296,7 @@ void main() {
     final FamilyJoinWindow w1 = r.window();
     Rig.autoApprove(w1);
     expect((await r.guest(WindowTransport(w1)).join(code: '123456', name: 'Dad')).ok, isTrue);
+    r.clock.ms += 1000;
     final FamilyContext two = (await FamilyContext.load(r.momRepo, r.mom.key, nowMs: r.clock.ms))!;
     // Second join attempt on the two-grown-up record.
     final P sam = await P.make(5);
@@ -328,7 +330,8 @@ void main() {
     Rig.autoApprove(w);
     final JoinOutcome o = await r.guest(_DropYes(WindowTransport(w))).join(code: '123456', name: 'Dad');
     expect(o.ok, isTrue, reason: 'the guest holds the family');
-    FamilyContext mom = (await FamilyContext.load(r.momRepo, r.mom.key, nowMs: r.clock.ms))!;
+    r.clock.ms += 1000;
+    final FamilyContext mom = (await FamilyContext.load(r.momRepo, r.mom.key, nowMs: r.clock.ms))!;
     LedgerState s = await mom.state(nowMs: r.clock.ms);
     expect(s.isActiveGuardianDevice(r.dad.key.publicKey), isFalse, reason: 'not yet: the vote did not arrive');
     final FamilyContext? merged = await mergeLedger(

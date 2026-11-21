@@ -94,7 +94,7 @@ class _Home extends StatelessWidget {
             final EmergencyCardDoc d = await svc.read(me);
             final EcResult r = await svc.save(
               me,
-              LocalEmergencyCard(
+              const LocalEmergencyCard(
                 allergies: <String>['Example allergy'],
                 doctor: EcDoctor(name: 'Dr Example', phone: '555-0100'),
                 contacts: <EcContact>[EcContact(name: 'Example contact', relation: 'grandmother', phone: '555-0101')],

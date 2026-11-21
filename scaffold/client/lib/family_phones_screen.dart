@@ -197,12 +197,12 @@ class _FamilyPhonesScreenState extends State<FamilyPhonesScreen> {
         return <Widget>[
           Text('Shared with ${_names(s.others)}.', key: const Key('phonesPair')),
           if (s.settlingHours > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
               child: Text(
                 'A newly added phone settles in for a while. Until then you can share the emergency card with it, but not '
                 'pictures of a screen.',
-                key: const Key('phonesSettling'),
+                key: Key('phonesSettling'),
               ),
             ),
           const SizedBox(height: 16),
