@@ -66,7 +66,7 @@ const testFixtures = new Set(readdirSync(join(SCAFFOLD, 'db', 'test')).filter(f 
   for (let n = 1; n <= nums[nums.length - 1]; n++) if (!nums.includes(n)) missing.push(n);
   // 0019 never existed (a number skipped when the guardian-invite work was
   // renumbered); any new gap must be added here on purpose.
-  check(g, 'the only gaps are the documented ones (19 never existed; 39-41 are reserved for a parallel branch and absent until it merges)', missing.filter(n => ![19, 39, 40, 41].includes(n)).join(',') || 'none', 'none');
+  check(g, 'the only gaps are the documented ones (19 never existed; 39-41 are reserved for a parallel branch and absent until it merges; 54 and 55 are held by open PRs: the encrypted-backup server and recovery paths)', missing.filter(n => ![19, 39, 40, 41, 54, 55].includes(n)).join(',') || 'none', 'none');
 }
 
 // ------------------------------------------------- S-D22 reference checking --

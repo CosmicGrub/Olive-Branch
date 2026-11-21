@@ -860,7 +860,8 @@ export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promi
 export type SecurityEventKind =
   | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
   | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added'
-  | 'account_recovered' | 'device_lost' | 'device_found' | 'device_lost_final';
+  | 'account_recovered' | 'device_lost' | 'device_found' | 'device_lost_final'
+  | 'device_wipe_ordered' | 'device_wiped';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -885,6 +886,8 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   device_lost: 'A phone or tablet was marked as lost and cut off from new updates',
   device_found: 'A phone or tablet marked as lost was found and is back in use',
   device_lost_final: 'A phone or tablet marked as lost was removed from the family',
+  device_wipe_ordered: "A lost phone was told to erase its copy of the family's records the next time it connects",
+  device_wiped: "A lost phone erased its copy of the family's records",
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -4658,7 +4661,7 @@ export interface PairedDevice {
   pairedAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
-  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0054. */
+  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0056. */
   state: DeviceStanding;
   pausedAt: string | null;
   /** When a paused device becomes revoked by itself (the notice ends). Null unless paused. */
@@ -4998,17 +5001,17 @@ export async function refreshPairedDeviceSession(
   opts: { pin?: string } = {},
 ): Promise<
   | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-  | { ok: false; reason: RefreshDeviceSessionError }
+  | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean }
 > {
   type First =
     | { ok: true; deviceId: string; role: PairableRole; targetId: string }
-    | { ok: false; reason: RefreshDeviceSessionError; reproof?: { id: string; userId: string } };
+    | { ok: false; reason: RefreshDeviceSessionError; wipe?: boolean; reproof?: { id: string; userId: string } };
   const first = await withSystemSession<First>(pool, async (q) => {
     // `id::text = $1`, never casting the input to uuid: a garbage id must be a
     // clean not-found, not a Postgres cast error that surfaces as a 500.
     const rows = await q(
       `SELECT id, role, target_id, revoked_at, credential_hash,
-              paused_at, lost_revoke_due_at, reproof_required
+              paused_at, lost_revoke_due_at, reproof_required, wipe_ordered_at, wiped_at
          FROM paired_device WHERE id::text = $1`,
       [deviceId],
     );
@@ -5019,14 +5022,18 @@ export async function refreshPairedDeviceSession(
     const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
       presented.length === stored.length && timingSafeEqual(presented, stored);
     if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
-    // Migration 0054: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
+    // Migration 0056: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
     // they are on every other request, and only after the credential is proved (nobody learns a device's standing
     // without holding its credential).
     await settleDueLostDevice(q, row.id, now);
     const st = standingOfRow(
       (await q(`SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = $1`, [row.id]))[0], now);
-    if (st === 'revoked') return { ok: false, reason: 'device_revoked' };
-    if (st === 'paused') return { ok: false, reason: 'device_paused' };
+    // Erase on next contact (migration 0056): a grown-up's phone its owner ordered to erase its own copy is told so
+    // here, and only after its credential was proved. It still gets no session.
+    const wipe = row.role === 'guardian' && row.wipe_ordered_at != null && row.wiped_at == null &&
+      new Date(row.wipe_ordered_at).getTime() + ERASE_GRACE_MS <= now.getTime();
+    if (st === 'revoked') return { ok: false, reason: 'device_revoked', ...(wipe ? { wipe: true } : {}) };
+    if (st === 'paused') return { ok: false, reason: 'device_paused', ...(wipe ? { wipe: true } : {}) };
     if (row.role === 'guardian') {
       const u = await q(`SELECT deactivated_at FROM app_user WHERE id = $1`, [row.target_id]);
       if (!u.length || u[0].deactivated_at) return { ok: false, reason: 'account_deactivated' };
@@ -5040,7 +5047,7 @@ export async function refreshPairedDeviceSession(
     return { ok: true, deviceId: row.id, role: row.role, targetId: row.target_id };
   });
   if (first.ok) return first;
-  if (!first.reproof) return { ok: false, reason: first.reason };
+  if (!first.reproof) return { ok: false, reason: first.reason, ...(first.wipe ? { wipe: true } : {}) };
   const { id, userId } = first.reproof;
   if (typeof opts.pin !== 'string' || !/^[0-9]{4,8}$/.test(opts.pin)) return { ok: false, reason: 'pin_required' };
   const pin = await attemptPinFor(pool, userId, opts.pin);
@@ -5103,7 +5110,7 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
 }
 
 // ===========================================================================
-// LOST OR STOLEN DEVICE -- db/migrations/0054_lost_device.sql.
+// LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql.
 //
 // "Mark as lost" pauses a device at once (its session and its refresh are
 // refused, so it receives nothing new), tells every grown-up, and starts a 72
@@ -5125,7 +5132,8 @@ export const LOST_MARK_LIMIT_PER_DAY = 3;
 
 export type LostFailure =
   | 'not_found' | 'already_revoked' | 'this_device' | 'rate_limited'
-  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only';
+  | 'not_paused' | 'stale_incident' | 'too_late' | 'owner_only'
+  | 'not_a_grown_up_phone' | 'no_other_copy' | 'no_erase_ordered' | 'already_erased';
 
 export type LostResult =
   | { ok: true; deviceId: string; state: DeviceStanding; incidentId: string | null;
@@ -5275,6 +5283,14 @@ export async function foundDevice(
           AND lost_revoke_due_at > $3 RETURNING id`,
       [d.id, p.incidentId, p.now.toISOString()]);
     if (!u.length) return { ok: false, reason: 'too_late' };
+    if (fresh.wipe_ordered_at != null && fresh.wiped_at == null) {
+      // "I have it" calls off an erase that has not reached the phone yet (one that already has cut the phone off for
+      // good, so the answer above was too_late and never gets here).
+      await q(`UPDATE paired_device SET wipe_ordered_at = NULL, wipe_ordered_by = NULL WHERE id = $1`, [d.id]);
+      await q(
+        `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+         VALUES ($1, $2, 'wipe_cancelled', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
+    }
     await q(
       `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
        VALUES ($1, $2, 'found', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
@@ -5316,6 +5332,130 @@ export async function confirmDeviceLost(
   });
 }
 
+/** An erase order starts this long after it is given. Every grown-up is told at once and any of them can call it off
+ *  in that time, so a mistaken order, or one given by someone who only holds the owner's open phone, never lands by
+ *  surprise. The phone is already cut off from new updates the whole time. */
+export const ERASE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** True when the family still has another grown-up phone that is in use (not paused, cut off or waiting for its
+ *  owner's PIN) belonging to the owner or to a grown-up who shares a child with them. An erase is refused without
+ *  one: the order may never destroy the last copy of what a phone holds. (This counts phones in use, which is what
+ *  the server can see; it is stated that way to the grown-up.) */
+async function otherCopyExists(q: Query, deviceId: string, ownerId: string): Promise<boolean> {
+  const rows = await q(
+    `SELECT 1 FROM paired_device o
+      WHERE o.role = 'guardian' AND o.id <> $1 AND o.revoked_at IS NULL AND o.paused_at IS NULL
+        AND o.reproof_required = false
+        AND (o.target_id = $2 OR EXISTS (
+               SELECT 1 FROM effective_guardianship a JOIN effective_guardianship b ON b.child_id = a.child_id
+                WHERE a.user_id = $2 AND a.role = 'guardian' AND a.restricted = false
+                  AND b.user_id = o.target_id AND b.role = 'guardian' AND b.restricted = false))
+      LIMIT 1`, [deviceId, ownerId]);
+  return rows.length > 0;
+}
+
+/**
+ * "Erase it when it next connects": the OWNER of a grown-up's phone that is marked as lost (or already cut off) orders
+ * that phone, with their own PIN, to erase the app's copy of the family on itself the next time it reaches the
+ * server. Never a child's tablet (her private areas are hers, in no family copy). Refused while the family has no
+ * other grown-up phone in use. Idempotent. The order is called off by "I have it" or by [cancelDeviceErase].
+ */
+export async function orderDeviceErase(
+  pool: pg.Pool,
+  p: { deviceId: string; userId: string; fromDeviceId: string | null; incidentId: string; now: Date },
+): Promise<LostResult> {
+  return withSystemSession<LostResult>(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [p.deviceId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const d = rows[0];
+    const rel = await lostRelation(q, d, p.userId);
+    if (!rel) return { ok: false, reason: 'not_found' };
+    if (d.role !== 'guardian') return { ok: false, reason: 'not_a_grown_up_phone' };
+    if (!rel.owner) return { ok: false, reason: 'owner_only' };
+    if (p.fromDeviceId && p.fromDeviceId === d.id) return { ok: false, reason: 'this_device' };
+    await settleDueLostDevice(q, d.id, p.now);
+    const fresh = (await q(`SELECT * FROM paired_device WHERE id = $1`, [d.id]))[0];
+    if (fresh.lost_incident == null) return { ok: false, reason: 'not_paused' };
+    if (fresh.lost_incident !== p.incidentId) return { ok: false, reason: 'stale_incident' };
+    if (fresh.wiped_at != null) return { ok: false, reason: 'already_erased' };
+    const st = standingOfRow(fresh, p.now);
+    if (st === 'active') return { ok: false, reason: 'not_paused' };
+    if (fresh.wipe_ordered_at != null) {
+      return lostOk(fresh, st, true, { incidentId: fresh.lost_incident, revokeDueAt: fresh.lost_revoke_due_at });
+    }
+    if (!(await otherCopyExists(q, d.id, p.userId))) return { ok: false, reason: 'no_other_copy' };
+    await q(`UPDATE paired_device SET wipe_ordered_at = $2, wipe_ordered_by = $3 WHERE id = $1`,
+      [d.id, p.now.toISOString(), p.userId]);
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'wipe_ordered', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
+    await insertSecurityEvent(q, p.userId, 'device_wipe_ordered');
+    return lostOk(fresh, st, false, { incidentId: fresh.lost_incident, revokeDueAt: fresh.lost_revoke_due_at });
+  });
+}
+
+/** Calls off an erase order that has not reached the phone yet. ANY grown-up of the family may (calling off is the
+ *  safe direction: nothing is erased); only the owner can give it. */
+export async function cancelDeviceErase(
+  pool: pg.Pool,
+  p: { deviceId: string; userId: string; fromDeviceId: string | null; incidentId: string; now: Date },
+): Promise<LostResult> {
+  return withSystemSession<LostResult>(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [p.deviceId]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    const d = rows[0];
+    const rel = await lostRelation(q, d, p.userId);
+    if (!rel) return { ok: false, reason: 'not_found' };
+    if (d.role !== 'guardian') return { ok: false, reason: 'not_a_grown_up_phone' };
+    if (p.fromDeviceId && p.fromDeviceId === d.id) return { ok: false, reason: 'this_device' };
+    await settleDueLostDevice(q, d.id, p.now);
+    const fresh = (await q(`SELECT * FROM paired_device WHERE id = $1`, [d.id]))[0];
+    if (fresh.lost_incident !== p.incidentId) return { ok: false, reason: 'stale_incident' };
+    if (fresh.wiped_at != null) return { ok: false, reason: 'already_erased' };
+    if (fresh.wipe_ordered_at == null) return { ok: false, reason: 'no_erase_ordered' };
+    await q(`UPDATE paired_device SET wipe_ordered_at = NULL, wipe_ordered_by = NULL WHERE id = $1`, [d.id]);
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'wipe_cancelled', $3, $4)`, [d.id, p.incidentId, p.userId, p.now.toISOString()]);
+    return lostOk(fresh, standingOfRow(fresh, p.now), false,
+      { incidentId: fresh.lost_incident, revokeDueAt: fresh.lost_revoke_due_at });
+  });
+}
+
+/**
+ * The phone says it has erased its copy. Authority is the device credential (the phone has no session), checked the
+ * same way a refresh checks it. Only a phone with an order pending can say it, and only once; it is cut off for good
+ * at the same moment (an erased phone has nothing to come back to: it is added again with a new code).
+ */
+export async function ackDeviceErased(
+  pool: pg.Pool, deviceId: string, deviceCredential: string, now: Date,
+): Promise<{ ok: true; already: boolean } | { ok: false; reason: 'invalid_device_credential' | 'no_erase_ordered' }> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(`SELECT * FROM paired_device WHERE id::text = $1 FOR UPDATE`, [deviceId]);
+    const row = rows[0];
+    const presented = Buffer.from(deviceCredentialDigest(deviceCredential), 'utf8');
+    const stored = Buffer.from(
+      typeof row?.credential_hash === 'string' ? row.credential_hash : '0'.repeat(64), 'utf8');
+    const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
+      presented.length === stored.length && timingSafeEqual(presented, stored);
+    if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' } as const;
+    if (row.role !== 'guardian') return { ok: false, reason: 'no_erase_ordered' } as const;
+    if (row.wiped_at != null) return { ok: true, already: true } as const;
+    if (row.wipe_ordered_at == null ||
+        new Date(row.wipe_ordered_at).getTime() + ERASE_GRACE_MS > now.getTime()) {
+      return { ok: false, reason: 'no_erase_ordered' } as const;
+    }
+    await q(
+      `UPDATE paired_device SET wiped_at = $2, revoked_at = COALESCE(revoked_at, $2) WHERE id = $1`,
+      [row.id, now.toISOString()]);
+    await q(
+      `INSERT INTO device_lost_event (device_id, incident_id, kind, actor_id, created_at)
+       VALUES ($1, $2, 'wiped', NULL, $3)`, [row.id, row.lost_incident, now.toISOString()]);
+    if (row.wipe_ordered_by) await insertSecurityEvent(q, row.wipe_ordered_by, 'device_wiped');
+    return { ok: true, already: false } as const;
+  });
+}
+
 export interface FamilyDevice {
   id: string;
   role: PairableRole;
@@ -5334,6 +5474,13 @@ export interface FamilyDevice {
   canMarkLost: boolean;
   canFound: boolean;
   canConfirmLost: boolean;
+  /** Erase-on-next-contact (0056): ordered and not yet done / done. Only ever true for a grown-up's phone. */
+  eraseOrdered: boolean;
+  /** When an ordered erase starts (null unless ordered and not done). */
+  eraseDueAt: string | null;
+  erased: boolean;
+  canOrderErase: boolean;
+  canCancelErase: boolean;
 }
 
 /** The devices a grown-up may see and act on: their own phones, the other grown-ups' phones of the same family and
@@ -5379,6 +5526,13 @@ export async function familyDevicesFor(
         canMarkLost: state === 'active' && !isThis,
         canFound: state === 'paused' && !isThis && !(markedByOwner && r.role === 'guardian' && !isOwn && markerActive),
         canConfirmLost: state === 'paused' && !isThis && (r.role === 'child' || isOwn),
+        eraseOrdered: r.role === 'guardian' && r.wipe_ordered_at != null && r.wiped_at == null,
+        eraseDueAt: r.role === 'guardian' && r.wipe_ordered_at != null && r.wiped_at == null
+          ? new Date(new Date(r.wipe_ordered_at).getTime() + ERASE_GRACE_MS).toISOString() : null,
+        erased: r.role === 'guardian' && r.wiped_at != null,
+        canOrderErase: r.role === 'guardian' && isOwn && !isThis && state !== 'active' && r.lost_incident != null &&
+          r.wipe_ordered_at == null && r.wiped_at == null,
+        canCancelErase: r.role === 'guardian' && !isThis && r.wipe_ordered_at != null && r.wiped_at == null,
       };
     });
   });

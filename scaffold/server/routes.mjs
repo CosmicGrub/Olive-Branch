@@ -49,6 +49,7 @@ import { activeCustodyOrderFor, guardiansOfChild, parentGuardiansOfChild, setPin
          pairedDevicesForChild, revokePairedDevice,
          refreshPairedDeviceSession, revokeOwnPairedDevice,
          markDeviceLost, foundDevice, confirmDeviceLost, familyDevicesFor,
+         orderDeviceErase, cancelDeviceErase, ackDeviceErased,
          activityOverridesFor, setActivityOverride, deleteActivityOverride,
          learnSettingsFor, setLearnSettings, saveReflection, listReflections,
          deleteReflection, clearReflections, setHouseRules, houseRulesFor,
@@ -1218,12 +1219,13 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         pool, deviceId, deviceCredential, new Date(),
         { pin: typeof c.body?.pin === 'string' ? c.body.pin : undefined });
       if (!result.ok) {
-        // 0054: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
+        // 0056: a phone that was marked as lost (device_paused) is refused like a revoked one, with its own word; a
         // phone back from a pause must show its owner's PIN once (pin_required / pin_incorrect / pin_locked).
         const status = result.reason === 'account_deactivated' ? 403
           : (result.reason === 'pin_required' || result.reason === 'pin_incorrect' || result.reason === 'pin_locked') ? 403
           : 401;
-        return { status, body: { error: result.reason } };
+        // `wipe: true` (0056) rides on the refusal of a lost phone whose owner ordered it to erase its own copy.
+        return { status, body: { error: result.reason, ...(result.wipe ? { wipe: true } : {}) } };
       }
       const sessionToken = api.issueSessionToken({
         userId: result.role === 'guardian' ? result.targetId : null,
@@ -1314,7 +1316,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
 
 
   // ===========================================================================
-  // LOST OR STOLEN DEVICE -- db/migrations/0054_lost_device.sql. A grown-up
+  // LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql. A grown-up
   // marks a phone or tablet as lost from ANOTHER device (their own other
   // phone, another grown-up's phone of the same family, a child's tablet of
   // the same family), behind their own PIN. The device is paused at once and
@@ -1326,6 +1328,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     status: r.reason === 'not_found' ? 404
       : r.reason === 'rate_limited' ? 429
       : r.reason === 'owner_only' ? 403
+      : r.reason === 'not_a_grown_up_phone' ? 422
       : 409,
     body: { error: r.reason },
   });
@@ -1402,6 +1405,61 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
       if (!r.ok) return lostFailure(r);
       return { status: 200, body: lostView(r) };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/erase  {pin, incidentId}  -- "Erase it when it next connects" (0056). The OWNER of a
+  // grown-up's phone that is marked as lost orders it to erase the app's copy of the family on that phone. Never a
+  // tablet (422), refused while no other grown-up phone is in use (409 no_other_copy). Records stay with the family.
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/erase', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await orderDeviceErase(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: r.already ? 200 : 201, body: { ...lostView(r), eraseOrdered: true } };
+    },
+  });
+
+  // POST /v1/me/devices/:deviceId/erase-cancel  {pin, incidentId}  -- calls the order off before the phone hears it.
+  api.register({
+    method: 'POST', path: '/v1/me/devices/:deviceId/erase-cancel', action: null,
+    identityScopedByHandler: true, skipOuterSession: true,
+    handler: async (c) => {
+      const incidentId = incidentOf(c);
+      if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
+      const gate = await lostGate(c);
+      if (gate) return gate;
+      const r = await cancelDeviceErase(pool, {
+        deviceId: c.params.deviceId, userId: c.principal.userId,
+        fromDeviceId: c.principal.deviceId ?? null, incidentId, now: new Date() });
+      if (!r.ok) return lostFailure(r);
+      return { status: 200, body: { ...lostView(r), eraseOrdered: false } };
+    },
+  });
+
+  // POST /v1/auth/session/erased  {deviceId, deviceCredential}  -- NO SESSION: the lost phone, which has none, says it
+  // has erased its copy. The device credential is the authority (as for a refresh). One answer for an unknown device, a
+  // wrong credential and a phone with no order, so nobody learns which devices have an erase pending.
+  api.register({
+    method: 'POST', path: '/v1/auth/session/erased', action: null,
+    skipOuterSession: true, noSessionRequired: true,
+    handler: async (c) => {
+      const deviceId = c.body?.deviceId;
+      const deviceCredential = c.body?.deviceCredential;
+      if (typeof deviceId !== 'string' || !deviceId ||
+          typeof deviceCredential !== 'string' || !deviceCredential) {
+        return { status: 400, body: { error: 'device_credential_required' } };
+      }
+      const r = await ackDeviceErased(pool, deviceId, deviceCredential, new Date());
+      if (!r.ok) return { status: 401, body: { error: 'invalid_device_credential' } };
+      return { status: 200, body: { erased: true } };
     },
   });
 

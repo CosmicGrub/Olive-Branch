@@ -160,7 +160,7 @@ export interface DbPort {
    */
   isDeviceRevoked(deviceId: string): Promise<boolean>;
   /**
-   * Optional richer answer (migration 0054): 'paused' is a device a grown-up marked as lost. When a port provides it,
+   * Optional richer answer (migration 0056): 'paused' is a device a grown-up marked as lost. When a port provides it,
    * it is what `handle()` asks; a port that does not (a test double) keeps the revoked-or-not behaviour.
    */
   deviceStanding?(deviceId: string): Promise<'active' | 'paused' | 'revoked'>;

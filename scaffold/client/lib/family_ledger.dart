@@ -43,11 +43,6 @@ const int kRevokeNoticeMs = 72 * 60 * 60 * 1000;
 /// How long a loosening or a removal waits for its approvals before silence ends it.
 const int kApprovalLifetimeMs = 14 * kMsPerDay;
 
-/// Ending a grown-up who has not said yes: the notice every grown-up sees, and the wait, are exactly this long. The
-/// person being ended (or any other grown-up) can refuse at any moment before it ends; silence for the whole wait is
-/// the only way it takes effect without their yes (owner rule: both parents, or 14 days with notices).
-const int kEndWaitMs = 14 * kMsPerDay;
-
 /// Sizes (identity design question 11, "recommend"; owner decision pending). Carers: village design 13.10, pending.
 const int kMaxGuardians = 6;
 const int kMaxChildDevices = 12;
@@ -387,7 +382,6 @@ class EntryType {
   static const String keyRotate = 'key.rotate';
   static const String devicePause = 'device.pause';
   static const String deviceResume = 'device.resume';
-  static const String guardianEnd = 'guardian.end';
   static const String accessPause = 'access.pause';
   static const String accessResume = 'access.resume';
   static const String accessEnd = 'access.end';
@@ -400,7 +394,7 @@ class EntryType {
   ];
   static const List<String> all = <String>[
     genesis, memberAdd, deviceAdd, deviceRevoke, deviceRevokeCancel, guardianLeave, guardianRemove, policySet,
-    keyRotate, devicePause, deviceResume, guardianEnd, accessPause, accessResume, accessEnd, limitsAgree,
+    keyRotate, devicePause, deviceResume, accessPause, accessResume, accessEnd, limitsAgree,
     limitsTighten, standingOk,
   ];
 }
@@ -703,8 +697,6 @@ bool _bodyShapeOk(String type, Map<String, Object?> body) {
       return _shape(body, <String, _Chk>{'key': (Object? x) => _b(x, 32)});
     case EntryType.deviceResume:
       return _shape(body, <String, _Chk>{'key': (Object? x) => _b(x, 32), 'pause': (Object? x) => _b(x, 32)});
-    case EntryType.guardianEnd:
-      return _shape(body, <String, _Chk>{'gid': (Object? x) => _b(x, 16)});
     case EntryType.accessPause:
     case EntryType.accessResume:
       return _shape(body, <String, _Chk>{'gid': (Object? x) => _b(x, 16)});

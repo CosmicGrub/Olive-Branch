@@ -24,9 +24,8 @@
 // active grown-up device signs it; a pause the OWNER made can be lifted by the other grown-up only once the pausing
 // phone is itself no longer active). A pause wins over what the paused device signed on a branch the pause did not
 // see (those entries are void, listed, never silently dropped). `device.revoke` (reason lost) is the existing,
-// permanent cut-off with its 72 hour notice for another grown-up's phone. `guardian.end` ends a grown-up: the person
-// themself saying yes ends it at once; otherwise it takes effect only after the 14 day notice with no refusal from
-// them or any other grown-up. A pause or an end is never a way to silence the grown-up it is about.
+// permanent cut-off with its 72 hour notice for another grown-up's phone. A pause is never a way to silence the
+// grown-up it is about. (Ending a PARENT, the two-parent rule and the 14 day wait, is the village wave: PR 238.)
 //
 // PROVISIONAL. The design (section 11) says the merge rule of 3.2 is the piece most likely to need revision once it
 // is fuzzed, and this is a first model of it, tested on the hostile cases listed in the test file. Read the residual
@@ -275,13 +274,6 @@ class _Gate {
   final Set<String> proposerKeys;
   final Map<String, int> yesAt = <String, int>{}; // gid or '*' for the candidate -> time of the latest yes
   bool declined = false;
-
-  /// Set only for `guardian.end`: when nobody has refused by this time the entry takes effect WITHOUT the required yes.
-  int? silentAt;
-
-  /// Devices that may only REFUSE (key hex -> gid): the other grown-ups, who are told and can object but whose yes is
-  /// not needed.
-  Map<String, String> refuseKeys = const <String, String>{};
 }
 
 class _Node {
@@ -604,9 +596,6 @@ class _Reducer {
       case EntryType.deviceResume:
         bad = settling ? 'signer-settling' : _deviceResume(n, s, d);
         break;
-      case EntryType.guardianEnd:
-        bad = settling ? 'signer-settling' : _end(n, s, d);
-        break;
       default: // the reserved types
         if (settling) {
           bad = 'signer-settling';
@@ -794,26 +783,6 @@ class _Reducer {
     return null;
   }
 
-  /// Ending a grown-up. The person's own yes ends it at once; with no yes, it takes effect only after [kEndWaitMs]
-  /// with no refusal from them or from any other grown-up. A refusal (a `no` vote) ends the proposal for good.
-  String? _end(_Node n, _St s, LedgerDevice signer) {
-    final Map<String, Object?> b = n.e.body;
-    final String gid = hexOf(_gidOf(b));
-    final _Mem? m = s.members.containsKey(gid) ? s.members[gid] : null;
-    if (m == null || m.kind != 'guardian') return 'unknown-subject';
-    if (gid == signer.gidHex) return 'use-leave';
-    final int exp = n.e.issuedAtMs + kEndWaitMs;
-    final _Gate g = _gateFor(s, proposerGid: signer.gidHex!, required: <String>{gid}, acceptKey: null, exp: exp,
-        includeSettlingVoters: true, asOf: n.e.issuedAtMs);
-    g.silentAt = exp;
-    g.refuseKeys = <String, String>{
-      for (final LedgerDevice d in s.devices.values)
-        if (d.kind == 'guardian' && d.gidHex != null && d.gidHex != gid && d.gidHex != signer.gidHex) d.keyHex: d.gidHex!,
-    };
-    n.gate = g;
-    return null;
-  }
-
   String? _policySet(_Node n, _St s, LedgerDevice signer) {
     final Map<String, Object?> b = n.e.body;
     final FamilyPolicy np = FamilyPolicy.fromValue(b['policy'])!;
@@ -897,14 +866,9 @@ class _Reducer {
     final List<LedgerVote> vs = votesByTarget[n.h] ?? const <LedgerVote>[];
     final List<LedgerVote> refusals = <LedgerVote>[];
     for (final LedgerVote v in vs) {
-      String? role = v.voterHex == g.acceptKey
+      final String? role = v.voterHex == g.acceptKey
           ? '*'
           : (g.voterKeys[v.voterHex] ?? (g.proposerKeys.contains(v.voterHex) ? g.proposerGid : null));
-      bool refuseOnly = false;
-      if (role == null && g.refuseKeys.containsKey(v.voterHex)) {
-        role = g.refuseKeys[v.voterHex];
-        refuseOnly = true;
-      }
       if (role == null) continue; // not somebody who was asked
       // A suspended device cannot say yes (a thief on a phone that was already marked as lost approves nothing), but
       // it can always say no: a pause must never be a way to silence an objection.
@@ -913,10 +877,6 @@ class _Reducer {
       if (v.atMs < n.e.issuedAtMs - kClockSkewMs) continue; // cannot answer a question not yet asked
       final int? exp = g.exp;
       if (exp != null && v.atMs >= exp) continue; // silence ran out: a late answer is not an answer
-      if (refuseOnly) {
-        if (v.answer == 'no') refusals.add(v);
-        continue;
-      }
       if (role == g.proposerGid) {
         // The proposer's yes is implied by signing. Only a withdrawal (or a no) means anything.
         if (v.answer == 'withdraw' || v.answer == 'no') refusals.add(v);
@@ -961,29 +921,18 @@ class _Reducer {
     if (g == null) return n.e.issuedAtMs;
     if (g.declined) return null;
     int t = n.e.issuedAtMs;
-    bool allYes = true;
     for (final String r in g.required) {
       final int? at = g.yesAt[r];
-      if (at == null || at > asOf) {
-        allYes = false;
-        break;
-      }
+      if (at == null || at > asOf) return null;
       if (at > t) t = at;
     }
     final String? a = g.acceptKey;
-    if (allYes && a != null) {
+    if (a != null) {
       final int? at = g.yesAt['*'];
-      if (at == null || at > asOf) {
-        allYes = false;
-      } else if (at > t) {
-        t = at;
-      }
+      if (at == null || at > asOf) return null;
+      if (at > t) t = at;
     }
-    if (allYes) return t;
-    // guardian.end: no yes and no refusal for the whole wait.
-    final int? quiet = g.silentAt;
-    if (quiet != null && asOf >= quiet) return quiet;
-    return null;
+    return t;
   }
 
   // ------------------------------------------------------------------------------------------------------------
@@ -1087,7 +1036,6 @@ class _Reducer {
           break;
         case EntryType.guardianLeave:
         case EntryType.guardianRemove:
-        case EntryType.guardianEnd:
           st.deadGids.add(hexOf(b['gid']! as Uint8List));
           break;
         case EntryType.devicePause:
@@ -1168,7 +1116,6 @@ class _Reducer {
           tombGids[n] = <String>{hexOf(b['gid']! as Uint8List)};
           break;
         case EntryType.guardianRemove:
-        case EntryType.guardianEnd:
           if (_activation(n, now) != null) tombGids[n] = <String>{hexOf(b['gid']! as Uint8List)};
           break;
         case EntryType.genesis:

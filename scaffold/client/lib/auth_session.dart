@@ -22,6 +22,11 @@
 //     back to pairing; the caller gets a [DeviceRevokedException].
 //   * [signOut] revokes the device server-side (best effort), clears storage,
 //     and fires [onSignedOut].
+//   * A device a grown-up MARKED AS LOST (`device_paused`, migration 0056) is not signed out: it keeps its identity and
+//     everything on it, [DeviceStanding] says `paused` (the grown-up shell locks behind the PIN) and it waits to be
+//     brought back with [checkBack]. A device that is brought back must show its owner's PIN once
+//     (`pin_required`). Only a real cut-off (`device_revoked` from the family's server, never a voluntary
+//     [signOut]) runs [DeviceStanding.onCutOff], which on a grown-up's phone removes the family's data from it.
 //
 // DEV LOGIN is an explicit, opt-in path, never a fallback: [devLoginEnabled]
 // defaults to false (release builds can never reach POST /v1/auth/dev-login
@@ -36,6 +41,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'device_identity.dart';
+import 'device_standing.dart';
 import 'server_transport_policy.dart';
 import 'webauthn_channel.dart' show platformPasskeyAssertion;
 
@@ -118,6 +124,12 @@ class AuthSession {
   String? _token;
   Future<String>? _refreshing;
   bool _ended = false;
+  bool _paused = false;
+  bool _checking = false;
+  String? _ownerPin;
+
+  /// True while the server has said this device is marked as lost.
+  bool get isPaused => _paused;
 
   bool get isDev => _dev;
   bool get hasEnded => _ended;
@@ -153,6 +165,8 @@ class AuthSession {
   /// the cached one is about to lapse.
   Future<String> token() async {
     if (_ended) throw DeviceRevokedException();
+    // A paused device does not keep asking: every try would be refused. It asks again only when told to ([checkBack]).
+    if (_paused && !_checking) throw DevicePausedException();
     final t = _token;
     if (t != null) {
       final exp = expiryOf(t);
@@ -191,13 +205,20 @@ class AuthSession {
         .post(
           Uri.parse('$baseUrl${OliveApi.sessionRefreshPath}'),
           headers: {'content-type': 'application/json'},
-          body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred}),
+          body: jsonEncode({
+            'deviceId': id.deviceId,
+            'deviceCredential': cred,
+            if (_ownerPin != null) 'pin': _ownerPin,
+          }),
         )
         .timeout(const Duration(seconds: 10));
     final body = _decodeBody(res);
     if (res.statusCode == 200) {
       final t = body['sessionToken'] as String;
       _token = t;
+      _paused = false;
+      _ownerPin = null;
+      DeviceStanding.set(DeviceStandingState.active);
       // Persisted so a cold boot starts from a live token; a storage failure
       // must never fail the refresh itself (the in-memory session is fine).
       try {
@@ -206,8 +227,20 @@ class AuthSession {
       return t;
     }
     final error = body['error'] as String? ?? 'error';
-    if (res.statusCode == 401 &&
-        (error == 'device_revoked' || error == 'invalid_device_credential')) {
+    if (res.statusCode == 401 && error == 'device_paused') {
+      handlePaused();
+      throw DevicePausedException();
+    }
+    if (res.statusCode == 403 && error == 'pin_required') {
+      _paused = true;
+      DeviceStanding.set(DeviceStandingState.needsOwnerPin);
+      throw OwnerPinRequiredException();
+    }
+    if (res.statusCode == 401 && error == 'device_revoked') {
+      await _cutOff();
+      throw DeviceRevokedException();
+    }
+    if (res.statusCode == 401 && error == 'invalid_device_credential') {
       await _end();
       throw DeviceRevokedException();
     }
@@ -220,7 +253,62 @@ class AuthSession {
 
   /// A request came back 401 device_revoked: this device was cut off. Called by
   /// [OliveApi] so ANY call surfacing it ends the session, not only a refresh.
-  Future<void> handleRevoked() => _end();
+  Future<void> handleRevoked() => _cutOff();
+
+  /// A request came back 401 device_paused: a grown-up marked this device as lost. Nothing is cleared. Called by
+  /// [OliveApi] so ANY call surfacing it locks the app, not only a refresh.
+  void handlePaused() {
+    _paused = true;
+    _token = null;
+    DeviceStanding.set(DeviceStandingState.paused);
+  }
+
+  /// Asks the server again whether this device was brought back ("Check again", the app coming to the front). With
+  /// [ownerPin], proves the owner's PIN for a device that was brought back. Returns the new standing; never throws for
+  /// the ordinary answers (still paused, PIN needed, PIN wrong, offline).
+  Future<DeviceStandingState> checkBack({String? ownerPin}) async {
+    if (_ended) return DeviceStandingState.cutOff;
+    if (_checking) return DeviceStanding.value;
+    _checking = true;
+    _ownerPin = ownerPin;
+    try {
+      await refresh();
+    } on DevicePausedException {
+      // still paused
+    } on OwnerPinRequiredException {
+      // it was brought back: the owner's PIN is next
+    } on DeviceRevokedException {
+      // cut off for good: [_cutOff] already ran
+    } on ForbiddenException {
+      // a wrong or locked PIN: stays in the same state; the caller reads the error through [lastPinError]
+      lastPinError = 'pin';
+    } catch (_) {
+      // offline: nothing learned
+    } finally {
+      _checking = false;
+      if (ownerPin == null) _ownerPin = null;
+    }
+    return DeviceStanding.value;
+  }
+
+  /// Set when the last [checkBack] with a PIN was refused (wrong or locked); read and cleared by the screen.
+  String? lastPinError;
+
+  /// A real cut-off from the family: remember that this device was removed, let the grown-up app erase what the family
+  /// put on it ([DeviceStanding.onCutOff]), then end the session as before. A voluntary [signOut] never comes here.
+  Future<void> _cutOff() async {
+    if (_ended) return;
+    DeviceStanding.set(DeviceStandingState.cutOff);
+    final hook = DeviceStanding.onCutOff;
+    if (hook != null) {
+      try {
+        await hook();
+      } catch (_) {
+        // erasing is best effort here; the credential is cleared below either way, so nothing new can arrive
+      }
+    }
+    await _end();
+  }
 
   // ---- sign out ------------------------------------------------------------------
 

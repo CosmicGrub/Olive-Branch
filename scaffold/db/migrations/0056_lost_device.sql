@@ -34,6 +34,15 @@
 --  (three marks of one device in a day) so the pause cannot be turned into a
 --  harassing loop.
 --
+--  erase on next contact: a grown-up's phone (never a child's tablet, whose
+--  private areas are hers alone and are not in any family copy) that its OWNER
+--  has marked as lost can be ordered, by the owner with their own PIN, to
+--  erase the app's copy of the family on THAT phone the next time it reaches
+--  the server. It is refused while the family has no other grown-up phone
+--  holding a copy (so an order can never destroy the last one), it is
+--  cancelled by "I have it" or by the owner, and the phone says when it is
+--  done. The server's records, the other phones and every message stay.
+--
 --  reproof_required: a grown-up's phone that comes back from a pause must show
 --  its owner's own PIN once before it gets a session again (screen L5). A
 --  child's tablet has no PIN to show; the grown-up who said "I have it"
@@ -52,7 +61,18 @@ ALTER TABLE paired_device
   -- brought back by the other grown-up instead of staying stuck for three days).
   ADD COLUMN lost_marked_from    uuid REFERENCES paired_device(id) ON DELETE SET NULL,
   ADD COLUMN lost_revoke_due_at  timestamptz,
-  ADD COLUMN reproof_required    boolean NOT NULL DEFAULT false;
+  ADD COLUMN reproof_required    boolean NOT NULL DEFAULT false,
+  -- Erase-on-next-contact: see the header. Ordered by the phone's OWNER with their own PIN after it was marked as lost;
+  -- the phone is told the next time it reaches the server and says so when it is done.
+  ADD COLUMN wipe_ordered_at     timestamptz,
+  ADD COLUMN wipe_ordered_by     uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  ADD COLUMN wiped_at            timestamptz;
+
+ALTER TABLE paired_device ADD CONSTRAINT paired_device_wipe_shape CHECK (
+  (wipe_ordered_at IS NULL AND wiped_at IS NULL)
+  OR (wipe_ordered_at IS NOT NULL AND role = 'guardian')
+  OR (wipe_ordered_at IS NULL AND wiped_at IS NOT NULL AND role = 'guardian')
+);
 
 -- A pause is either fully described or absent; a revoked device is never also
 -- an open pause.
@@ -66,7 +86,7 @@ CREATE TABLE device_lost_event (
   seq         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   device_id   uuid NOT NULL REFERENCES paired_device(id) ON DELETE CASCADE,
   incident_id uuid NOT NULL,
-  kind        text NOT NULL CHECK (kind IN ('marked', 'found', 'confirmed', 'cut_off')),
+  kind        text NOT NULL CHECK (kind IN ('marked', 'found', 'confirmed', 'cut_off', 'wipe_ordered', 'wipe_cancelled', 'wiped')),
   actor_id    uuid REFERENCES app_user(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -103,14 +123,31 @@ CREATE TRIGGER device_lost_event_no_change
 
 COMMENT ON TABLE device_lost_event IS
   'Append-only, content-free history of "marked as lost" / "I have it" / '
-  '"It is lost" / cut off after the notice (0054). No names, no places.';
+  '"It is lost" / cut off after the notice (0056). No names, no places.';
 
 -- ---------------------------------------------------- security_event -------
-ALTER TABLE security_event DROP CONSTRAINT security_event_kind_check;
-ALTER TABLE security_event ADD CONSTRAINT security_event_kind_check
-  CHECK (kind IN (
-    'passkey_added', 'passkey_removed', 'pin_changed', 'pin_lockout',
-    'device_paired', 'export_taken', 'invite_created', 'guardian_added',
-    'account_recovered', 'device_lost', 'device_found', 'device_lost_final'));
+-- Merged into whatever the constraint holds now (0053 and 0055 each add kinds), never swapped in as a fixed list.
+DO $$
+DECLARE
+  def   text;
+  kinds text[];
+  add_kinds text[] := ARRAY['device_lost', 'device_found', 'device_lost_final', 'device_wipe_ordered', 'device_wiped'];
+  k text;
+BEGIN
+  SELECT pg_get_constraintdef(c.oid) INTO def
+    FROM pg_constraint c
+   WHERE c.conname = 'security_event_kind_check' AND c.conrelid = 'security_event'::regclass;
+  IF def IS NULL THEN
+    RAISE EXCEPTION 'security_event_kind_check is missing; cannot add the lost-phone kinds';
+  END IF;
+  SELECT array_agg(m[1]) INTO kinds FROM regexp_matches(def, '''([a-z_]+)''', 'g') AS m;
+  FOREACH k IN ARRAY add_kinds LOOP
+    IF NOT (k = ANY (kinds)) THEN kinds := kinds || k; END IF;
+  END LOOP;
+  ALTER TABLE security_event DROP CONSTRAINT security_event_kind_check;
+  EXECUTE 'ALTER TABLE security_event ADD CONSTRAINT security_event_kind_check CHECK (kind IN ('
+    || (SELECT string_agg(quote_literal(x), ', ' ORDER BY x) FROM unnest(kinds) AS x) || '))';
+END
+$$;
 
 COMMIT;

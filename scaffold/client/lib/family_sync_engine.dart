@@ -477,8 +477,11 @@ class SyncEngine {
       });
 
   // ------------------------------------------------------------------------------------------------ internals ---
+  /// A grown-up's device the ledger lists right now AND has not suspended: a phone marked as lost writes nothing the
+  /// family accepts until it is brought back (what it wrote before the pause stays; what it still holds is re-sent
+  /// when it returns, so nothing is lost).
   static bool _isGuardianDevice(LedgerState st, List<int> key) =>
-      st.devices.any((LedgerDevice d) => d.kind == 'guardian' && bytesEqual(d.key, key));
+      st.devices.any((LedgerDevice d) => d.kind == 'guardian' && bytesEqual(d.key, key)) && !st.isPaused(key);
 
   static int _cmpBytes(List<int> a, List<int> b) {
     for (int i = 0; i < a.length && i < b.length; i++) {

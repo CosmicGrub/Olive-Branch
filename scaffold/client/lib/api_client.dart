@@ -94,6 +94,18 @@ class DeviceRevokedException extends UnauthorizedException {
   DeviceRevokedException() : super('device_revoked');
 }
 
+/// A grown-up marked THIS device as lost (migration 0056). The server refuses it on every request until a grown-up says
+/// "I have it". Unlike [DeviceRevokedException] nothing is cleared: the device keeps its identity and everything on
+/// it, locks behind its PIN and waits to be brought back ([AuthSession.checkBack]).
+class DevicePausedException extends UnauthorizedException {
+  DevicePausedException() : super('device_paused');
+}
+
+/// The device was brought back after being paused and must show its owner's own PIN once before it gets a session.
+class OwnerPinRequiredException extends ForbiddenException {
+  OwnerPinRequiredException() : super('pin_required');
+}
+
 /// One recognized homework problem, as returned by POST
 /// [OliveApi.homeworkCapture] on success. `hint` has already been through
 /// the server's real guardHint() (packages/homework/src/capture.ts) — it is
@@ -177,18 +189,25 @@ class OliveApi {
         await s.handleRevoked();
         return res;
       }
+      if (_errorIs(res, 'device_paused')) {
+        s.handlePaused();
+        return res;
+      }
       if (s.canRefresh) {
         res = await send(await s.refresh());
         if (res.statusCode == 401 && _isDeviceRevoked(res)) await s.handleRevoked();
+        if (res.statusCode == 401 && _errorIs(res, 'device_paused')) s.handlePaused();
       }
     }
     return res;
   }
 
-  static bool _isDeviceRevoked(http.Response res) {
+  static bool _isDeviceRevoked(http.Response res) => _errorIs(res, 'device_revoked');
+
+  static bool _errorIs(http.Response res, String error) {
     try {
       final b = jsonDecode(res.body);
-      return b is Map && b['error'] == 'device_revoked';
+      return b is Map && b['error'] == error;
     } catch (_) {
       return false;
     }
@@ -608,6 +627,9 @@ class OliveApi {
       // reason means "this exact device was cut off," not "sign in again."
       if (res.statusCode == 401 && body['error'] == 'device_revoked') {
         throw DeviceRevokedException();
+      }
+      if (res.statusCode == 401 && body['error'] == 'device_paused') {
+        throw DevicePausedException();
       }
       throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error',
           message: body['message'] as String?, faults: body['faults'] as List<dynamic>?);
@@ -1276,6 +1298,27 @@ class OliveApi {
   Future<void> revokePairedDevice(String childId, String deviceId) => _post(
       pairedDeviceRevoke.replaceFirst(':childId', childId).replaceFirst(':deviceId', deviceId),
       const {});
+
+  // --- a lost or stolen phone or tablet (migration 0056) ---------------------
+  static const meDevicesPath = '/v1/me/devices';
+
+  /// `{devices: [...]}`: the phones and tablets this grown-up may see and act on, each with its standing
+  /// (`active` | `paused` | `revoked`), who marked it, when the notice ends and what this grown-up may do
+  /// (`canMarkLost`, `canFound`, `canConfirmLost`). Never a credential.
+  Future<Map<String, dynamic>> fetchFamilyDevices() => _get(meDevicesPath);
+
+  /// "Mark as lost": pauses the device at once and starts the 72 hour notice. Needs the caller's own PIN
+  /// (`pin_incorrect` / `pin_locked` as everywhere). Marking an already-marked device keeps its first deadline.
+  Future<Map<String, dynamic>> markDeviceLost(String deviceId, String pin) =>
+      _post('$meDevicesPath/$deviceId/mark-lost', {'pin': pin});
+
+  /// "I have it": brings the device back. Must quote the [incidentId] it answers.
+  Future<Map<String, dynamic>> deviceFound(String deviceId, String incidentId, String pin) =>
+      _post('$meDevicesPath/$deviceId/found', {'pin': pin, 'incidentId': incidentId});
+
+  /// "It is lost": ends the notice early and cuts the device off for good.
+  Future<Map<String, dynamic>> confirmDeviceLost(String deviceId, String incidentId, String pin) =>
+      _post('$meDevicesPath/$deviceId/confirm-lost', {'pin': pin, 'incidentId': incidentId});
 
   /// The Parental Controls screen's one-shot entry gate -- POST
   /// [verifyControlsPinPath], server/routes.mjs's real handler. Throws
