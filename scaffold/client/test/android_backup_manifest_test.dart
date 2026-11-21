@@ -22,6 +22,12 @@ void main() {
       expect(application, contains('android:fullBackupContent="@xml/backup_rules"'));
     });
 
+    test('our value wins over the call SDK, whose own manifest turns backup on', () {
+      // The Jitsi SDK's library manifest declares allowBackup="true"; without an explicit replace the manifest
+      // merger refuses the build (CI release smoke caught it), and a silent merge the other way would turn backup back on.
+      expect(application, contains('tools:replace="android:label,android:allowBackup"'));
+    });
+
     test('no source set turns it back on', () {
       for (final String set in <String>['debug', 'profile']) {
         final File f = File('android/app/src/$set/AndroidManifest.xml');
