@@ -162,6 +162,16 @@ export function createRecoveryMissBudget({ env = process.env, now } = {}) {
   return new MissBudget({ limit: posNum(env.RECOVERY_MISS_BUDGET_PER_MIN, 10), now });
 }
 
+/** MissBudget for the printed recovery sheet (a key that matches no live sheet). Env: RECOVERY_SHEET_MISS_BUDGET_PER_MIN. */
+export function createRecoverySheetMissBudget({ env = process.env, now } = {}) {
+  return new MissBudget({ limit: posNum(env.RECOVERY_SHEET_MISS_BUDGET_PER_MIN, 10), now });
+}
+
+/** MissBudget for the trusted helper's routes (an invite or helper key that matches nothing). Env: RECOVERY_HELPER_MISS_BUDGET_PER_MIN. */
+export function createRecoveryHelperMissBudget({ env = process.env, now } = {}) {
+  return new MissBudget({ limit: posNum(env.RECOVERY_HELPER_MISS_BUDGET_PER_MIN, 10), now });
+}
+
 /**
  * Per-principal limiter for AUTHENTICATED WRITE routes (S-B6): a valid but
  * hostile or buggy session could otherwise issue unbounded POST/PUT/DELETEs.

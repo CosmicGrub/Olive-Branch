@@ -459,6 +459,35 @@ class FamilyAccountService {
         await _safe(() => _record.save(AccountRecord(stage: AccountStage.signedUp, at: _now())));
       });
 
+  // ---- hooks for the recovery paths (recovery_paths_service.dart) -----------------------------------
+
+  /// One signed call with this phone's sign-in (refreshed once on a 401, like every call here). Throws
+  /// [AccountFailure] when no phone sign-in exists. For the recovery paths, which sit beside the account flow.
+  Future<T> signedCall<T>(Future<T> Function(String token) call) => _authed(call);
+
+  /// Whether this phone holds a sign-in that still works. False when there is none or it was ended. A lost
+  /// connection is thrown, because then nobody can tell.
+  Future<bool> signInWorks() => _signInIsAlive();
+
+  /// The recovery paths got this phone back into its OWN account (the same account id: nothing is made, copied or
+  /// moved): keep the new sign-in, install it, and remember the account's first child so the connected shell opens on
+  /// her again. Same keeping rules as a new account ([_afterAccountMade]).
+  Future<void> adoptRecoveredSignIn(Map<String, dynamic> r) async {
+    await _afterAccountMade(r, userKey: 'userId');
+    String? childId;
+    try {
+      final List<AccountChild> kids = await _authed((String t) async => <AccountChild>[
+            for (final Map<String, dynamic> c in await fetchMyChildren(baseUrl, t, client: _client))
+              if (AccountChild.tryParse(c) != null) AccountChild.tryParse(c)!,
+          ]);
+      if (kids.isNotEmpty) childId = kids.first.id;
+    } catch (_) {
+      // The sign-in is the point. The family page lists her again whenever it is opened.
+    }
+    await _safe(() => _record.save(AccountRecord(
+        stage: childId == null ? AccountStage.signedUp : AccountStage.childAdded, childId: childId, at: _now())));
+  }
+
   // ---- a child ------------------------------------------------------------------------------------
 
   Future<AccountChild> addChild({

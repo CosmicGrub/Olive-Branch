@@ -370,7 +370,10 @@ class _AskDialogState extends State<_AskDialog> {
   Future<void> _forgot(BuildContext context) async {
     final GuardianLocalController scope = GuardianLocalScope.maybeOf(context)!;
     final bool? reset = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
-        builder: (BuildContext _) => ForgotPinScreen(pin: widget.service, recovery: scope.services.recovery)));
+        builder: (BuildContext _) => ForgotPinScreen(
+            pin: widget.service,
+            recovery: scope.services.recovery,
+            onLostPhone: scope.onLostPhone == null ? null : () => scope.onLostPhone!(context))));
     // A new PIN now exists, but the thing this dialog guards is NOT approved by it: type the new PIN to go on.
     if (reset == true && mounted) setState(() => _message = 'Your new PIN is saved. Enter it to continue.');
   }

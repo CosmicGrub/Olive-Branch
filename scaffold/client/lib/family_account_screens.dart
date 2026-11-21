@@ -33,6 +33,8 @@ import 'family_account_service.dart';
 import 'family_account_store.dart' show JoinStage, PendingJoin;
 import 'local_family.dart' show HomeZone, kHomeZoneDevice, kHomeZones;
 import 'pairing_redeem_screen.dart' show PairingRedeemScreen;
+import 'recovery_paths_screens.dart' show LostPhoneScreen, RecoveryNoticeBanner, RecoverySafetyScreen;
+import 'recovery_paths_service.dart' show RecoveryPathsService;
 import 'screen_privacy.dart' show SensitiveScreen;
 
 /// The zones an account can be set to: the phone's own list without "same as this phone" (the server needs a real
@@ -228,9 +230,13 @@ class FamilyAccountScreen extends StatefulWidget {
     this.suggestedChildAge,
     this.onCodeRedeemed,
     this.baseUrl = '',
+    this.recovery,
   });
 
   final FamilyAccountService service;
+
+  /// The lost-phone paths (recovery_paths_service.dart). Null in a build or a test that does not offer them.
+  final RecoveryPathsService? recovery;
 
   /// From the family already set up on this phone, to save typing. Never sent anywhere until a grown-up submits.
   final String? suggestedName;
@@ -381,6 +387,16 @@ class _FamilyAccountScreenState extends State<FamilyAccountScreen> {
               onTap: () => _go(JoinInviteScreen(service: widget.service, resume: s.joining)),
             ),
           ),
+        // First, on purpose: a grown-up on a NEW phone who already has an account must not be tempted to make a second
+        // one (an empty family, with the real one left behind).
+        if (widget.recovery != null)
+          _Tile(
+            key: const Key('tileLostPhone'),
+            icon: Icons.phonelink_erase_outlined,
+            title: 'Lost your phone?',
+            subtitle: 'Get back into the family you already have. Nothing is lost.',
+            onTap: () => _go(LostPhoneScreen(service: widget.recovery!, account: widget.service)),
+          ),
         _Tile(
           key: const Key('tileCreateAccount'),
           icon: Icons.person_add_alt_1_outlined,
@@ -423,6 +439,18 @@ class _FamilyAccountScreenState extends State<FamilyAccountScreen> {
               icon: const Icon(Icons.refresh)),
         ),
       ),
+      if (widget.recovery != null) ...<Widget>[
+        RecoveryNoticeBanner(
+            service: widget.recovery!,
+            onOpen: () => _go(RecoverySafetyScreen(service: widget.recovery!))),
+        _Tile(
+          key: const Key('tileLostPhoneSafety'),
+          icon: Icons.phonelink_erase_outlined,
+          title: 'Lost phone safety',
+          subtitle: 'A printed recovery sheet, one trusted helper, and helping another grown-up get back in.',
+          onTap: () => _go(RecoverySafetyScreen(service: widget.recovery!)),
+        ),
+      ],
       if (s.hasPin == false)
         _Tile(
           key: const Key('tileSetPin'),
@@ -684,6 +712,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         children: <Widget>[
           const _Note('To make an account you need an invite code from whoever runs your Olive server. It is used once. '
               'Nothing from this phone is sent until you press the button.'),
+          const _Note('Already have an account, and this is a new phone? Do not make another one. It would start an '
+              'empty family and leave your real one behind. Go back and choose "Lost your phone?".',
+              key: Key('newAccountWarning')),
           _ProblemBox(_problem),
           _TextBox(key: const Key('allowanceCode'), controller: _code, label: 'Invite code', enabled: !_busy),
           _TextBox(key: const Key('accountName'), controller: _name, label: 'Your name', enabled: !_busy, maxLength: kAdultNameMax),

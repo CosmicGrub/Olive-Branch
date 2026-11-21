@@ -216,6 +216,8 @@ void main() {
       expect(importers.difference(<String>{
         'family_account_screens.dart', 'family_account_entry.dart', 'family_account_service.dart', 'guardian_more.dart',
         'guardian_boot.dart',
+        // the lost-phone paths sit beside the account flow and use its service (MASTERFILE 7.22)
+        'recovery_paths_screens.dart', 'recovery_paths_entry.dart', 'recovery_paths_service.dart',
       }), isEmpty);
       for (final String n in importers) {
         expect(n, isNot(startsWith('child_')));
