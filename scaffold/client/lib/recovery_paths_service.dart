@@ -30,6 +30,7 @@ import 'api_client.dart';
 import 'device_identity.dart' show FlutterSecureKeyValueStore, SecureKeyValueStore;
 import 'family_account_logic.dart';
 import 'family_account_service.dart';
+import 'lost_device_service.dart' show LostDeviceService;
 import 'recovery_paths_logic.dart';
 import 'server_transport_policy.dart' show OliveTransport;
 
@@ -264,6 +265,10 @@ class RecoveryPathsService {
   final HelperKeyStore _helper;
   final DateTime Function() _now;
   final Map<String, Future<Object?>> _flights = <String, Future<Object?>>{};
+  LostDeviceService? _lost;
+
+  /// The lost or stolen phone or tablet half (lost_device_service.dart): same account, same transport.
+  LostDeviceService get lostDevices => _lost ??= LostDeviceService(baseUrl: baseUrl, account: _account, client: _client);
 
   void dispose() {
     if (_ownsClient) _client.close();

@@ -94,6 +94,14 @@ class DeviceRevokedException extends UnauthorizedException {
   DeviceRevokedException() : super('device_revoked');
 }
 
+/// This phone was marked as lost by a grown-up of the family (migration 0057). It is NOT signed out: its sign-in is
+/// kept so it can come back when "I have it" is said and its owner types their own PIN. A subclass of
+/// [UnauthorizedException] so every existing `on UnauthorizedException` still catches it; a caller that wants the
+/// reason reads [error] (`device_paused`).
+class DevicePausedException extends UnauthorizedException {
+  DevicePausedException() : super('device_paused');
+}
+
 /// One recognized homework problem, as returned by POST
 /// [OliveApi.homeworkCapture] on success. `hint` has already been through
 /// the server's real guardHint() (packages/homework/src/capture.ts) — it is
@@ -464,6 +472,16 @@ class OliveApi {
   // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
   // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
   static const authRecover = '/v1/auth/recover';
+  // Lost or stolen phone or tablet (db/migrations/0057_lost_device.sql): mark it from another phone, bring it back,
+  // make the cut-off final, or have the lost phone erase its own copy the next time it connects. Own-PIN step-up on
+  // every action; the one call a lost phone makes for itself carries its own device credential, not a session.
+  static const meDevices = '/v1/me/devices';
+  static const meDeviceMarkLost = '/v1/me/devices/:deviceId/mark-lost';
+  static const meDeviceFound = '/v1/me/devices/:deviceId/found';
+  static const meDeviceConfirmLost = '/v1/me/devices/:deviceId/confirm-lost';
+  static const meDeviceOrderWipe = '/v1/me/devices/:deviceId/order-wipe';
+  static const meDeviceCancelWipe = '/v1/me/devices/:deviceId/cancel-wipe';
+  static const authDeviceWiped = '/v1/auth/device/wiped';
   // Recovery paths (db/migrations/0055_recovery_paths.sql): losing a phone without losing anything. A printed
   // recovery sheet and ONE trusted helper (set up while a phone still works, own-PIN step-up), another grown-up's
   // yes plus a waiting period, and the new phone's own calls (no session: every phone the account had is gone).
@@ -2147,6 +2165,54 @@ Future<Map<String, dynamic>> helperAnswerCall(String baseUrl,
         {required String helperKey, required String requestId, required bool yes, http.Client? client}) =>
     _identityPost(baseUrl, OliveApi.authHelperAnswer,
         {'helperKey': helperKey, 'requestId': requestId, 'answer': yes ? 'yes' : 'no'}, client: client);
+
+// ---- lost or stolen phone or tablet (migration 0057) ----------------------------------------------------------------
+// Free functions in the same shape as the recovery ones above. A reply is a map or an [ApiException]; the plain-words
+// layer is lost_device_logic.dart, and nothing here is ever shown to a person as it is.
+
+/// The phones and tablets this grown-up may see and act on -- GET [OliveApi.meDevices]. Never a credential.
+Future<Map<String, dynamic>> fetchFamilyDevices(String baseUrl, String sessionToken, {http.Client? client}) =>
+    _identityGet(baseUrl, OliveApi.meDevices, sessionToken, client: client);
+
+String _devicePath(String template, String deviceId) =>
+    template.replaceFirst(':deviceId', Uri.encodeComponent(deviceId));
+
+/// "Mark as lost" -- POST [OliveApi.meDeviceMarkLost], own-PIN step-up. The phone is paused at once; nothing is deleted.
+Future<Map<String, dynamic>> markDeviceLostCall(String baseUrl, String sessionToken,
+        {required String deviceId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, _devicePath(OliveApi.meDeviceMarkLost, deviceId), {'pin': pin},
+        sessionToken: sessionToken, client: client);
+
+/// "I have it" -- POST [OliveApi.meDeviceFound]. Must quote the [incidentId] it answers.
+Future<Map<String, dynamic>> deviceFoundCall(String baseUrl, String sessionToken,
+        {required String deviceId, required String incidentId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, _devicePath(OliveApi.meDeviceFound, deviceId), {'pin': pin, 'incidentId': incidentId},
+        sessionToken: sessionToken, client: client);
+
+/// "It is lost" -- POST [OliveApi.meDeviceConfirmLost]: the cut-off becomes final.
+Future<Map<String, dynamic>> confirmDeviceLostCall(String baseUrl, String sessionToken,
+        {required String deviceId, required String incidentId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, _devicePath(OliveApi.meDeviceConfirmLost, deviceId), {'pin': pin, 'incidentId': incidentId},
+        sessionToken: sessionToken, client: client);
+
+/// "Erase it when it connects" -- POST [OliveApi.meDeviceOrderWipe], the phone's owner only.
+Future<Map<String, dynamic>> orderDeviceWipeCall(String baseUrl, String sessionToken,
+        {required String deviceId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, _devicePath(OliveApi.meDeviceOrderWipe, deviceId), {'pin': pin},
+        sessionToken: sessionToken, client: client);
+
+/// Take that order back before the phone has carried it out -- POST [OliveApi.meDeviceCancelWipe].
+Future<Map<String, dynamic>> cancelDeviceWipeCall(String baseUrl, String sessionToken,
+        {required String deviceId, required String pin, http.Client? client}) =>
+    _identityPost(baseUrl, _devicePath(OliveApi.meDeviceCancelWipe, deviceId), {'pin': pin},
+        sessionToken: sessionToken, client: client);
+
+/// The lost phone says it has erased its own copy -- POST [OliveApi.authDeviceWiped]. No session: its own credential
+/// is the proof. A failure here is never shown to a person; the phone says it again the next time it connects.
+Future<Map<String, dynamic>> deviceWipedCall(String baseUrl,
+        {required String deviceId, required String deviceCredential, http.Client? client}) =>
+    _identityPost(baseUrl, OliveApi.authDeviceWiped,
+        {'deviceId': deviceId, 'deviceCredential': deviceCredential}, client: client);
 
 /// The children the signed-in grown-up holds a live edge to -- GET
 /// [OliveApi.meChildren]. How a guardian client learns child ids at all.

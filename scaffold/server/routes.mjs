@@ -1608,15 +1608,14 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     deviceId: r.deviceId, state: r.state, incidentId: r.incidentId, already: r.already,
     revokeDueAt: r.revokeDueAt ? new Date(r.revokeDueAt).toISOString() : null,
   });
-  const lostGate = async (c) => {
+  const lostGate = async (c, pin) => {
     if (c.principal.roleName === 'child' || !c.principal.userId) {
       return { status: 403, body: { error: 'guardian_session_required' } };
     }
-    const pinCheck = await requireOwnPin(c.principal.userId, c.body?.pin);
+    const pinCheck = await requireOwnPin(c.principal.userId, pin);
     if (!pinCheck.ok) return { status: pinCheck.status, body: { error: pinCheck.error } };
     return null;
   };
-  const incidentOf = (c) => (typeof c.body?.incidentId === 'string' ? c.body.incidentId : '');
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // GET /v1/me/devices -- the phones and tablets this grown-up may see and act on, with what each may be asked.
@@ -1636,7 +1635,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'POST', path: '/v1/me/devices/:deviceId/mark-lost', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
     handler: async (c) => {
-      const gate = await lostGate(c);
+      const gate = await lostGate(c, c.body?.pin);
       if (gate) return gate;
       const r = await markDeviceLost(pool, {
         deviceId: c.params.deviceId, userId: c.principal.userId,
@@ -1651,9 +1650,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'POST', path: '/v1/me/devices/:deviceId/found', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
     handler: async (c) => {
-      const incidentId = incidentOf(c);
+      const incidentId = typeof c.body?.incidentId === 'string' ? c.body.incidentId : '';
       if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
-      const gate = await lostGate(c);
+      const gate = await lostGate(c, c.body?.pin);
       if (gate) return gate;
       const r = await foundDevice(pool, {
         deviceId: c.params.deviceId, userId: c.principal.userId,
@@ -1669,7 +1668,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'POST', path: '/v1/me/devices/:deviceId/order-wipe', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
     handler: async (c) => {
-      const gate = await lostGate(c);
+      const gate = await lostGate(c, c.body?.pin);
       if (gate) return gate;
       const r = await orderDeviceWipe(pool, {
         deviceId: c.params.deviceId, userId: c.principal.userId,
@@ -1684,7 +1683,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'POST', path: '/v1/me/devices/:deviceId/cancel-wipe', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
     handler: async (c) => {
-      const gate = await lostGate(c);
+      const gate = await lostGate(c, c.body?.pin);
       if (gate) return gate;
       const r = await cancelDeviceWipe(pool, { deviceId: c.params.deviceId, userId: c.principal.userId, now: new Date() });
       if (!r.ok) return lostFailure(r);
@@ -1714,9 +1713,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     method: 'POST', path: '/v1/me/devices/:deviceId/confirm-lost', action: null,
     identityScopedByHandler: true, skipOuterSession: true,
     handler: async (c) => {
-      const incidentId = incidentOf(c);
+      const incidentId = typeof c.body?.incidentId === 'string' ? c.body.incidentId : '';
       if (!UUID_RE.test(incidentId)) return { status: 400, body: { error: 'incident_required' } };
-      const gate = await lostGate(c);
+      const gate = await lostGate(c, c.body?.pin);
       if (gate) return gate;
       const r = await confirmDeviceLost(pool, {
         deviceId: c.params.deviceId, userId: c.principal.userId,

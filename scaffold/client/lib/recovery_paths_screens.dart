@@ -32,6 +32,7 @@ import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInp
 import 'family_account_logic.dart';
 import 'family_account_screens.dart' show RecoverAccountScreen;
 import 'family_account_service.dart' show FamilyAccountService;
+import 'lost_device_screens.dart' show YourDevicesScreen;
 import 'recovery_paths_logic.dart';
 import 'recovery_paths_service.dart';
 import 'screen_privacy.dart' show SensitiveScreen;
@@ -879,6 +880,14 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
             ]),
           ]),
         ),
+      ),
+      // --- a phone or tablet that is lost right now: mark it, bring it back, make it final, erase it when it connects
+      _Tile(
+        key: const Key('tileLostDevices'),
+        icon: Icons.phonelink_lock_outlined,
+        title: 'Lost or stolen phone or tablet',
+        subtitle: 'Mark it as lost so it gets nothing new. Nothing is deleted, and you can change your mind for 3 days.',
+        onTap: () => _go(YourDevicesScreen(service: widget.service.lostDevices, now: widget.now)),
       ),
       // --- helping another grown-up
       if (s.canHelp.isNotEmpty)

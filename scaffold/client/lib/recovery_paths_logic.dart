@@ -396,7 +396,7 @@ enum RecoveryAction {
 const Set<String> kRecoveryKnownReasons = <String>{
   // own-PIN step-up and the session
   'guardian_session_required', 'pin_required', 'pin_incorrect', 'pin_locked', 'pin_not_set',
-  'device_revoked', 'invalid_device_credential', 'account_deactivated', 'rate_limited',
+  'device_revoked', 'invalid_device_credential', 'account_deactivated', 'rate_limited', 'device_paused',
   // the sheet
   'account_not_found', 'recovery_key_required', 'no_sheet', 'wrong_key', 'invalid_sheet',
   // the helper
@@ -457,6 +457,9 @@ AccountProblem _forApi(ApiException e, RecoveryAction a, String helperName) {
       return const AccountProblem('Your sign-in on this phone has ended. Sign in again to carry on.',
           ProblemKind.needsSignIn,
           reason: 'signed_out');
+    case 'device_paused':
+      return cannot('This phone was marked as lost, so it is paused. Nothing was deleted. If you have it and it is '
+          'yours, ask another grown-up to tap "I have it", then type your own PIN here.');
     case 'account_deactivated':
     case 'account_not_found':
       return cannot("The server can't find this account any more. Ask whoever runs your server.");

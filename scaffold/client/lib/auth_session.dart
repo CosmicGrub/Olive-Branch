@@ -99,6 +99,11 @@ class AuthSession {
   /// Install [session] as the process's session (null clears).
   static void use(AuthSession? session) => current = session;
 
+  /// What "erase on next contact" does on THIS phone: erases Olive's own copy of the family's records (the on-device
+  /// store and its key). Set once by the guardian shell. Null (a build or a test without it) means the order is NOT
+  /// carried out and NOT reported as done: a phone never says "erased" about something it did not do.
+  static Future<void> Function()? eraseOnOrder;
+
   // ---- state ------------------------------------------------------------------
 
   final String baseUrl;
@@ -170,13 +175,16 @@ class AuthSession {
     return refresh();
   }
 
-  /// Force a new token (the 401 path). Concurrent calls share one request.
-  Future<String> refresh() {
+  /// Force a new token (the 401 path). Concurrent calls share one request. A phone coming back from "marked as lost"
+  /// passes its owner's own [pin] once; a PIN is for that one call, so it is never shared with another caller's
+  /// request and never kept.
+  Future<String> refresh({String? pin}) {
     if (_ended) return Future<String>.error(DeviceRevokedException());
+    if (pin != null) return _doRefresh(pin: pin);
     return _refreshing ??= _doRefresh().whenComplete(() => _refreshing = null);
   }
 
-  Future<String> _doRefresh() async {
+  Future<String> _doRefresh({String? pin}) async {
     if (_dev) {
       final t = await devLoginFor(baseUrl, userId: userId, childId: childId, client: _client);
       return _token = t;
@@ -191,7 +199,7 @@ class AuthSession {
         .post(
           Uri.parse('$baseUrl${OliveApi.sessionRefreshPath}'),
           headers: {'content-type': 'application/json'},
-          body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred}),
+          body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred, if (pin != null) 'pin': pin}),
         )
         .timeout(const Duration(seconds: 10));
     final body = _decodeBody(res);
@@ -206,6 +214,18 @@ class AuthSession {
       return t;
     }
     final error = body['error'] as String? ?? 'error';
+    // The phone's owner ordered Olive's copy erased, and this phone proved its own credential to be told: erase it, say
+    // so, and only then let the sign-in go. If the erase or the saying-so fails the sign-in is kept, so the next
+    // contact is told again (the order stays until it is reported done).
+    if (res.statusCode == 401 && body['wipe'] == true && (error == 'device_paused' || error == 'device_revoked')) {
+      if (await _eraseAndReport(id, cred)) {
+        await _end();
+        throw DeviceRevokedException();
+      }
+      throw error == 'device_revoked' ? DeviceRevokedException() : DevicePausedException();
+    }
+    // Marked as lost: paused, NOT signed out. The sign-in stays so the phone can come back ("I have it").
+    if (res.statusCode == 401 && error == 'device_paused') throw DevicePausedException();
     if (res.statusCode == 401 &&
         (error == 'device_revoked' || error == 'invalid_device_credential')) {
       await _end();
@@ -216,6 +236,29 @@ class AuthSession {
       throw ForbiddenException(error);
     }
     throw ApiException.fromStatus(res.statusCode, error);
+  }
+
+  /// Erases this phone's copy, then tells the server it did. True only when BOTH happened.
+  Future<bool> _eraseAndReport(DeviceIdentity id, String cred) async {
+    final Future<void> Function()? erase = eraseOnOrder;
+    if (erase == null) return false;
+    try {
+      await erase();
+    } catch (_) {
+      return false;
+    }
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$baseUrl${OliveApi.authDeviceWiped}'),
+            headers: {'content-type': 'application/json'},
+            body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// A request came back 401 device_revoked: this device was cut off. Called by

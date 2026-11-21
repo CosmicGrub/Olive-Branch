@@ -464,6 +464,9 @@ AccountProblem _problemForApi(ApiException e, AccountAction a) {
     case 'device_revoked':
     case 'invalid_device_credential':
       return signedOut;
+    case 'device_paused':
+      return cannot('This phone was marked as lost, so it is paused. Nothing was deleted. If you have it and it is '
+          'yours, ask another grown-up to tap "I have it", then type your own PIN here.');
     case 'account_not_found':
       return const AccountProblem(
           "The server can't find your account. Sign in again, or ask whoever runs your server.",

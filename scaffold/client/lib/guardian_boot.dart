@@ -40,6 +40,7 @@ import 'device_identity.dart';
 import 'device_role.dart';
 import 'family_account_entry.dart';
 import 'recovery_paths_entry.dart' show openLostPhone;
+import 'recovery_paths_service.dart' show SecureHelperKeyStore, SecurePendingRecoveryStore;
 import 'family_account_store.dart';
 import 'guardian_home_live.dart';
 import 'app_lock.dart';
@@ -64,6 +65,23 @@ import 'theme_data.dart';
 /// local family ([_returnToPairing]).
 AuthSession _deviceSession(DeviceIdentity identity) =>
     AuthSession.device(baseUrl: kLiveBaseUrl, identity: identity, onSignedOut: _returnToPairing);
+
+/// "Erase it when it connects", carried out on THIS phone (migration 0057, lost-phone order from its owner). It erases
+/// Olive's own copy here: every on-device document and the key (the same wipe as "Data on this device"), and what the
+/// secure storage holds for an unfinished join, recovery or helper role. Nothing is deleted on the server or on any other
+/// phone: the family's records are safe. Throws when it could not finish, so the phone never reports an erase it did not do.
+Future<void> _eraseThisPhone() async {
+  await LocalServices.current.wipeAll();
+  try {
+    await SecurePendingJoinStore().clear();
+  } catch (_) {}
+  try {
+    await SecurePendingRecoveryStore().clear();
+  } catch (_) {}
+  try {
+    await SecureHelperKeyStore().clear();
+  } catch (_) {}
+}
 
 /// Where a grown-up goes when the connection ends. With a local family and PIN the device keeps
 /// working offline: back to that home. Without them, the code screen, as before.
@@ -229,6 +247,7 @@ Future<void> completeGuardianRedeem(Map<String, dynamic> result) async {
 /// is no local family and PIN yet, otherwise opens the offline home. [reuseStorage] keeps the
 /// already-open store (the unified entry opened it to read the role).
 Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) async {
+  AuthSession.eraseOnOrder = _eraseThisPhone;
   if (!reuseStorage) await _openLocalStorage(kLocalGuardianScope);
   final GuardianLocalServices local = GuardianLocalServices.from(LocalServices.current);
   final LocalFamily? family = await _safe(local.families.load, null);

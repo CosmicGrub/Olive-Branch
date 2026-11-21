@@ -222,6 +222,8 @@ void main() {
       expect(importers.difference(<String>{
         'recovery_paths_screens.dart', 'recovery_paths_entry.dart', 'recovery_paths_service.dart', 'recovery_paths_logic.dart',
         'family_account_screens.dart', 'family_account_entry.dart', 'guardian_more.dart', 'guardian_boot.dart',
+        // the lost or stolen phone or tablet screen (0057) is a sibling grown-up screen and reuses the shared words
+        'lost_device_logic.dart', 'lost_device_screens.dart',
       }), isEmpty);
       for (final String n in importers) {
         expect(n, isNot(startsWith('child_')));

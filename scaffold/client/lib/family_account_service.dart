@@ -465,6 +465,13 @@ class FamilyAccountService {
   /// [AccountFailure] when no phone sign-in exists. For the recovery paths, which sit beside the account flow.
   Future<T> signedCall<T>(Future<T> Function(String token) call) => _authed(call);
 
+  /// A phone that was marked as lost and then found shows its owner's own PIN once to get its session back
+  /// (the server asks for it: "pin_required"). The PIN is held only for this one call. Throws what the server said.
+  Future<void> resumeThisPhone(String pin) async {
+    final AuthSession s = await _session();
+    await s.refresh(pin: pin);
+  }
+
   /// Whether this phone holds a sign-in that still works. False when there is none or it was ended. A lost
   /// connection is thrown, because then nobody can tell.
   Future<bool> signInWorks() => _signInIsAlive();
