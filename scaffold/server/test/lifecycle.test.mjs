@@ -73,14 +73,15 @@ async function shutdownFixture() {
     server: f.server, wss: f.wss, pool: { end: async () => { poolEnds++; } },
     deadlineMs: 2000, log: (l) => logs.push(l),
   });
-  const t0 = Date.now();
   const p1 = shutdown('SIGTERM');
   const p2 = shutdown('SIGINT');     // a second signal while the first is running
   check('A shutdown', 'a second signal returns the SAME in-flight promise (idempotent)', p1 === p2, 'true');
   const out = await withTimeout(p1, 5000, 'shutdown');
   check('A shutdown', 'shutdown completes with an open websocket and an idle keep-alive socket',
     out === undefined, 'true');
-  check('A shutdown', 'and promptly, well inside the deadline (clients cooperate)', Date.now() - t0 < 1500, 'true');
+  // Behaviour, not a stopwatch: with cooperative clients the deadline path never runs. (A millisecond ceiling here failed
+  // under load for a reason unrelated to shutdown; ISS-035.)
+  check('A shutdown', 'and without needing the deadline (clients cooperate)', logs.some((l) => l.includes('deadline reached')), false);
   check('A shutdown', 'the websocket client received a clean 1001 "going away" close',
     await withTimeout(f.closed, 1000, 'wsclose'), 1001);
   check('A shutdown', 'pool.end() ran exactly once despite two signals', poolEnds, 1);
@@ -112,7 +113,10 @@ async function shutdownFixture() {
   const took = Date.now() - t0;
   check('A shutdown', 'a stuck client cannot block shutdown: it completes via the deadline path',
     out === undefined, 'true');
-  check('A shutdown', 'the deadline (not the 30 s ws close timeout) is what ended it', took >= 250 && took < 3000, 'true');
+  // A timer never fires early, so the lower bound is behaviour (it waited for the deadline instead of returning at once).
+  // The ceiling only has to tell the 300 ms deadline from the 30 s ws close timeout, so it sits far below 30 s and far
+  // above anything a loaded runner adds; the 6 s withTimeout above and the 'deadline reached' log below carry the rest.
+  check('A shutdown', 'the deadline (not the 30 s ws close timeout) is what ended it', took >= 250 && took < 15000, 'true');
   check('A shutdown', 'the deadline path is logged', logs.some((l) => l.includes('deadline reached')), 'true');
   check('A shutdown', 'pool.end() still ran exactly once on the deadline path', poolEnds, 1);
   raw.destroy(); f.keepAlive.destroy(); f.ws.terminate();

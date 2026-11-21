@@ -1,6 +1,9 @@
 name: release-smoke
-# ADVISORY (continue-on-error): builds the RELEASE APK of both entry points, boots an Android emulator and checks the
-# app survives 20 seconds after launch. Not part of the required `verify` job. Why it exists: a release APK crashed on
+# Builds the RELEASE APK of both entry points, boots an Android emulator and checks the app survives 20 seconds after
+# launch. NOT a required check (keep it out of the branch-protection list until it has proven stable), but HONEST: a
+# failing smoke run is red. It used to carry a job-level continue-on-error, which makes the job conclude success
+# whatever its steps did, so two runs with both variants failing showed green (ISS-024). The advisory part is a
+# branch-protection setting, not a lie in the result. Why it exists: a release APK crashed on
 # launch on both devices (the Jitsi SDK reads string resources that Flutter's release resource shrinking removed,
 # fixed in PR #204) while every debug build and every CI job was green. The cheap static half of this defence
 # (tools/check-release-shrink.mjs) runs inside `verify`; this is the real-launch half. How to read the artifacts:
@@ -9,6 +12,11 @@ name: release-smoke
 # STATUS: written without being able to run an emulator locally. Treat the first runs as calibration.
 on:
   workflow_dispatch:
+    inputs:
+      force_fail:
+        description: 'Fail immediately, to show that a failing smoke run is red (no build, no emulator)'
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'scaffold/client/**'
@@ -25,8 +33,10 @@ on:
 permissions:
   contents: read
 
+# Per-commit for a push (a merged commit's run is never displaced by the next merge), per-ref for a pull request, the
+# same as verify.yml (ISS-029).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -35,8 +45,8 @@ jobs:
     # which is what makes the x86_64 emulator hardware accelerated.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    # Advisory at first: a red smoke test must not block a merge until it has proven itself stable.
-    continue-on-error: true
+    # No job-level continue-on-error: it would turn every failure here into a green job (ISS-024). Whether a red smoke
+    # test may block a merge is decided by leaving this job out of the required status checks, not by hiding the result.
     strategy:
       fail-fast: false
       matrix:
@@ -52,6 +62,12 @@ jobs:
     env:
       API_LEVEL: '34'
     steps:
+      # Dispatch with force_fail=true to see the red a failing smoke run shows. First, so it costs seconds.
+      - name: forced failure (proves a failing smoke run is red)
+        if: ${{ inputs.force_fail }}
+        run: |
+          echo "force_fail was set: failing on purpose"
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -60,10 +76,16 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.44.8', channel: stable, cache: true }
+      # log-accepted-android-sdk-licenses: false and a quiet install: see verify.yml (ISS-036).
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
-      - run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+          log-accepted-android-sdk-licenses: false
+      - name: install SDK platform and build-tools
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > "$RUNNER_TEMP/sdkmanager.log" 2>&1 \
+            || { cat "$RUNNER_TEMP/sdkmanager.log"; exit 1; }
+          tail -n 3 "$RUNNER_TEMP/sdkmanager.log"
       - uses: actions/cache@v4
         with:
           path: |
@@ -94,8 +116,13 @@ jobs:
 
       # Cached AVD pattern from the emulator action's README: one run creates the AVD and a clean snapshot, later
       # runs boot from it. Keyed on everything that defines the image.
+      #
+      # RESTORE only here, SAVE explicitly right after the AVD is created (ISS-025). actions/cache@v4 saves in its
+      # post step, at the END of the job, which on a miss is after the smoke app was installed: the cached image then
+      # carried a copy of the app signed with that run's debug key, and the next run's install failed with
+      # INSTALL_FAILED_UPDATE_INCOMPATIBLE. Saved at creation, the cache holds a clean emulator and nothing else.
       - name: AVD cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         id: avd-cache
         with:
           path: |
@@ -118,6 +145,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "AVD snapshot generated for caching."
+
+      - name: save the clean AVD (only when it was just created)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}-google_apis-x86_64-pixel_6-emu2.38.0
 
       - name: launch release APK and watch it (${{ matrix.variant }})
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0

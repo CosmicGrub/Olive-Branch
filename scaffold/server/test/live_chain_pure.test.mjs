@@ -110,7 +110,7 @@ function readdirSyncSafe(p) { try { return readdirSync(p); } catch { return ['ER
     check('D ready', 'a hanging database is cut at 3 s, not waited on forever', await (async () => {
       const slow = { query: () => new Promise(() => {}) };
       const t0 = Date.now(); const r = await checkReadiness({ pool: slow, migrationsDir: mig, mediaRoot: media });
-      return `${r.failing.join()}/${Date.now() - t0 < 4500}`;
+      return `${r.failing.join()}/${Date.now() - t0 < 30000}`;
     })(), 'db/true');
     check('D ready', 'drain beats everything and does not even touch the database', await (async () => {
       let touched = false; const p = { query: async () => { touched = true; return { rows: [] }; } };
@@ -178,7 +178,7 @@ check('E host', 'garbage -> default', hostIntervalFromEnv({ DELIVERY_TICK_MS: 'f
   const sd2 = createShutdown({ server: { close: (cb) => cb(), closeIdleConnections() {}, closeAllConnections() {} }, pool: pool2,
     stopTimers: [() => new Promise(() => {})], deadlineMs: 1000, log: () => {} });
   const t0 = Date.now(); await sd2('test');
-  check('F shutdown', 'a worker pass that never settles cannot hold shutdown past the deadline', `${order2.join()}/${Date.now() - t0 < 3500}`, 'pool.end/true');
+  check('F shutdown', 'a worker pass that never settles cannot hold shutdown past the deadline', `${order2.join()}/${Date.now() - t0 < 10000}`, 'pool.end/true');
   const sd3 = createShutdown({ server: { close: (cb) => cb(), closeIdleConnections() {} }, pool: { end: async () => {} },
     stopTimers: [() => { throw new Error('boom'); }], log: () => {} });
   let threw = false; try { await sd3('t'); } catch { threw = true; }

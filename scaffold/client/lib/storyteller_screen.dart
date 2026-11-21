@@ -24,6 +24,7 @@
 // restart: a starred story's code, title and date, and a bookmark's place. No
 // read counts are stored (see local_repositories.dart).
 import 'dart:async';
+import 'dart:math' show Random;
 import 'package:flutter/material.dart';
 import 'access_scope.dart';
 import 'daily_time_gate.dart';
@@ -47,7 +48,17 @@ class StorytellerScreen extends StatefulWidget {
     this.initialFavourites = const [],
     this.initialBookmarks = const [],
     this.repository,
+    this.random,
+    this.storyCode,
   });
+
+  /// Where a new story's seed comes from. Null in the app (a fresh Random each time); a test passes a seeded one so
+  /// the story it gets, and so the layout it reads, is the same every run.
+  final Random? random;
+
+  /// When set, "Tell me a story!" opens this story code instead of a random one (the same six characters a child
+  /// can ask for again). Null in the app.
+  final String? storyCode;
 
   /// Null means the app's on-device shelf for this device's child.
   final StoryShelfRepository? repository;
@@ -125,7 +136,9 @@ class _StorytellerScreenState extends State<StorytellerScreen> {
   String get _nowIso => DateTime.now().toIso8601String();
 
   void _askForNewStory() => setState(() {
-        _current = story.freshStory(_personal);
+        _current = widget.storyCode != null
+            ? story.reread(widget.storyCode!, _personal)
+            : story.freshStory(_personal, widget.random);
         _index = 0;
         _recap = null;
       });

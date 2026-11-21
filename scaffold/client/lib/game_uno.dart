@@ -141,9 +141,12 @@ double _userScaleMinFor(ff.Posture posture) => (1.0 / _cardScaleFor(posture)).cl
 enum _Mode { none, vsCpu, vsPeer }
 
 class GameUnoScreen extends StatefulWidget {
-  const GameUnoScreen({super.key, required this.role, required this.displayName});
+  const GameUnoScreen({super.key, required this.role, required this.displayName, this.random});
   final String role;
   final String displayName;
+  /// The source of every shuffle and computer choice. Null in the app (a fresh Random); a test passes a seeded or
+  /// scripted one so a game is reproducible.
+  final Random? random;
 
   @override
   State<GameUnoScreen> createState() => _GameUnoScreenState();
@@ -160,7 +163,7 @@ class _GameUnoScreenState extends State<GameUnoScreen> {
   late final PlaySessionController _session = PlaySessionController(
     spec: unoSpec, game: _game, transport: _transport,
     store: LocalPlaySaveStore(LocalServices.current.area('playsave')));
-  final _rand = Random();
+  late final Random _rand = widget.random ?? Random();
 
   _Mode _mode = _Mode.none;
   UnoCpuDifficulty _cpuDifficulty = UnoCpuDifficulty.normal;
