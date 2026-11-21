@@ -2,7 +2,7 @@
  * The guided-first-run simulation guard (tools/check-sim-onboarding.mjs): the legitimate layout passes, every kind of planted
  * offender (workflow, Dockerfile, release script, device script, gradle, launch config, define file, env file, other Dart)
  * is caught, a re-spelling is caught, the reader losing or mangling the define is caught, and the real tree is clean.
- * usage: node tools/test/sim_onboarding_guard.test.mjs
+ * usage: node tools/test/onboarding_sim_guard.test.mjs
  */
 import { simProblems, realTreeProblems, readTree, READER } from '../check-sim-onboarding.mjs';
 

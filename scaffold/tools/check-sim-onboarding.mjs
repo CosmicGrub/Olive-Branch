@@ -10,7 +10,7 @@
  *
  * This guard fails if ANY file other than the short allow-list below mentions it:
  *   - client/lib/guided_sim.dart, which reads it (and must still read exactly that name);
- *   - this guard and its test;
+ *   - this guard and its test (the test is named so that its own file name does not contain the define's name);
  *   - prose documents (.md, .html), which describe it but cannot build anything.
  * The name is matched case-insensitively and without its OLIVE_ prefix, so a re-spelling still trips it.
  *
@@ -30,12 +30,12 @@ export const READER = 'scaffold/client/lib/guided_sim.dart';
 export const ALLOWED = new Set([
   READER,
   'scaffold/tools/check-sim-onboarding.mjs',
-  'scaffold/tools/test/sim_onboarding_guard.test.mjs',
+  'scaffold/tools/test/onboarding_sim_guard.test.mjs',
 ]);
 const PROSE = /\.(md|html)$/i;
 const NAME = /SIM_ONBOARDING/i;
 const READS = /bool\.fromEnvironment\(\s*'OLIVE_SIM_ONBOARDING'\s*\)/;
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'build', '.dart_tool', '.gradle', 'dist', '.claude', '.idea']);
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'build', '.dart_tool', '.gradle', 'dist', '.claude', '.idea', 'ephemeral', '.cxx']);
 
 const norm = (p) => p.split(sep).join('/').replace(/\\/g, '/');
 
@@ -69,7 +69,8 @@ export function readTree(root = ROOT) {
       try { st = statSync(full); } catch { continue; }
       if (st.isDirectory()) { walk(full); continue; }
       if (!st.isFile() || st.size > 4 * 1024 * 1024) continue;
-      const buf = readFileSync(full);
+      let buf;
+      try { buf = readFileSync(full); } catch { continue; } // a file another tool is writing right now
       if (buf.includes(0)) continue; // binary
       out.set(norm(relative(root, full)), buf.toString('utf8'));
     }

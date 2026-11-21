@@ -45,7 +45,7 @@ import 'local_pin_screens.dart';
 import 'local_services.dart';
 import 'pairing_redeem_screen.dart';
 
-enum GuardianOnboardingStage { welcome, you, her, zone, pin, connect }
+enum GuardianOnboardingStage { you, her, zone, pin, connect }
 
 /// Her age's home, in words, for the guided first run (the four homes in child_home_bands.dart).
 String guidedBandWords(int age) => age <= 4 ? 'ages 3 to 4' : age <= 7 ? 'ages 5 to 7' : age <= 12 ? 'ages 8 to 12' : 'ages 13 to 17';
@@ -150,7 +150,6 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
   }
 
   GuardianOnboardingStage _guidedStage(GuidedController g) => switch (g.current.id) {
-        'a.welcome' => GuardianOnboardingStage.welcome,
         'a.you' => GuardianOnboardingStage.you,
         'a.her' => GuardianOnboardingStage.her,
         'a.zone' => GuardianOnboardingStage.zone,
@@ -230,13 +229,15 @@ class _GuardianOnboardingFlowState extends State<GuardianOnboardingFlow> {
     if (widget.guided && g == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (g != null && g.paused) return GuidedPauseCard(controller: g);
     final GuardianOnboardingStage shown = g != null ? _guidedStage(g) : _stage;
+    // The guided run opens on the welcome card, which is not one of the five questions.
+    if (g != null && g.current.id == 'a.welcome') {
+      return _page(title: 'Welcome', intro: '', onNext: () => _forward(GuardianOnboardingStage.you), children: const <Widget>[]);
+    }
     // Past the PIN the guided run belongs to her home (guided_adult.dart): this flow has already handed over.
     if (g != null && shown == GuardianOnboardingStage.connect) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     switch (shown) {
-      case GuardianOnboardingStage.welcome:
-        return _page(title: 'Welcome', intro: '', onNext: () => _forward(GuardianOnboardingStage.you), children: const <Widget>[]);
       case GuardianOnboardingStage.you:
         return _page(
           title: 'About you',
