@@ -154,4 +154,179 @@ void main() {
       await h.stop();
     });
   });
+
+  group('the CODE way: her tablet shows six digits, the grown-up types them on the phone (real LAN transport)', () {
+    Future<(LanPairingHost, ChildPairingClient)> lanCode(AdultWindow w, DeviceKey key) async {
+      final LanPairingHost host = LanPairingHost(w, allowLoopback: true);
+      await host.start(advertise: false);
+      return (
+        host,
+        ChildPairingClient(
+            childKey: key, transport: LanPairingTransport('127.0.0.1', host.port!), pollEvery: const Duration(milliseconds: 5),
+            delay: (Duration d) => Future<void>.delayed(const Duration(milliseconds: 5))),
+      );
+    }
+
+    test('the window has no password until the code is typed; then the tablet connects, and nobody typed a PIN on the tablet', () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null, unlockPin: '4829');
+      expect(w.hasPassword, isFalse);
+      final (LanPairingHost h, ChildPairingClient c) = await lanCode(w, ck);
+      final String code = newPairingCode();
+      expect(isPairingCode(code), isTrue);
+      bool waited = false;
+      final Future<PairingResult> f = c.pair(handle: w.discoveryHandle, password: code, waitForCode: true, onWaitingForCode: () => waited = true);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(waited, isTrue);
+      expect(w.state, WindowState.open, reason: 'nothing starts before the grown-up has typed the code');
+      expect(w.provideCode(code), isTrue);
+      final PairingResult r = await f;
+      expect(r.ok, isTrue, reason: '${r.failure}');
+      expect(phone.delivered.length, 1);
+      await h.stop();
+    });
+
+    test("the typed-code check a tablet may be given comes from the grown-up's PIN, never from the six-digit code", () async {
+      final List<String> asked = <String>[];
+      final AdultWindow w = await AdultWindow.open(
+        adultKey: ak, adultName: 'Mom', familyId: 'fam', childId: 'kid', childName: 'Ivy', pin: null, unlockPin: '4829', awaitCode: true,
+        phoneOnly: false, requireMatch: false,
+        makeUnlockVerifier: (String p) {
+          asked.add(p);
+          return _cheap(p);
+        },
+      );
+      w.addListener(() async {
+        if (w.state == WindowState.awaitingApproval) await w.approve();
+      });
+      final (LanPairingHost h, ChildPairingClient c) = await lanCode(w, ck);
+      final Future<PairingResult> f = c.pair(handle: w.discoveryHandle, password: '246810', waitForCode: true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      w.provideCode('246810');
+      expect((await f).ok, isTrue);
+      expect(asked, <String>['4829']);
+      await h.stop();
+    });
+
+    test('a wrong code costs one try, is spent (the window asks for the code again), and the right one then works', () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null, unlockPin: '4829');
+      final (LanPairingHost h, ChildPairingClient c) = await lanCode(w, ck);
+      Future<PairingResult> attempt() => c.pair(handle: w.discoveryHandle, password: '482913', waitForCode: true);
+      Future<PairingResult> first = attempt();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(w.provideCode('000000'), isTrue); // the grown-up mistyped it
+      expect((await first).failure, PairingFailure.notMatched);
+      expect(w.attemptsLeft, 4);
+      expect(w.hasPassword, isFalse, reason: 'the wrong code is spent: it has to be typed again');
+      first = attempt();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(w.provideCode('482913'), isTrue);
+      expect((await first).ok, isTrue);
+      await h.stop();
+    });
+
+    test('provideCode takes exactly six digits, only in the code way, only while the window is open', () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null);
+      for (final String bad in <String>['', '12345', '1234567', '12345a', ' 12345', '١٢٣٤٥٦', '12 456']) {
+        expect(w.provideCode(bad), isFalse, reason: 'rejects "$bad"');
+      }
+      expect(w.hasPassword, isFalse);
+      final AdultWindow pinWindow = await phone.open();
+      expect(pinWindow.provideCode('123456'), isFalse, reason: 'a PIN window has its password already');
+      w.close();
+      expect(w.provideCode('123456'), isFalse);
+      pinWindow.close();
+    });
+
+    test('an expired window answers nothing, the question "has she typed it" included', () async {
+      DateTime t = DateTime.utc(2026, 11, 21, 9);
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null, now: () => t);
+      final (LanPairingHost h, ChildPairingClient c) = await lanCode(w, ck);
+      t = t.add(const Duration(minutes: 11));
+      final PairingResult r = await c.pair(handle: w.discoveryHandle, password: '123456', waitForCode: true);
+      expect(r.failure, PairingFailure.unreachable);
+      expect(w.provideCode('123456'), isFalse);
+      await h.stop();
+    });
+
+    test('a PIN window does not answer the code question: the code way cannot be forced onto it', () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open();
+      final (LanPairingHost h, ChildPairingClient c) = await lanCode(w, ck);
+      expect((await c.pair(handle: w.discoveryHandle, password: '123456', waitForCode: true)).failure, PairingFailure.unreachable);
+      await h.stop();
+      w.close();
+    });
+
+    test("a stranger on the network: guessing the code spends its own two tries, never the tablet's, and cannot connect", () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null, unlockPin: '4829');
+      w.provideCode('482913');
+      final DeviceKey thief = await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository());
+      int ok = 0;
+      for (int i = 0; i < 6; i++) {
+        final ChildPairingClient evil = ChildPairingClient(
+            childKey: thief, transport: LoopbackPairingTransport(w, source: '192.0.2.66'), delay: (Duration d) async {});
+        if ((await evil.pair(handle: w.discoveryHandle, password: '${100000 + i}')).ok) ok++;
+        if (w.hasPassword == false) w.provideCode('482913'); // the code is typed again each time a wrong one is spent
+      }
+      expect(ok, 0);
+      expect(w.attemptsLeft, greaterThanOrEqualTo(kWindowMaxAttempts - kSourceMaxFailures), reason: 'the stranger spent only its own budget');
+      // The real tablet, from another address, still has its tries.
+      if (!w.hasPassword) w.provideCode('482913');
+      final ChildPairingClient real = ChildPairingClient(
+          childKey: ck, transport: LoopbackPairingTransport(w, source: '192.0.2.10'), delay: (Duration d) async {});
+      expect((await real.pair(handle: w.discoveryHandle, password: '482913')).ok, isTrue);
+    });
+
+    test('five wrong codes end the window; the same code is not accepted afterwards; a recorded exchange cannot be replayed', () async {
+      final _Phone phone = _Phone(ak);
+      final List<Map<String, dynamic>> log = <Map<String, dynamic>>[];
+      AdultWindow w = await phone.open(awaitCode: true, pin: null);
+      // One good exchange, recorded.
+      w.provideCode('135790');
+      final PairingResult r = await ChildPairingClient(
+              childKey: ck, transport: LoopbackPairingTransport(w, log: log), delay: (Duration d) async {})
+          .pair(handle: w.discoveryHandle, password: '135790');
+      expect(r.ok, isTrue);
+      expect(w.state, WindowState.closed);
+      for (final Map<String, dynamic> m in log) {
+        expect(await w.handle(m), isNull, reason: 'a closed window answers nothing: ${m['t']}');
+      }
+      // A fresh window: five wrong codes (from five addresses, so the per-source limit does not hide the window cap).
+      w = await phone.open(awaitCode: true, pin: null);
+      for (int i = 0; i < 5; i++) {
+        w.provideCode('135790');
+        await ChildPairingClient(
+                childKey: await DeviceKey.loadOrCreate(MemoryDeviceKeyRepository()),
+                transport: LoopbackPairingTransport(w, source: '192.0.2.${100 + i}'), delay: (Duration d) async {})
+            .pair(handle: w.discoveryHandle, password: '${900000 + i}');
+      }
+      expect(w.state, WindowState.closed);
+      expect(w.provideCode('135790'), isFalse);
+      expect(phone.delivered.length, 1);
+    });
+
+    test('the Match step still stands between a guessed code and a connection: a wrong pick closes the window and nothing is issued', () async {
+      final _Phone phone = _Phone(ak);
+      final AdultWindow w = await phone.open(awaitCode: true, pin: null, approve: false);
+      w.provideCode('112233');
+      bool refused = false;
+      w.addListener(() {
+        if (w.state == WindowState.awaitingApproval && !w.matchConfirmed && !refused) {
+          refused = true;
+          w.pickMatch(null); // "None of these": the grown-up does not recognise the pictures
+        }
+      });
+      final PairingResult r = await ChildPairingClient(
+              childKey: ck, transport: LoopbackPairingTransport(w), delay: (Duration d) async {}, giveUpAfter: const Duration(seconds: 1))
+          .pair(handle: w.discoveryHandle, password: '112233');
+      expect(r.ok, isFalse);
+      expect(w.matchRefused, isTrue);
+      expect(phone.delivered, isEmpty);
+    });
+  });
 }
