@@ -1,7 +1,7 @@
 // OLIVE BRANCH — the guided first run's script table and docs/planning/ONBOARDING-SCRIPT.md cannot drift. A snapshot test:
 // every entry's id, slot, version, kind, strip position, what is seen, title, words, icon labels and action must be in the
 // document exactly, every document row must be in the table, and the fixed words, anchors, slots and script version
-// match. Verified by CI, headless. MASTERFILE §8.5.13.
+// match. Verified by CI, headless. MASTERFILE §8.5.14.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

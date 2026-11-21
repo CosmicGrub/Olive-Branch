@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the guided first run's extension point. MASTERFILE §8.5.13.
+// OLIVE BRANCH — the guided first run's extension point. MASTERFILE §8.5.14.
 //
 // A feature built later adds to the guided first run by adding ONE [GuidedEntry] to [kRegisteredGuidedEntries]:
 // a tour stop at a named slot, a "What's new" mini-tour entry, or an icon label on her "And there is more" card. The

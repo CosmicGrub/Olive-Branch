@@ -128,7 +128,7 @@ void main() {
       final List<LocalDataEntry> device =
           localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
       expect(device.map((LocalDataEntry e) => e.area).toList(),
-          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account']);
+          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account', 'guidedtour']);
       for (final LocalDataEntry e in device) {
         expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
         if (e.area != 'role') expect(e.encrypted, isTrue, reason: '${e.area} is sealed');

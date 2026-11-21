@@ -57,7 +57,7 @@ Words in curly braces are filled in from what the grown-up already told Olive: `
 | `a.tour.call` | adult.tour.core | 1 | coach | - | 7 of 9 | Your home, with the Call button lit up | Call | Call her from the top of your home. A call needs both of you to have internet. | Call = Needs internet on both sides | Next |
 | `a.tour.more` | adult.tour.close | 1 | coach | - | 7 of 9 | Your home, with More lit up | More | More holds everything else, and Settings is inside it. Nothing here is hidden. It is just tucked away so the home stays calm. | More = Everything else, and Settings | Next |
 | `a.tour.her` | adult.tour.close | 1 | coach | - | 7 of 9 | Your home, with More lit up again | Her: what she sees | Open More, then Settings, then Her. That is where you choose what she sees and how her app looks. | Her = What she sees, in Settings | Next |
-| `a.help` | adult.help | 1 | info | - | 8 of 9 | A calm card | Help is close by | You can see this tour again any time. Open More, then Settings, then Help, and tap Show me around again. Nothing here can break anything. | Help = In Settings ; Show me around again = Replays this | Next |
+| `a.help` | adult.help | 1 | info | - | 8 of 9 | A calm card | Help is close by | You can see this tour again any time. Open More, then Settings, then Learn, and tap Show me around again. Nothing here can break anything. | Help = In Settings, under Learn ; Show me around again = Replays this | Next |
 | `a.done` | adult.done | 1 | end | - | 9 of 9 | A calm card, and any parts you chose to do later | You are all set | Her home is ready. Take your time with it. | Home = Where you are going | Go to my home |
 
 ### Fixed screens of the grown-up half
@@ -120,7 +120,7 @@ Her try-its change nothing: the colour she taps is not saved, and the box she op
 
 ## Icon labels
 
-Every icon on the screens above is shown with its label spelled out beside or under it, never an icon alone. For the grown-up the labels are on the cards and on the tour stops. For her they are the label and the one-line friendly words from her own home's table (`kBandTiles`), so renaming a tile renames its welcome card.
+Every icon on the screens above is shown with its label spelled out beside or under it, never an icon alone. For the grown-up the labels are on the cards and on the tour stops. For her the label is the title of the tile in her own home's table (`kBandTiles`), so renaming a tile renames its welcome card; the one-line friendly words are the script's own.
 
 ## Saved, and how it resumes
 
@@ -141,9 +141,17 @@ Every icon on the screens above is shown with its label spelled out beside or un
 - **For a grandparent who does not use many apps:** no jargon (no "sync", "pair", "key", "server", "sign in"); every button says what it does in plain words ("Open the connect screen", "Go to my home"); the strip says where you are; Back is always there; nothing times out; the tablet steps are numbered and say which device to touch.
 - **For her:** pictures first; one idea; no reading needed to continue (the big arrow); nothing to get wrong, nothing to win or lose.
 
+## Showing it on one device (developer builds only)
+
+A build made with `--dart-define=OLIVE_SIM_ONBOARDING=true` (exactly `true`) starts the guided first run on a device that has already finished first run, without erasing anything, so each half can be shown on one device alone. It is for the device test lane, it restarts on every launch of such a build, and every simulated screen carries a band that says SIMULATED (developer build).
+
+- **On a phone:** the welcome, then a stand-in for "waiting for her tablet" (one tap says her tablet connected, so no second device is needed), then the real tour, Help and the last screen. Her name, age and PIN are not asked for again.
+- **On a paired tablet:** the grown-up gate card, then her welcome. The gate is a stand-in on a build with no real gate in reach.
+- No script, workflow or Dockerfile passes it; `tools/check-sim-onboarding.mjs` fails the build if one does.
+
 ## What the grown-up sees after an update
 
-A feature built later registers a "What's new" entry. An install that already finished first run is offered a short mini-tour of only the entries newer than the last script version it saw, once, after the grown-up unlocks the app, skippable and replayable from Settings, under Help, "Show me around again". See the extension procedure below.
+A feature built later registers a "What's new" entry. An install that already finished first run is offered a short mini-tour of only the entries newer than the last script version it saw, once, after the grown-up unlocks the app, skippable and replayable from Settings, under Learn, "Show me around again". See the extension procedure below.
 
 ## Extending the script
 

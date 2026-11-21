@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the guided first run's engine: a small state machine over a resolved list of entries.
-// MASTERFILE §8.5.13. Pure Dart plus a progress store; no widgets, so every rule is unit-tested.
+// MASTERFILE §8.5.14. Pure Dart plus a progress store; no widgets, so every rule is unit-tested.
 //
 // Slow-walk: nothing here ever advances by itself. Every transition is a method a person's tap calls. Each transition
 // writes the step name FIRST and then moves, so a killed app resumes at the right place.

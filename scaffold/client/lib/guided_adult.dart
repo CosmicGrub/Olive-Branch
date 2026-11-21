@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the grown-up's half of the guided first run, from the connect step onward, and the "What's new" mini
-// tour. MASTERFILE §8.5.13. Words: docs/planning/ONBOARDING-SCRIPT.md (guided_script.dart is the same table).
+// tour. MASTERFILE §8.5.14. Words: docs/planning/ONBOARDING-SCRIPT.md (guided_script.dart is the same table).
 //
 // [GuidedAdultHost] wraps the grown-up's HOME. It draws NOTHING unless one of these is true, so an install that already
 // finished first run and has nothing new is exactly as it was:

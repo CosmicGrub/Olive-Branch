@@ -1,7 +1,7 @@
 // OLIVE BRANCH — the grown-up's half of the guided first run, on the home: coach marks that find real anchors, the five
 // controls on every step, the progress strip, the pause, resume after a kill, the connect step with its helper strip,
 // "Show me around again", the "What's new" mini-tour, the simulation seam, large text, and the guarantee that an install
-// that already finished first run is not shown any of it. Verified by CI, headless. MASTERFILE §8.5.13.
+// that already finished first run is not shown any of it. Verified by CI, headless. MASTERFILE §8.5.14.
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -422,7 +422,7 @@ void main() {
           anchors: <String>[..._kStops, 'home.garden'],
           progress: const GuidedProgress(seenVersion: 1, adultDone: true, adultStep: 'a.done'),
           registered: <GuidedEntry>[
-            GuidedEntry(
+            const GuidedEntry(
                 id: 'diary', half: GuidedHalf.adult, slot: 'adult.tour.features', kind: GuidedKind.coach, phase: 'tour', since: 2,
                 whatsNew: true, needsFeature: 'diaryFeature', anchor: 'home.diary', title: 'The diary', words: 'x'),
             _newStop('garden'),

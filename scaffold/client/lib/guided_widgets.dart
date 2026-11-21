@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the guided first run's building blocks: the progress strip, the large calm card, the five controls,
-// the icon-label row, the coach-mark anchors and the coach-mark overlay. MASTERFILE §8.5.13.
+// the icon-label row, the coach-mark anchors and the coach-mark overlay. MASTERFILE §8.5.14.
 //
 // ANCHORS, NOT PIXELS. A tour stop names an anchor ("home.medsCare"); the real icon is wrapped in a [CoachAnchor] with
 // that name; the overlay measures it at draw time, so the same stop points at the right place on a phone, a folding

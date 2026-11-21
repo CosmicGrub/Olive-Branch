@@ -1,4 +1,4 @@
-// OLIVE BRANCH — the guided first run, THE SCRIPT AS DATA. MASTERFILE §8.5.13.
+// OLIVE BRANCH — the guided first run, THE SCRIPT AS DATA. MASTERFILE §8.5.14.
 //
 // This table IS docs/planning/ONBOARDING-SCRIPT.md in code: client/test/guided_script_doc_test.dart reads that file and
 // fails if an id, a slot, a version, a kind, a strip position, a title, the words, an icon label or an action differs.
@@ -279,10 +279,10 @@ final List<GuidedEntry> kBaseGuidedEntries = <GuidedEntry>[
     id: 'a.help', half: GuidedHalf.adult, slot: 'adult.help', kind: GuidedKind.info, phase: 'help',
     sees: 'A calm card',
     title: 'Help is close by',
-    words: 'You can see this tour again any time. Open More, then Settings, then Help, and tap Show me around '
+    words: 'You can see this tour again any time. Open More, then Settings, then Learn, and tap Show me around '
         'again. Nothing here can break anything.',
     labels: <GuidedLabel>[
-      GuidedLabel(Icons.help_outline, 'Help', 'In Settings'),
+      GuidedLabel(Icons.help_outline, 'Help', 'In Settings, under Learn'),
       GuidedLabel(Icons.replay, 'Show me around again', 'Replays this'),
     ],
   ),

@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the guided first run's setup half, inside the existing GuardianOnboardingFlow: a welcome, then About you,
 // About her (with her age band in words), Her clock and the PIN step, each with the strip and the five controls, and a
-// PIN step that is a slot another lane can fill. Verified by CI, headless. MASTERFILE §8.5.13.
+// PIN step that is a slot another lane can fill. Verified by CI, headless. MASTERFILE §8.5.14.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/device_role.dart';
@@ -9,6 +9,7 @@ import 'package:olive_client/guardian_onboarding.dart';
 import 'package:olive_client/guided_progress.dart';
 import 'package:olive_client/guided_script.dart';
 import 'package:olive_client/local_family.dart';
+import 'package:olive_client/local_pin.dart';
 
 void main() {
   late GuardianLocalServices services;
@@ -22,7 +23,7 @@ void main() {
   });
 
   /// A stand-in for the PIN screen the normal-keypad lane supplies: it stores a PIN for real, then calls back.
-  Widget fakePinStep(BuildContext c, service, Future<void> Function() onSaved) => FilledButton(
+  Widget fakePinStep(BuildContext c, LocalPinService service, Future<void> Function() onSaved) => FilledButton(
         key: const Key('fakePinSave'),
         onPressed: () async {
           await service.setPin('4821');
@@ -167,7 +168,7 @@ void main() {
   });
 
   testWidgets('a PIN that could not be kept is said plainly and nothing moves on', (t) async {
-    await pump(t, pin: (BuildContext c, service, Future<void> Function() onSaved) => const Text('no pin form here'));
+    await pump(t, pin: (BuildContext c, LocalPinService service, Future<void> Function() onSaved) => const Text('no pin form here'));
     await toPin(t);
     expect(find.text('no pin form here'), findsOneWidget);
     expect(finished, isEmpty);

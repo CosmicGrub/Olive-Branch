@@ -1,4 +1,4 @@
-// OLIVE BRANCH — where the guided first run keeps its place. MASTERFILE §8.5.13, §8.16.4 (`device.guidedtour`).
+// OLIVE BRANCH — where the guided first run keeps its place. MASTERFILE §8.5.14, §8.16.4 (`device.guidedtour`).
 //
 // What is kept: the script version this install last saw, the grown-up half's step and whether it is done, the parts
 // left "for later" (names only), and her half's state. NEVER a name, an age, a PIN or any answer: those are saved by

@@ -1,5 +1,5 @@
 // OLIVE BRANCH — her half of the guided first run, on her tablet: a short, joyful, picture-led welcome that is STARTED BY A
-// GROWN-UP. MASTERFILE §8.5.13. Words: docs/planning/ONBOARDING-SCRIPT.md ("Her half").
+// GROWN-UP. MASTERFILE §8.5.14. Words: docs/planning/ONBOARDING-SCRIPT.md ("Her half").
 //
 // [ChildWelcomeHost] wraps her home (inside the kiosk shell, so the grown-up gate is in scope). It shows nothing unless a
 // grown-up paired this tablet just now, or the welcome was left half-way, or a newer feature added an icon (the "What's

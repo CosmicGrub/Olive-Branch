@@ -6,6 +6,10 @@ Direction in force: **offline-first and on-device**. Online features (network ca
 
 Every gap between the planned family features and the shipped code is in [GAP-REGISTER.md](GAP-REGISTER.md); this file says what is done and what comes next.
 
+## In flight
+
+- **A guided first run** (this branch, `docs/planning/ONBOARDING-SCRIPT.md`, MASTERFILE 8.5.14): a scripted, slow-walking first run for the grown-up and a gentle welcome on her tablet, extensible by registering one entry, with a dev-only simulation seam. Built and tested headless; not run on a device. The normal PIN keypad is a separate lane: the PIN step here is a slot that lane's form fills.
+
 ## Merged so far (main)
 
 Foundations and hardening: server hardening (#137), real authenticated session (#138), on-device LocalStore (#141), performance pass (#146), non-superuser migration fix (#164), security round 2 (#158), domain correctness (#160), server snoop hardening (#172), security follow-ups including the PIN step-up client, first-PIN passkey check, PIN recovery from a second grown-up's phone and the S-B11 least-privilege runtime role (#180), health counters under FORCE RLS (#177).

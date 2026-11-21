@@ -1,6 +1,6 @@
 // OLIVE BRANCH — the guided first run's logic: the registry (order, slots, the delta for an older install, a missing or off
 // feature skipped with no gap), the engine (the five controls), and the progress record (hostile documents, a failing
-// store). Pure Dart; verified by CI, headless. MASTERFILE §8.5.13.
+// store). Pure Dart; verified by CI, headless. MASTERFILE §8.5.14.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/guided_engine.dart';

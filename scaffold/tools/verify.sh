@@ -645,6 +645,18 @@ else
 fi
 
 echo ""
+echo "── Dev-only guided-first-run simulation define ────────────────"
+# Not counted into TOTAL_PASS. The guided-first-run simulation define (see tools/check-sim-onboarding.mjs) starts the guided first run on a device
+# that already finished first run, with a stand-in for the other device, for the on-device test lane. NO script,
+# workflow or Dockerfile may pass it; only client/lib/guided_sim.dart reads it (a store build must never carry it).
+if node tools/test/sim_onboarding_guard.test.mjs >/tmp/sim.out 2>&1 && node tools/check-sim-onboarding.mjs >>/tmp/sim.out 2>&1; then
+  echo "  sim onboarding define      $(grep -c 'PASS' /tmp/sim.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/sim.out
+  echo "  SIM ONBOARDING GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
 # is passed in so C7 compares MARKUP's quoted figure against what was actually

@@ -865,13 +865,6 @@ class GuardianMoreScreen extends StatelessWidget {
           onTap: () => _open(context, LearnHomeScreen(
             principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId), childAge: childAge))),
-        SettingsRow(id: 'learnchoices', icon: Icons.tune_outlined, title: 'Your Learn choices',
-          subtitle: 'Every extra is optional',
-          onTap: () => _open(context, LearnSettingsScreen(
-            principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
-            store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
-      ]),
-      SettingsGroup('Help', [
         // The guided first run, again, on this phone (guided_adult.dart). It asks for nothing and changes nothing.
         SettingsRow(id: 'tour', icon: Icons.replay, title: 'Show me around again',
           subtitle: 'The welcome and the tour of your home, from the start. Nothing changes',
@@ -879,6 +872,11 @@ class GuardianMoreScreen extends StatelessWidget {
             Navigator.of(context).popUntil((route) => route.isFirst);
             GuidedReplay.ask();
           }),
+        SettingsRow(id: 'learnchoices', icon: Icons.tune_outlined, title: 'Your Learn choices',
+          subtitle: 'Every extra is optional',
+          onTap: () => _open(context, LearnSettingsScreen(
+            principal: LearnPrincipal('guardian', guardianId ?? 'local-guardian'),
+            store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
       ]),
       SettingsGroup('Account', [
         // Optional, like everything online: shown only where the build can reach a server (a connected shell, or a
