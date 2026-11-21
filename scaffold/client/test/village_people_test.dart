@@ -82,7 +82,7 @@ void main() {
       expect((await v.dad.welcome().overview()).forMe, isNotEmpty);
       await v.dad.welcome().answer(e.hashHex, WelcomeAnswer.yes);
       await sync(v);
-      final WelcomeRequest r = (await v.mom.welcome().overview()).sent.single;
+      final WelcomeRequest r = (await v.mom.welcome().overview()).sent.firstWhere((WelcomeRequest x) => x.hashHex == e.hashHex);
       expect(r.electors.firstWhere((ElectorStatus x) => x.name == 'Sam').answer, 'yes');
     });
 

@@ -348,15 +348,15 @@ class PeopleService {
   }
 
   /// Ending a parent together: the other parent has to agree on their own phone.
-  Future<void> proposeEndTogether(String gidHex) => _write(EntryType.guardianRemove,
+  Future<void> proposeEndTogether(String gidHex) async => _write(EntryType.guardianRemove,
       <String, Object?>{'gid': _g(gidHex), 'exp': nowMs() + kApprovalLifetimeMs});
 
   /// Asks another parent to agree to limits. Nothing changes until they say yes on their own phone, after a day.
-  Future<void> proposeLimits(String gidHex, List<int> caps) {
+  Future<void> proposeLimits(String gidHex, List<int> caps) async {
     final List<int> sorted = (caps.toSet().toList()..sort());
     if (sorted.isEmpty) throw const PeopleRefused('no-limits', 'Choose at least one thing to limit.');
     final int now = nowMs();
-    return _write(EntryType.limitsAgree,
+    await _write(EntryType.limitsAgree,
         <String, Object?>{'gid': _g(gidHex), 'limits': sorted, 'until': now + kThinkOverMs}, at: now);
   }
 
@@ -378,11 +378,11 @@ class PeopleService {
   }
 
   /// A yes in advance to look-only welcomes until [days] from now (at most 90). Writing a new one replaces the old.
-  Future<void> standingOk(int days) {
+  Future<void> standingOk(int days) async {
     if (days < 1 || days > kStandingMaxMs ~/ kMsPerDay) {
       throw const PeopleRefused('days', 'Choose between 1 and 90 days.');
     }
-    return _writeStanding(nowMs() + days * kMsPerDay);
+    await _writeStanding(nowMs() + days * kMsPerDay);
   }
 
   Future<void> takeBackStanding() => _writeStanding(0);

@@ -245,14 +245,14 @@ void main() {
       final Fam f = await two();
       final LedgerState before = await f.state();
       final List<List<int>> oldHead = before.heads;
-      final int oldAt = f.entries.map((LedgerEntry e) => e.issuedAtMs).reduce((int a, int b) => a > b ? a : b) + 1000;
+      final int oldAt = f.clock; // the welcome has settled by now, so dad is a member at this time
       f.clock += 20 * day;
       // Dad has been active since, so the ledger holds a recent entry of his that the old notice does not build on.
       final LedgerEntry active = await f.add(dad, EntryType.accessEnd, <String, Object?>{'gid': mom.gid, 'reason': 'notice'});
       final LedgerEntry backdated = await f.add(mom, EntryType.accessEnd, <String, Object?>{'gid': dad.gid, 'reason': 'notice'},
           prev: oldHead, at: oldAt);
       final LedgerState s = await f.state(active.issuedAtMs + day);
-      expect(s.rejected.containsKey(backdated.hashHex), isFalse, reason: 'it is well formed; it just does not count');
+      expect(s.rejected[backdated.hashHex], isNull, reason: 'it is well formed; it just does not count');
       expect(has(s, dad), isTrue, reason: 'a backdated notice must not remove a parent with no wait');
       expect(s.noticeFor(dad.gidHex), isNull, reason: 'and it does not show as a running notice either');
       expect(s.noticeFor(mom.gidHex)!.effMs, active.issuedAtMs + kEndNoticeMs, reason: 'the honest notice runs its full wait');

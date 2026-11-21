@@ -499,12 +499,18 @@ void main() {
     test('no child file imports a village file, and no village file imports a child file', () {
       final List<File> libs = Directory('lib').listSync(recursive: true).whereType<File>().where((File f) => f.path.endsWith('.dart')).toList();
       final RegExp imp = RegExp(r"^\s*(?:import|export)\s+'([^']+)'", multiLine: true);
+      // The village welcome files (the older village suite, village_repositories and village_guardian_screens, is a
+      // separate thing a child screen may legitimately use).
+      const Set<String> welcomeVillage = <String>{
+        'village_lan.dart', 'village_link.dart', 'village_meet.dart', 'village_people.dart', 'village_people_screens.dart',
+        'village_welcome_flow.dart', 'village_welcome_host.dart',
+      };
       for (final File f in libs) {
         final String name = f.path.replaceAll('\\', '/').split('/').last;
         for (final Match m in imp.allMatches(f.readAsStringSync())) {
           final String target = m.group(1)!.split('/').last;
-          if (name.startsWith('child_')) expect(target.startsWith('village_'), isFalse, reason: '$name imports $target');
-          if (name.startsWith('village_')) expect(target.startsWith('child_'), isFalse, reason: '$name imports $target');
+          if (name.startsWith('child_')) expect(welcomeVillage.contains(target), isFalse, reason: '$name imports $target');
+          if (welcomeVillage.contains(name)) expect(target.startsWith('child_'), isFalse, reason: '$name imports $target');
         }
       }
     });
