@@ -48,9 +48,11 @@ await admin.connect();
 const SECRET = Buffer.from('p'.repeat(32), 'utf8');
 const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'olive-recovery-paths-'));
 const api = new Api(SECRET, dbPort(pool), () => Date.now(), { strictIds: true });
-const codeBudget = new MissBudget({ limit: 8 });
-const sheetBudget = new MissBudget({ limit: 6 });
-const helperBudget = new MissBudget({ limit: 6 });
+// The hostile sections A to E make dozens of deliberate wrong guesses inside one minute; the budgets only get their
+// real (small) limits in section F, which is the one that tests them.
+const codeBudget = new MissBudget({ limit: 100000 });
+const sheetBudget = new MissBudget({ limit: 100000 });
+const helperBudget = new MissBudget({ limit: 100000 });
 registerRoutes(api, pool, new FilesystemStorage(tmpRoot), {
   callEnv: { CALL_PROVIDER: 'jitsi', NODE_ENV: 'test', JITSI_APP_ID: 'olive-calls',
     JITSI_APP_SECRET: randomBytes(32).toString('hex'), JITSI_SERVER_URL: 'https://calls.example.test:8443' },
@@ -89,7 +91,7 @@ const secondPhone = async (g) => {
   const c = await call('POST', '/v1/me/device-pairing-codes', g.tok, { pin: g.pin });
   const r = await call('POST', '/v1/device-pairing/redeem', null, { code: c.body.numericCode, role: 'guardian' });
   if (r.status !== 201 && r.status !== 200) throw new Error(`pairing failed ${r.status} ${JSON.stringify(r.body)}`);
-  return { tok: r.body.token, deviceId: r.body.deviceId, cred: r.body.deviceCredential };
+  return { tok: r.body.sessionToken, deviceId: r.body.deviceId, cred: r.body.deviceCredential };
 };
 const activeDevices = async (userId) => (await admin.query(
   `SELECT count(*)::int n FROM paired_device WHERE target_id = $1 AND role = 'guardian' AND revoked_at IS NULL`, [userId])).rows[0].n;
@@ -296,13 +298,14 @@ let MOM_NEW;
   check(g, 'a clock an hour behind cannot finish it either', dbEarly.reason, 'too_early');
 
   // wrong guesses are counted on THIS request, never on Mom's own PIN
+  const momPinFailsBefore = (await admin.query(`SELECT failed_attempts FROM pin_credential WHERE user_id = $1`, [MOM.userId])).rows[0].failed_attempts;
   const w1 = await finish(CODE, { pin: '1111' });
   check(g, 'a wrong PIN is 403 wrong_proof... not yet, the wait is not over', `${w1.status}`, '409');
   await age(s.body.requestId, 10_000);
   const w2 = await finish(CODE, { pin: '1111' });
   check(g, 'after the wait a wrong PIN -> 403 wrong_proof', `${w2.status} ${w2.body?.error}`, '403 wrong_proof');
   check(g, '...counted on the request, not on the account\'s own PIN lockout',
-    `${(await reqRow(s.body.requestId)).failed_attempts}|${(await admin.query(`SELECT failed_attempts FROM pin_credential WHERE user_id = $1`, [MOM.userId])).rows[0].failed_attempts}`, '1|0');
+    `${(await reqRow(s.body.requestId)).failed_attempts}|${(await admin.query(`SELECT failed_attempts FROM pin_credential WHERE user_id = $1`, [MOM.userId])).rows[0].failed_attempts - momPinFailsBefore}`, '1|0');
   check(g, '...so Mom\'s old phone can still use her real PIN', (await call('POST', '/v1/me/verify-controls-pin', MOM.tok, { pin: MOM.pin })).status < 400, 'true');
   check(g, 'no proof at all -> 400 proof_required', `${(await finish(CODE)).status} ${(await finish(CODE)).body?.error}`, '400 proof_required');
 
@@ -504,6 +507,7 @@ let MOM_NEW;
 {
   const g = 'F limits';
   // strangers guessing sheet keys spend the global sheet budget; the real owner is delayed at worst, never locked
+  sheetBudget.limit = 6; codeBudget.limit = 8; helperBudget.limit = 6;
   sheetBudget.misses = 0; sheetBudget.windowStart = Date.now();
   let last;
   for (let i = 0; i < 6; i++) last = await sheetStart(`${randomBytes(12).toString('hex').toUpperCase().slice(0, 24)}`);
