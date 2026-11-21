@@ -538,6 +538,90 @@ let M1, ART1;
   check(g, 'and it was delivered', (await dbRow(sent.body.id)).state, 'delivered');
 }
 
+// ===========================================================================
+// L . the grown-up's choice of WHEN: right away, a part of the day, a night
+// ===========================================================================
+{
+  const g = 'L send now and the choice of when';
+  check(g, 'a schedule with a bedtime hours away', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+
+  // --- right away -----------------------------------------------------------
+  const now = await send(CHILD, dadTok, { delivery: 'now' });
+  check(g, 'delivery now is accepted', now.status, 201);
+  check(g, 'it is stored ready (due the moment of sending)', now.body.state, 'ready');
+  check(g, 'the answer says which choice was stored (a client tells an old server from a new one)',
+    now.body.delivery, 'now');
+  // Due "at the instant of sending" is the app server's clock; the database's own now() may be a few
+  // hundred milliseconds behind it (two clocks), so allow it a moment rather than assume zero skew.
+  const dueRow = async () => (await admin.query(`SELECT policy::text AS policy, state, scheduled_at <= now() AS due,
+                                       scheduled_at < now() + interval '5 minutes' AS soon
+                                       FROM delivery_intent WHERE id = $1`, [now.body.id])).rows[0];
+  let nowRow = await dueRow();
+  for (let i = 0; i < 20 && !nowRow.due; i++) { await new Promise((r) => setTimeout(r, 100)); nowRow = await dueRow(); }
+  check(g, 'the stored policy is immediate', nowRow.policy, 'immediate');
+  check(g, 'it is due within moments, not waiting for bedtime hours away', nowRow.soon, true);
+  check(g, 'and it is due', nowRow.due, true);
+  const t1 = await tick();
+  check(g, 'the worker delivers it on its next tick, hours before bedtime', t1.ids.includes(now.body.id), true);
+  check(g, 'it is in her inbox', (await call('GET', `/v1/children/${CHILD}/inbox`, childTok)).body.entries
+    .some((x) => x.id === now.body.id), true);
+  check(g, 'the sender sees it as delivered', (await call('GET', `/v1/children/${CHILD}/sent`, dadTok)).body.messages
+    .find((m) => m.id === now.body.id)?.state, 'delivered');
+
+  // --- the same send with no bedtime at all ------------------------------------
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  const bare = await send(CHILD, dadTok, { delivery: 'now' });
+  check(g, 'right away works for a family whose day is not set up yet', bare.status, 201);
+  const bareBed = await send(CHILD, dadTok, { delivery: 'daypart', daypart: 'bedtime' });
+  check(g, 'but "at bedtime" still says there is no bedtime', `${bareBed.status}/${bareBed.body.error}`, '400/daypart_undefined');
+  check(g, 'a bedtime is set again', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+
+  // --- hostile combinations ---------------------------------------------------
+  const refuse = async (name, extra, want, token = dadTok, cid = CHILD) => {
+    const r = await send(cid, token, extra);
+    check(g, `${name} -> ${want}`, `${r.status}/${r.body.error}`, want);
+  };
+  await refuse('an unknown delivery word', { delivery: 'soon' }, '400/bad_delivery');
+  await refuse('delivery as a number', { delivery: 1 }, '400/bad_delivery');
+  await refuse('delivery as an object', { delivery: { now: true } }, '400/bad_delivery');
+  await refuse('now together with a night', { delivery: 'now', targetLocalDate: '2099-01-01' }, '400/now_has_no_date');
+  await refuse('a night chosen but no night given', { delivery: 'date' }, '400/date_required');
+  await refuse('a part of the day together with a night', { delivery: 'daypart', targetLocalDate: '2099-01-01' },
+    '400/daypart_has_no_date');
+  // An unknown day-part used to reach the database's CHECK and come back as a bare 500 for a dated send.
+  await refuse('a day-part that is not one of the ten kinds', { daypart: 'morning',
+    targetLocalDate: DateTime.now().toISODate() }, '400/invalid_daypart');
+  await refuse('a hostile day-part string', { daypart: "bedtime'; DROP TABLE delivery_intent;--" }, '400/invalid_daypart');
+  // A non-string day-part is read as "not given" (the default, bedtime), exactly as before.
+  await refuse('a day-part that is not a string is read as the default', { daypart: 7 }, '201/undefined');
+  const none = await call('POST', `/v1/children/${CHILD}/messages`, dadTok, { delivery: 'now' });
+  check(g, 'no storage key is still refused first', none.status, 400);
+
+  // --- the omitted field keeps the old behaviour ---------------------------------
+  const old = await send(CHILD, dadTok, {});
+  check(g, 'a client that sends no delivery field still schedules at bedtime', old.status, 201);
+  check(g, 'as at_daypart', (await admin.query(`SELECT policy::text AS p FROM delivery_intent WHERE id=$1`,
+    [old.body.id])).rows[0].p, 'at_daypart');
+  check(g, 'and the answer says daypart', old.body.delivery, 'daypart');
+  const night = DateTime.now().setZone(NY).plus({ days: 5 }).toISODate();
+  const oldDate = await send(CHILD, dadTok, { targetLocalDate: night });
+  check(g, 'and one that sends only a night still schedules that night', oldDate.status, 201);
+  check(g, 'as on_local_date', (await admin.query(`SELECT policy::text AS p FROM delivery_intent WHERE id=$1`,
+    [oldDate.body.id])).rows[0].p, 'on_local_date');
+  check(g, 'and the answer says date', oldDate.body.delivery, 'date');
+
+  // --- who may send now ----------------------------------------------------------
+  const childNow = await call('POST', `/v1/children/${CHILD}/messages`, childTok,
+    { storageKey: await upload(CHILD, childTok), durationMs: 5000, delivery: 'now' });
+  check(g, 'the child cannot send "now"', `${childNow.status}/${childNow.body.error}`, '403/child_cannot_send_now');
+  const sitterNow = await call('POST', `/v1/children/${CHILD}/messages`, sitterTok,
+    { storageKey: await upload(CHILD, sitterTok), durationMs: 5000, delivery: 'now' });
+  check(g, 'a sitter has no right to send at all', sitterNow.status, 403);
+  const strangerNow = await call('POST', `/v1/children/${CHILD}/messages`, strangerTok,
+    { storageKey: 'children/' + CHILD + '/messages/' + randomUUID(), durationMs: 5000, delivery: 'now' });
+  check(g, 'a stranger from another family is turned away', strangerNow.status, 403);
+}
+
 function report() {
 let gg = '';
 for (const r of rows) { if (r.g !== gg) { gg = r.g; console.log(`\n${gg}`); }

@@ -4115,6 +4115,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
+  const DELIVERY_CHOICES = ['now', 'daypart', 'date'];
   api.register({
     // POST counterpart to GET .../inbox — records an async video message and
     // schedules it, the real backend for client/lib/receipt_screen.dart's
@@ -4159,6 +4160,31 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const targetLocalDate = typeof body.targetLocalDate === 'string'
         ? body.targetLocalDate : null;
       const daypart = typeof body.daypart === 'string' ? body.daypart : 'bedtime';
+      // An unknown day-part used to pass every check for a dated send and die on the database's CHECK constraint
+      // as a bare 500 "internal". It is the caller's mistake, so it is refused up front as a 400 (the same ten
+      // kinds the day-parts PUT accepts). DAY_PART_KINDS is declared further down this function, before any
+      // request can arrive.
+      if (!DAY_PART_KINDS.includes(daypart)) return { status: 400, body: { error: 'invalid_daypart' } };
+      // `delivery` names the grown-up's choice outright: 'now' (as soon as the worker runs), 'daypart' (the
+      // next time that part of her day starts; the default) or 'date' (a specific night). It is optional so
+      // an older client that sends only `targetLocalDate` behaves exactly as before. A choice that
+      // contradicts the other fields is refused, never guessed at.
+      const delivery = body.delivery === undefined || body.delivery === null ? null : body.delivery;
+      if (delivery !== null && !DELIVERY_CHOICES.includes(delivery)) {
+        return { status: 400, body: { error: 'bad_delivery' } };
+      }
+      if (delivery === 'now' && c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_send_now' } };
+      }
+      if (delivery === 'now' && targetLocalDate) {
+        return { status: 400, body: { error: 'now_has_no_date' } };
+      }
+      if (delivery === 'date' && !targetLocalDate) {
+        return { status: 400, body: { error: 'date_required' } };
+      }
+      if (delivery === 'daypart' && targetLocalDate) {
+        return { status: 400, body: { error: 'daypart_has_no_date' } };
+      }
       // S-D2 -- "preservation is a standing rule" (MASTERFILE §16.2 #5, settled
       // v0.23.0): anything a GUARDIAN sends is kept unless she explicitly opts
       // OUT with preserve:false. This used to be `body.preserve === true`, so
@@ -4211,6 +4237,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           captionKey,
           targetLocalDate,
           daypart,
+          immediate: delivery === 'now',
           preserve,
           batchId,
           batchSeq,
@@ -4230,8 +4257,12 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       // `state` is what was actually stored: 'ready' when the capture-time
       // probe resolved a delivery instant (the worker delivers it when due),
       // 'pending' when it was left to the sweep.
+      // `delivery` echoes which of the three choices was actually stored, so a client that asked for 'now'
+      // can tell a server that honoured it from an older one that ignored the field.
       return { status: 201, body: {
-        id: persisted.intentId, artifactId: persisted.artifactId, state: persisted.state } };
+        id: persisted.intentId, artifactId: persisted.artifactId, state: persisted.state,
+        delivery: result.intent.policy === 'immediate' ? 'now'
+          : result.intent.policy === 'on_local_date' ? 'date' : 'daypart' } };
     },
   });
 

@@ -187,7 +187,11 @@ void main() {
       await t.pumpAndSettle();
 
       expect(find.textContaining("It's 9:14 PM for Ivy — she is sleep."), findsOneWidget);
-      expect(find.text('Send now anyway'), findsOneWidget);
+      // With a full live session the guard is the honest front door to the real composer: it no
+      // longer offers a "Send now" that printed "Sent" for a message that was never sent.
+      expect(find.text('Choose when it arrives'), findsOneWidget);
+      expect(find.text('Send now anyway'), findsNothing);
+      expect(find.text('Send now'), findsNothing);
       // The demo hour chips must not appear on the real live path.
       expect(find.text('10:40 PM'), findsNothing);
     });

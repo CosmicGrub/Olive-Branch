@@ -58,7 +58,7 @@ The family features share one dependency: **a real family object** (see GAP-REGI
 
 Lane A, child experience: Wave 8 child games parity (#192). Wave 6a and Wave 7 are merged.
 
-Lane B, guardian and care: the Wave 9a offline care UI, daily-time enforcement plus the expiry-digest reader and adult safety are merged. What remains is the family work above (Waves C to G).
+Lane B, guardian and care: the Wave 9a offline care UI, daily-time enforcement plus the expiry-digest reader and adult safety are merged. What remains is the family work above (Waves C to G). Also built, headless and not run on a device: the guardian side of sending (compose a video, choose right away, a part of her day or a night, honest status in adult words, an offline outbox on the phone) and a guardian editor for the child's day-parts (MASTERFILE section 8.31).
 
 Lane C, server and security (starts when capacity frees): the security findings still listed as not shipped in MASTERFILE section 7.12 (S-B2, S-B7, S-B10, S-B12 and others; re-check which section 7.12.1 closed), the family tenant isolation (S-D26, Wave H), the server-backed half of Wave 9 (9b), the open domain findings listed in section 7.13.
 
