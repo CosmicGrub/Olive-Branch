@@ -292,6 +292,8 @@ void main() {
   group('the notice on the account page', () {
     Future<void> pumpBanner(WidgetTester t, Phone p, {VoidCallback? onOpen}) async {
       AuthSession.use(p.session);
+      // Opened afresh each time, as a person opening the page again would (the same widget twice keeps its State).
+      await t.pumpWidget(const SizedBox.shrink());
       await t.pumpWidget(MaterialApp(
           home: Scaffold(body: LostDeviceNoticeBanner(service: svc(p), onOpen: onOpen ?? () {}, now: server.now))));
       await t.pumpAndSettle();

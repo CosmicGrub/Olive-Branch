@@ -188,6 +188,7 @@ void main() {
       expect(importers.difference(<String>{
         'lost_device_screens.dart', 'lost_device_service.dart', 'lost_device_logic.dart',
         'recovery_paths_screens.dart', 'recovery_paths_service.dart',
+        'family_account_screens.dart', // the account page shows the one calm notice and opens the list
       }), isEmpty);
       for (final String n in importers) {
         expect(n, isNot(startsWith('child_')));
