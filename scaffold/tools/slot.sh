@@ -195,7 +195,9 @@ cmd_release() {
 }
 
 case "${1:-}" in
-  acquire) shift; cmd_acquire "$@" ;;
+  acquire) shift
+          [ -n "${OLIVE_LOCK_DIR:-}" ] || echo "slot.sh: OLIVE_LOCK_DIR is not set; using $ROOT, which other checkouts do not share. Set it to the machine's one agreed lock directory." >&2
+          cmd_acquire "$@" ;;
   renew)   shift; cmd_renew "$@" ;;
   release) shift; cmd_release "$@" ;;
   status)  shift; cmd_status ;;
