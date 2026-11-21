@@ -249,7 +249,7 @@ void main() {
       expect(routes, contains('c.principal.userId'), reason: 'sender is the session');
     });
 
-    test('the three delivery choices are the route's, and "now" is the engine's immediate policy', () {
+    test("the three delivery choices are the route's, and now is the engine's immediate policy", () {
       expect(routes, contains("const DELIVERY_CHOICES = ['now', 'daypart', 'date'];"));
       expect(routes, contains("immediate: delivery === 'now'"));
       expect(pipeline, contains("? 'immediate' : input.targetLocalDate ? 'on_local_date' : 'at_daypart'"));
