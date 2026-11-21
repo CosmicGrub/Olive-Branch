@@ -16,7 +16,7 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
-### Encrypted family backup: the server half (migration 0057; server only, no screen yet)
+### Encrypted family backup: the server half (migration 0054; server only, no screen yet)
 So a lost phone never costs the family its records. Full account in MASTERFILE 7.22.
 - **Sealed on the phone, opaque to the server.** Per-family vault, per-grown-up and per-device sessions, resumable chunked upload and download for weak links, idempotent begin, a hash chain signed by the phone so the phone can tell if the server edited, hid, reordered or rolled back a backup. The server lists exactly what it can see and holds no key.
 - **Nothing is silently overwritten.** The newest versions stay live; older ones become set-aside versions whose bytes are kept for a recovery window (default 180 days). The database refuses to delete or rewrite a committed backup. A separate allowance means set-aside copies never crowd out a new backup.

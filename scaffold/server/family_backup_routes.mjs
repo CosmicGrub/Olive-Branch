@@ -5,7 +5,7 @@
 // { status, body } into a response. Every route lives under /v1/backup/.
 //
 // The first lock is here (guardian session + device session + PIN for sensitive acts); the second is the
-// database (row level security and the append-only triggers, db/migrations/0057_family_backup.sql).
+// database (row level security and the append-only triggers, db/migrations/0054_family_backup.sql).
 // Nothing here ever sees a key: bodies carry opaque, already-sealed bytes and hashes.
 import { TokenBuckets } from './rate_limit.mjs';
 import { backupConfig } from './family_backup.mjs';

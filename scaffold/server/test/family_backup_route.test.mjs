@@ -1,5 +1,5 @@
 /**
- * Encrypted family backup, the SERVER half (db/migrations/0057_family_backup.sql, server/family_backup*.mjs),
+ * Encrypted family backup, the SERVER half (db/migrations/0054_family_backup.sql, server/family_backup*.mjs),
  * end to end against a REAL Postgres through the REAL Api (strict ids ON, as in production). Every account
  * comes from POST /v1/auth/signup; the only SQL seeding is the guardianship edges a family would get from the
  * invite flow, and the clock (the waiting period is moved by rewinding the stored times, never by editing a rule).

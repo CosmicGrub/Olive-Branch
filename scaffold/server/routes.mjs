@@ -4755,7 +4755,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
-  // Encrypted family backup (migration 0057, MASTERFILE 7.22): /v1/backup/*. Grown-up sessions on an
+  // Encrypted family backup (migration 0054, MASTERFILE 7.22): /v1/backup/*. Grown-up sessions on an
   // enrolled device only; the server holds ciphertext and never a key.
   registerBackupRoutes(api, pool, { requireOwnPin, env: opts.backupEnv ?? process.env,
     limiters: opts.backupLimiters, cfg: opts.backupConfig });

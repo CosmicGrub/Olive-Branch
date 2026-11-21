@@ -68,7 +68,7 @@ const ALLOWED = {
   backup_restore_request: 'id vault_id requested_by device_id created_at wait_hours not_before approval_required approved_by approved_at approver_kind expires_at state cancelled_by cancelled_at completed_at token_hash token_issued_at token_expires_at token_issue_count token_failures',
   backup_vault_event: 'seq vault_id scope kind actor_user restore_id summary created_at',
 };
-const mig = read('db/migrations/0057_family_backup.sql');
+const mig = read('db/migrations/0054_family_backup.sql');
 const actual = {};
 for (const m of mig.matchAll(/CREATE TABLE (backup_\w+) \(([\s\S]*?)\n\);/g)) {
   const cols = [];
@@ -85,7 +85,7 @@ check('sees', 'MASTERFILE 7.22 has the "what the server can see" list and the "c
 check('sees', 'no column of any backup table can hold a name, address, location, email or device label', Object.values(ALLOWED).join(' ').split(' ').filter((c) => /(^|_)(name|display_name|label|email|ip|address|location|lat|lon|gps|serial)($|_)/.test(c)).join(',') || 'none', 'none');
 check('sees', 'the only free text a backup table holds is the server\'s own fixed notice sentence', mig.match(/\bsummary\s+text\b/g).length, 1);
 check('sees', 'every table has row level security enabled AND forced', Object.keys(ALLOWED).filter((t) => !new RegExp(`ALTER TABLE ${t}\\s+ENABLE ROW LEVEL SECURITY`).test(mig) || !new RegExp(`ALTER TABLE ${t}\\s+FORCE\\s+ROW LEVEL SECURITY`).test(mig)).join(',') || 'none', 'none');
-check('sees', 'migration number 0057 is used by exactly one file', readdirSync(new URL('../../db/migrations/', import.meta.url)).filter((f) => f.startsWith('0057_')).join(), '0057_family_backup.sql');
+check('sees', 'migration number 0054 is used by exactly one file', readdirSync(new URL('../../db/migrations/', import.meta.url)).filter((f) => f.startsWith('0054_')).join(), '0054_family_backup.sql');
 
 // ---- 4. wiring ------------------------------------------------------------------------------------------------------------
 const verify = read('tools/verify.sh');

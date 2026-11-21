@@ -472,7 +472,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
             "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs" \
-            "encrypted family backup: vault, chunked resumable upload, retention, immutability, restore waiting period, pause, helper, isolation (0057, real DB, strict ids)|server/test/family_backup_route.test.mjs" \
+            "encrypted family backup: vault, chunked resumable upload, retention, immutability, restore waiting period, pause, helper, isolation (0054, real DB, strict ids)|server/test/family_backup_route.test.mjs" \
             "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
