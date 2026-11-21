@@ -71,6 +71,13 @@ const site = await serve((req, res) => { if (req.url === '/update-manifest.json'
   check(g, 'garbage is refused', failedWith(await run('<html>captive portal</html>'), /notJson/), true);
   check(g, 'an empty answer is refused', failedWith(await run(''), /notJson/), true);
   check(g, 'a manifest larger than 256 KiB is refused before it is read', failedWith(await run(' '.repeat(300 * 1024)), /tooMuchData|tooLarge/), true);
+  // The publisher check is never looser than the app: text the app refuses must FAIL here, not warn and end VERIFIED.
+  for (const [what, extra] of [['markup in a note', { notes: ['Tap <b>here</b>'] }], ['a bidi override in the headline', { headline: `Safe${String.fromCharCode(0x202e)}fas` }], ['edge spaces in a note', { notes: [' padded '] }]]) {
+    const r = await run(JSON.stringify(signedDoc({ ...goodPayload, ...extra })));
+    check(g, `${what}: the app would silently ignore this manifest, so the verifier FAILS it`, [r.ok, failedWith(r, /accepted by the app[^]*badShape/)], [false, true]);
+  }
+  const poisonedSeq = await run(JSON.stringify(signedDoc({ ...goodPayload, sequence: Number.MAX_SAFE_INTEGER })));
+  check(g, 'a sequence far above the issue time fails the release policy (it would strand every phone that accepted it)', [poisonedSeq.ok, failedWith(poisonedSeq, /release policy[^]*replayed/)], [false, true]);
   check(g, 'a versionCode not derived from the version fails the release policy even though it is signed', failedWith(await run(JSON.stringify(signedDoc({ ...goodPayload, versionCode: 5201 }))), /release policy/), true);
   check(g, 'a mirror-less manifest passes with a warning, not a failure', await (async () => { const r = await run(JSON.stringify(signedDoc(payload([{ ...entry, urls: [entry.urls[0]] }])))); return [r.ok, r.checks.find((c) => /mirror is named/.test(c.name)).status]; })(), [true, 'warn']);
   const cleartext = base({ manifest: site.url('/update-manifest.json'), allowLoopbackHttp: false });

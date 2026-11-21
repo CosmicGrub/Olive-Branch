@@ -98,7 +98,8 @@ const URLCRED = j('postgres://', 'admin', ':', 'Zq8vK2mP9xLw', '@', 'db.internal
   check(g, 'identity match is case-insensitive', has(`owner ${WHO.toUpperCase()}`, 'identity', [WHO]), true);
   for (const f of ['google-services.json', 'app/google-services.json', 'GoogleService-Info.plist',
     'upload-key.jks', 'release.keystore', 'client/android/key.properties', 'local.properties',
-    '.env', 'server/.env.production', 'certs/server.pem', 'id_ed25519']) {
+    '.env', 'server/.env.production', 'certs/server.pem', 'id_ed25519',
+    'olive-update.key', 'keys/anything.key', 'olive-update.key.pub', 'olive-update-backup']) {
     check(g, `sensitive file name: ${f}`, scanPath(f).some((x) => x.rule === 'sensitive-file'), true);
   }
   check(g, 'a file NAME that is itself an absolute local path', scanPath(WINPATH).some((x) => x.rule === 'path'), true);

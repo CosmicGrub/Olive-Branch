@@ -45,6 +45,10 @@ export const LIMITS = Object.freeze({
   jsonDepth: 8,
   /** A published manifest dated further ahead than this is "from the future" (a wrong clock or a forgery). */
   clockSkewMs: 24 * 3600 * 1000,
+  /** Publisher policy: how far above issuedAt (in epoch seconds) a sequence may be. */
+  sequenceSlackSeconds: 86400,
+  /** Publisher policy: the signing tool refuses an issuedAt further ahead of the real clock than this. */
+  signSkewMs: 10 * 60 * 1000,
   zipEntries: 20000,
   zipUncompressedBytes: 2 * 1024 * 1024 * 1024,
   zipRatio: 1000,
@@ -385,12 +389,13 @@ export function validatePayload(o, { strict = true, allowLoopbackHttp = false } 
       if (o.notes.length > LIMITS.notes) bad('notes', `holds more than ${LIMITS.notes} lines`);
       o.notes.forEach((n, k) => {
         if (!short(`notes[${k}]`, n, LIMITS.noteChars)) return;
-        if (strict && NOTE_FORBIDDEN.test(n)) bad(`notes[${k}]`, 'must be plain text: no angle brackets, backticks, control or invisible characters');
-        else if (strict && n !== n.trim()) bad(`notes[${k}]`, 'must not start or end with spaces');
+        // Plain-text rules are NOT relaxed by strict:false (the app refuses these unconditionally); strict only governs unknown members.
+        if (NOTE_FORBIDDEN.test(n)) bad(`notes[${k}]`, 'must be plain text: no angle brackets, backticks, control or invisible characters');
+        else if (n !== n.trim()) bad(`notes[${k}]`, 'must not start or end with spaces');
       });
     }
   }
-  if (strict && typeof o.headline === 'string' && (NOTE_FORBIDDEN.test(o.headline) || o.headline !== o.headline.trim())) bad('headline', 'must be plain text with no markup, control characters or edge spaces');
+  if (typeof o.headline === 'string' && (NOTE_FORBIDDEN.test(o.headline) || o.headline !== o.headline.trim())) bad('headline', 'must be plain text with no markup, control characters or edge spaces');
 
   if ('apks' in o) {
     if (!Array.isArray(o.apks) || o.apks.length < 1 || o.apks.length > LIMITS.apks) bad('apks', `must hold 1 to ${LIMITS.apks} files`);
@@ -437,6 +442,12 @@ export function policyProblems(o, { buildNumberFn = defaultBuildNumber, requireM
     let want;
     try { want = buildNumberFn(o.versionName); } catch (e) { out.push(`versionName: ${e.message}`); }
     if (want !== undefined && o.versionCode !== want) out.push(`versionCode: ${o.versionCode} is not major*10000 + minor*100 + patch of ${o.versionName} (= ${want}); the code is derived from the version, never chosen`);
+  }
+  // A sequence far above the issue time would be remembered by every phone that accepts it, and every later manifest would
+  // then look "replayed": updates dead for good. The sequence is therefore bounded by the issue time (in seconds) plus a day.
+  const issued = parseTime(o.issuedAt);
+  if (Number.isSafeInteger(o.sequence) && issued !== null && o.sequence > Math.floor(issued / 1000) + LIMITS.sequenceSlackSeconds) {
+    out.push(`sequence: ${o.sequence} is above the issue time in seconds (${Math.floor(issued / 1000)}) plus ${LIMITS.sequenceSlackSeconds}; a sequence this high would make every later manifest look replayed. Use the default (seconds since the epoch at issue)`);
   }
   if (requireMirror && Array.isArray(o.apks)) o.apks.forEach((a, k) => { if (Array.isArray(a.urls) && a.urls.length < 2) out.push(`apks[${k}].urls: a published update names a primary address AND at least one mirror`); });
   return out;

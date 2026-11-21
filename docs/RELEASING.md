@@ -158,9 +158,14 @@ server or a chat.
 ```bash
 # once, on a machine you control (the folder must exist and must not be inside any git working tree)
 cd scaffold
-OLIVE_UPDATE_KEY_PASSPHRASE='<a long passphrase>' \
+OLIVE_UPDATE_KEY_PASSPHRASE='<a few ordinary words, at least 14 characters>' \
   node tools/update/gen-update-key.mjs --out /absolute/path/outside/any/repo/olive-update.key --passphrase-env OLIVE_UPDATE_KEY_PASSPHRASE
 ```
+
+The passphrase is required (`--no-passphrase` is the explicit, discouraged alternative: a plain key file). The file is encrypted with
+AES-256-GCM under a key derived by scrypt, so guessing it offline is costly. The tool also refuses a folder that OneDrive, Dropbox,
+iCloud Drive or Google Drive syncs, because the key would be copied to a third party's servers: use a local folder or a removable
+drive. `.gitignore` and the privacy gate also treat `*.key` and `olive-update*` as files that never belong in the repository.
 
 It prints the **public** entry (`kid:key`) and writes it beside the key as `olive-update.key.pub`. The private key is written
 only to the path you named; the tool refuses a path inside any git working tree (this repository included), refuses a relative
@@ -197,9 +202,13 @@ Everything below runs on **your** machine. CI builds artifacts (next section) bu
    It checks the version places agree, reads the notes, builds the direct APK for each `--abi` (default `arm64-v8a`) with the public
    key and the manifest address baked in, refuses a debug-signed build, reads the APK's signing certificate with `apksigner`, checks the
    package and `versionCode` inside the file with `aapt2`, inspects the zip (no duplicate entries, no zip bomb), computes the size,
-   SHA-256 and a per-1-MiB chunk hash list, and writes `scaffold/out/update/X.Y.Z/`: the APK, `SHA256SUMS`,
+   SHA-256 and a per-1-MiB chunk hash list, and writes `scaffold/out/update/X.Y.Z/`: the APK, `SHA256SUMS.direct`,
    **`update-manifest.draft.json`** (not signed) and `NEXT-STEPS.txt`. It never reads a private key and uploads nothing. A prebuilt,
-   already release-signed file can be packaged instead with `--apk arm64-v8a=<file>` (see "Using the CI build" below).
+   already release-signed file can be packaged instead with `--apk arm64-v8a=<file> --has-update-key`, but only if that file was built
+   with the same `OLIVE_UPDATE_PUBKEYS` and `OLIVE_UPDATE_MANIFEST_URL` defines: the script cannot look inside an app, and one built
+   without them has no update feature (phones that took it could never be updated in place again). The CI artifact is such a file
+   (see "Using the CI build" below). Every address it is given is checked: the manifest address is compiled into the app, so it must
+   be https, public and free of characters a command line reads specially (`&`, `%`, quotes), and `--pubkeys` must hold only valid entries.
 4. **Read the draft.** The version, the notes, every address, the sizes. This is the last chance to catch a wrong word. `node tools/update/validate-manifest.mjs <draft>` checks it against the published format and the policy.
 5. **Sign the manifest, offline:**
 
@@ -209,12 +218,19 @@ Everything below runs on **your** machine. CI builds artifacts (next section) bu
      --out out/update/X.Y.Z/update-manifest.json --prev <the manifest that is live now>
    ```
 
-   It validates the draft against the same rules the app applies, signs the canonical form, then verifies its own output before writing
-   it. `--prev` makes it refuse a `sequence` that does not rise and a `versionCode` that falls. It refuses a key inside a git working tree.
-6. **Upload**: the APK and `SHA256SUMS` to every download address you listed, then the **manifest last** (so no phone sees a
+   It validates the draft against the same rules the app applies, signs the canonical form, then verifies its own output before
+   writing it, against this machine's real clock. `--prev` is required: it makes the tool refuse a `sequence` that does not rise and a
+   `versionCode` that falls. The very first manifest of a channel has nothing to compare with and is signed with `--first` instead,
+   which says so out loud. It also refuses a `sequence` above the issue time in seconds plus a day and an `issuedAt` ahead of the
+   clock (one such manifest, accepted by a phone, would make that phone refuse every later one as replayed: updates would be dead for
+   good), and a key inside a git working tree.
+6. **Upload**: the APK and `SHA256SUMS.direct` to every download address you listed (they are named so they never collide with the
+   `SHA256SUMS` that `cut-release.mjs` puts on the same `vX.Y.Z` release), then the **manifest last** (so no phone sees a
    manifest whose files are not there yet). For GitHub, keep one long-lived release tagged `updates` that holds only the manifests,
-   so the manifest address never changes and does not depend on what GitHub calls "latest":
-   `gh release upload updates out/update/X.Y.Z/update-manifest.json --clobber` (the one place replacing a file is the point).
+   so the manifest address never changes and does not depend on what GitHub calls "latest" (which skips pre-releases). Create it
+   **once**: `gh release create updates --prerelease --title "Update manifests" --notes "The signed update manifest only."`.
+   Then, for every update: `gh release upload updates out/update/X.Y.Z/update-manifest.json --clobber` (the one place replacing a
+   file is the point).
 7. **Verify what is really published**, with the same checks the app makes:
 
    ```bash
@@ -235,20 +251,23 @@ Everything below runs on **your** machine. CI builds artifacts (next section) bu
 ### Using the CI build (no Flutter toolchain on your machine)
 
 `.github/workflows/release-artifacts.yml` runs on a `vX.Y.Z` tag (or by hand for an existing tag), builds the direct APK and the
-play bundle with **no secret and no signing step**, and attaches `olive-X.Y.Z-direct-arm64-v8a.ci-build.apk`, `SHA256SUMS` and
-`build-info.txt` to the release for the tag (a draft pre-release is created if you have not made one). Its first step runs
+play bundle with **no secret and no signing step**, and attaches `olive-X.Y.Z-direct-arm64-v8a.ci-build.apk`, `SHA256SUMS.ci-build` and
+`build-info.txt` to the release for the tag (a draft pre-release is created if you have not made one; a file whose name is already on
+the release, which `cut-release.mjs` normally creates first, is left alone, and none of the names equals one `cut-release.mjs` uploads). Its first step runs
 `tools/update/check-release-tag.mjs`, which refuses a tag that does not name the version the checkout really is. Because CI holds no
 keystore these files carry Flutter's public debug key: they prove the release compiles and give you the bytes to re-sign,
-**never** something to install over a real install or to tell a phone to download. To publish from the CI bytes:
+**never** something to install over a real install or to tell a phone to download. They are for people with no toolchain who want
+the bytes to re-sign for a hand-made sideload:
 
 ```bash
 zipalign -p -f 4 olive-X.Y.Z-direct-arm64-v8a.ci-build.apk aligned.apk
 apksigner sign --ks /absolute/path/to/your-release.jks --out olive-X.Y.Z-direct-arm64-v8a.apk aligned.apk
-cd scaffold && node tools/update/build-update-package.mjs --apk arm64-v8a=/path/to/olive-X.Y.Z-direct-arm64-v8a.apk ...
 ```
 
-Caveat: the CI build has **no update public key and no manifest address built in** (those are yours), so the app inside it has
-no update feature. For a build that updates itself, use the full package script (step 3), which bakes both in.
+**Do not make an update package from the CI bytes.** The CI build has **no update public key and no manifest address built in**
+(those are yours), so the app inside it has no update feature: every phone that installed it would have to be updated by hand,
+forever. `build-update-package.mjs --apk` therefore refuses unless you pass `--has-update-key`, your statement that the file was built
+with both defines. For a build that updates itself, use the full package script (step 3), which bakes both in.
 
 ## When something goes wrong with an update
 

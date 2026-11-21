@@ -208,6 +208,21 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
   bad('a repeated address is refused', (p) => { p.apks[0].urls = [p.apks[0].urls[0], p.apks[0].urls[0]]; });
   const unknown = good(); unknown.surprise = true;
   check(g, 'an unknown member: the app tolerates it (signed), the publisher validator refuses it', [verify(sign(unknown), { strict: false }).ok, L.validatePayload(unknown).length > 0], [true, true]);
+  // The plain-text rules are the app's, unconditionally: strict:false (tolerate unknown members) must never excuse them.
+  for (const [what, mut] of [['markup in a note', (p) => { p.notes = ['Tap <b>here</b>']; }], ['a bidi override in the headline', (p) => { p.headline = `Safe${ch(0x202e)}fas`; }], ['edge spaces in a note', (p) => { p.notes = [' padded ']; }],
+    ['edge spaces in the headline', (p) => { p.headline = ' padded'; }], ['a backtick in the headline', (p) => { p.headline = 'run `x`'; }], ['a control character in a note', (p) => { p.notes = [`a${ch(7)}b`]; }]]) {
+    const p = good(); mut(p);
+    check(g, `a tolerant reader (strict:false) still refuses ${what}`, [verify(sign(p), { strict: false }).ok, verify(sign(p), { strict: false }).code], [false, 'badShape']);
+  }
+  // A sequence the publisher may sign is bounded by the issue time: a huge one would make every later manifest "replayed".
+  const seqAt = (n) => ({ ...good(), sequence: n });
+  const issuedSec = Math.floor(L.parseTime(good().issuedAt) / 1000);
+  check(g, 'policy: a sequence at the issue time is fine', L.policyProblems(seqAt(issuedSec)), []);
+  check(g, 'policy: a small sequence (1, 2, 3 ...) is fine', L.policyProblems(seqAt(1)), []);
+  check(g, 'policy: a sequence exactly one day above the issue time is fine', L.policyProblems(seqAt(issuedSec + 86400)), []);
+  check(g, 'policy: one second more is a problem', L.policyProblems(seqAt(issuedSec + 86401)).length, 1);
+  check(g, 'policy: 2^53-1 is a problem that names the consequence', /replayed/.test(L.policyProblems(seqAt(Number.MAX_SAFE_INTEGER)).join()), true);
+  check(g, 'the app-side format still allows it (the bound is the publisher rule, held by the signer and the verifier)', L.validatePayload(seqAt(Number.MAX_SAFE_INTEGER)), []);
   check(g, 'a document with a stray top-level member is refused by the publisher validator', L.validateDocument({ ...sign(good()), extra: 1 }).length > 0, true);
 }
 

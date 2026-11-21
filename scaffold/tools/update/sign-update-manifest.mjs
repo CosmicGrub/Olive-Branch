@@ -3,7 +3,7 @@
  * OLIVE BRANCH - sign an update manifest, locally, with the offline key (docs/RELEASING.md, "Signing an update").
  *
  *   node tools/update/sign-update-manifest.mjs --draft update-manifest.draft.json --key /abs/path/olive-update.key \
- *        --out update-manifest.json [--passphrase-env NAME] [--prev previously-published-update-manifest.json] [--force]
+ *        --out update-manifest.json [--passphrase-env NAME] [--prev previously-published-update-manifest.json | --first] [--force]
  *
  * Reads the draft that build-update-package.mjs wrote (`{ "manifest": { ... } }`, no signature), checks it against the same
  * rules the app applies (shape, limits, https addresses, the version policy), signs the CANONICAL form of the manifest object
@@ -11,6 +11,9 @@
  *   - a key file inside any git working tree (the key must live outside every repository);
  *   - a draft that is not valid, is already signed, or whose version does not follow the policy in RELEASING.md;
  *   - a manifest that is not newer than --prev (its `sequence` must rise, its `versionCode` must not fall: no rollback);
+ *     --prev is REQUIRED; the very first manifest of a channel is signed with --first instead, said out loud;
+ *   - a sequence far above the issue time, or an issuedAt ahead of this machine's clock: a phone that accepted either would
+ *     remember it and refuse every later manifest as replayed, so one typo could end in-place updates for good;
  *   - writing over an existing --out unless --force.
  * It never prints the key, never reads the network, and never runs in CI: the workflow in this repository has no secret by design.
  *
@@ -22,7 +25,7 @@ import { loadUpdateKey } from './key_lib.mjs';
 import { parseStrictJson, policyProblems, signPayload, validatePayload, verifyDocument, parseTrust, parseTime, LIMITS } from './manifest_lib.mjs';
 
 function parse(argv) {
-  const o = { draft: null, key: null, out: null, passphraseEnv: null, prev: null, force: false, allowLoopbackHttp: false };
+  const o = { draft: null, key: null, out: null, passphraseEnv: null, prev: null, force: false, first: false, allowLoopbackHttp: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--draft') o.draft = argv[++i];
@@ -31,6 +34,7 @@ function parse(argv) {
     else if (a === '--passphrase-env') o.passphraseEnv = argv[++i];
     else if (a === '--prev') o.prev = argv[++i];
     else if (a === '--force') o.force = true;
+    else if (a === '--first') o.first = true;
     else if (a === '--allow-loopback-http') o.allowLoopbackHttp = true;
     else if (a === '-h' || a === '--help') o.help = true;
     else throw new Error(`unknown argument: ${a}`);
@@ -44,11 +48,11 @@ const readJson = (path, what) => {
   return r.value;
 };
 
-export function run(argv, env = process.env, log = console.log) {
+export function run(argv, env = process.env, log = console.log, now = Date.now()) {
   let o;
   try { o = parse(argv); } catch (e) { log(`sign-update-manifest: ${e.message}`); return 1; }
   if (o.help || !o.draft || !o.key || !o.out) {
-    log('usage: node tools/update/sign-update-manifest.mjs --draft <draft.json> --key </abs/path/key> --out <update-manifest.json> [--passphrase-env NAME] [--prev <published.json>] [--force]');
+    log('usage: node tools/update/sign-update-manifest.mjs --draft <draft.json> --key </abs/path/key> --out <update-manifest.json> [--passphrase-env NAME] [--prev <published.json> | --first] [--force]');
     return o.help ? 0 : 1;
   }
   try {
@@ -60,7 +64,10 @@ export function run(argv, env = process.env, log = console.log) {
     const payload = draft.manifest;
     const problems = [...validatePayload(payload, { strict: true, allowLoopbackHttp: o.allowLoopbackHttp }), ...policyProblems(payload)];
     if (problems.length) throw new Error(`the draft is not publishable:\n  - ${problems.join('\n  - ')}`);
-    if (parseTime(payload.expiresAt) < Date.now()) throw new Error('the draft has already expired (expiresAt is in the past)');
+    if (o.prev && o.first) throw new Error('--prev and --first are opposites; give one');
+    if (!o.prev && !o.first) throw new Error('--prev <the manifest now live> is required so the sequence and version can be checked against it. If this is the first manifest ever published on this channel, say so with --first');
+    if (parseTime(payload.issuedAt) > now + LIMITS.signSkewMs) throw new Error(`issuedAt ${payload.issuedAt} is ahead of this machine's clock; a manifest dated in the future cannot be used (check --issued and the clock)`);
+    if (parseTime(payload.expiresAt) < now) throw new Error('the draft has already expired (expiresAt is in the past)');
 
     let passphrase = null;
     if (o.passphraseEnv) { passphrase = env[o.passphraseEnv]; if (!passphrase) throw new Error(`environment variable ${o.passphraseEnv} is empty`); }
@@ -79,7 +86,7 @@ export function run(argv, env = process.env, log = console.log) {
     const text = `${JSON.stringify(doc, null, 2)}\n`;
     const check = verifyDocument(text, {
       trust: parseTrust(key.trust), channel: payload.channel, installedVersionCode: 1, allowLoopbackHttp: o.allowLoopbackHttp,
-      now: Math.max(Date.now(), parseTime(payload.issuedAt)),
+      now,
     });
     if (!check.ok) throw new Error(`the signed output failed its own check (${check.code}: ${check.detail}); nothing was written`);
     if (Buffer.byteLength(text) > LIMITS.manifestBytes) throw new Error(`the signed manifest is larger than the ${LIMITS.manifestBytes}-byte cap the app enforces`);

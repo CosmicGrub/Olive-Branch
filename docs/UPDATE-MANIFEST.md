@@ -61,7 +61,7 @@ keys, integers only (no fractions, no exponents, nothing beyond 2^53 - 1). The s
 | `versionName` | `MAJOR.MINOR.PATCH` (the app tolerates a `-suffix`; a *published* version never has one). |
 | `versionCode` | Integer, 1 to 2147483647. **Derived**, never chosen: `major*10000 + minor*100 + patch` (RELEASING.md, "versionCode policy"). |
 | `minSupportedVersionCode` | Integer, 1 to `versionCode`. An installed build below it makes **adults** see "Please update"; the child sees nothing and loses nothing. |
-| `sequence` | Integer, 1 to 2^53 - 1, rising with every manifest the owner signs (the signing tool defaults it to the issue time in seconds). An app remembers the highest it has accepted and refuses a lower one (`replayed`). |
+| `sequence` | Integer, 1 to 2^53 - 1, rising with every manifest the owner signs (the signing tool defaults it to the issue time in seconds). An app remembers the highest it has accepted and refuses a lower one (`replayed`). **Publisher rule:** a sequence may not exceed the issue time in seconds plus 86400 (`policyProblems`; the signer and the verifier enforce it). A phone that accepted a huge sequence would refuse every later manifest as replayed, with no recovery, because nothing can exceed it. The app should also keep the highest sequence per key id and ignore one implausibly far above the clock; that is the client lane's rule to adopt. |
 | `issuedAt`, `expiresAt`, `publishedAt` | UTC `YYYY-MM-DDTHH:MM:SS[.mmm]Z`, real instants. `expiresAt` is after `issuedAt` and within 400 days of it: an old copy cannot be replayed for ever (`expired`). A manifest issued more than a day in the future is `notYetValid`. |
 | `headline` | At most 100 characters, plain text, may be empty. |
 | `notes` | At most 12 lines, each 1 to 300 characters, **plain words for a grown-up**. No angle brackets, no backticks, no control, invisible or bidirectional-override characters, no edge spaces. Shown as text, never rendered as anything else. |
@@ -114,6 +114,26 @@ The file as published is ordinary pretty-printed JSON; whitespace and member ord
    installable.
 
 Steps 1 to 8 are implemented by `manifest_lib.mjs` and proved by this repository's tests against `test-vectors.json`; the client's parser must reproduce them. Step 9 is the app's download and install path (the client lane); this file states the contract it is built to, not that it exists.
+
+### The shared vectors: what the client must replay
+
+`scaffold/tools/update/test-vectors.json` (`vectorsFormat: 1`) is the single file both implementations are proved against. The client
+lane's test should load **this** file (copy it in or read it by relative path; do not keep a second vector file with its own shape) and:
+
+- `canonical[]`: for every `{ json, canonical, signingBytesHex }`, parse `json` with the strict parser, canonicalize, and expect `canonical`;
+  the bytes that are signed (`signDomain` + canonical form) must equal `signingBytesHex`.
+- `documents[]`: for every `{ name, text, ctx, expect }`, run the app's whole decision on the bytes of `text` with the trusted key
+  `trust` (`strangerTrust` is a key the app does not hold), `ctx.channel`, `ctx.installedVersionCode`, `ctx.highestSeenSequence`
+  (null: none) and the clock `ctx.nowIso`; with unknown members tolerated. `expect.ok` true means accepted with `expect.status`
+  (`update` or `up-to-date`; `belowMinimum` means the installed build is under `minSupportedVersionCode`); false means refused with
+  exactly the named `expect.code`, so a test fails if the codes differ, not merely if something is refused.
+- The plain-text rules for `headline` and `notes` (no markup, backticks, control, invisible or bidirectional characters, no edge
+  spaces) hold in this tolerant mode too: there are vectors for each, expected `badShape`.
+
+The shape of this file replaces the interim golden-vector layout the client's first test used (`publicKey`, `keyId`, `signed`,
+`signingBytesHex`, `canonicalCases`); that test must be rewritten to the layout above. The keys behind the vectors were discarded, so
+the file holds no secret. Regenerating it (`gen-update-vectors.mjs`) changes every signature: do it only when the format changes, and
+tell the client lane.
 
 `scaffold/tools/update/verify-update-release.mjs` makes the same checks against a *published* manifest and every address in it
 (primary and mirrors), which is how the owner proves a release before telling anyone.

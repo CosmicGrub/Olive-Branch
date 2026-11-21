@@ -10,7 +10,9 @@ name: release-artifacts
 #     action or repository setting therefore cannot make any installed app believe an update exists.
 #   - The only credential is the run's own short-lived GITHUB_TOKEN, used to upload the files to the release (contents: write,
 #     on the release job only). The build job has a read-only token.
-# Files made: the direct-flavor arm64 APK (named *.ci-build.apk), SHA256SUMS, and build-info.txt. The play flavor's app bundle
+# Files made: the direct-flavor arm64 APK (named *.ci-build.apk), SHA256SUMS.ci-build, and build-info.txt. Every name differs
+# from what tools/cut-release.mjs and the update package script upload to the same release (SHA256SUMS, SHA256SUMS.direct), so a
+# normal cut never collides with this workflow; a name that is already on the release is left alone, never replaced. The play flavor's app bundle
 # is built to prove that flavor assembles, and is kept as a workflow artifact only (a debug-signed bundle is no use to anyone).
 on:
   push:
@@ -96,7 +98,7 @@ jobs:
           out="$RUNNER_TEMP/out"; mkdir -p "$out"
           cp scaffold/client/build/app/outputs/flutter-apk/app-direct-release.apk "$out/olive-${VERSION}-direct-arm64-v8a.ci-build.apk"
           cp scaffold/client/build/app/outputs/bundle/playRelease/app-play-release.aab "$RUNNER_TEMP/olive-${VERSION}-play.ci-build.aab"
-          (cd "$out" && sha256sum olive-*.apk > SHA256SUMS)
+          (cd "$out" && sha256sum olive-*.apk > SHA256SUMS.ci-build)
           {
             echo "Olive Branch ${VERSION} - CI build artifacts"
             echo "commit: ${GITHUB_SHA}"
@@ -138,14 +140,22 @@ jobs:
           name: release-artifacts-${{ needs.build.outputs.version }}
           path: out
       # Attaches to the release for the tag. If the owner has not made one yet, a DRAFT PRE-RELEASE is created so nothing is
-      # announced by a robot; the owner publishes it. Existing files are never replaced (no --clobber): a published asset is
-      # not something a workflow may overwrite.
+      # announced by a robot; the owner publishes it. A file whose name is already on the release is skipped, never replaced (no
+      # clobbering): a published asset is not something a workflow may overwrite, and tools/cut-release.mjs normally creates the
+      # release (and fires this workflow with the tag) before the job gets here.
       - name: attach to the release
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease \
-              --title "$TAG (CI build artifacts)" \
-              --notes "Build artifacts only, signed with the public debug key. Not an update: the signed update manifest is made offline and uploaded by the owner (docs/RELEASING.md)."
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --prerelease               --title "$TAG (CI build artifacts)"               --notes "Build artifacts only, signed with the public debug key. Not an update: the signed update manifest is made offline and uploaded by the owner (docs/RELEASING.md)."
           fi
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" out/olive-*.apk out/SHA256SUMS out/build-info.txt
+          have="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for f in out/olive-*.apk out/SHA256SUMS.ci-build out/build-info.txt; do
+            name="$(basename "$f")"
+            if printf '%s
+' "$have" | grep -Fxq -- "$name"; then
+              echo "already on the release, left as it is: $name"
+            else
+              gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$f"
+            fi
+          done

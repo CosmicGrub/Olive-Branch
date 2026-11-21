@@ -4,7 +4,7 @@
  *
  *   node tools/update/build-update-package.mjs \
  *       --pubkeys 1f7c31942912896a:<base64url key> \
- *       --manifest-url https://github.com/<owner>/<repo>/releases/latest/download/update-manifest.json \
+ *       --manifest-url https://github.com/<owner>/<repo>/releases/download/updates/update-manifest.json \
  *       --download-base https://github.com/<owner>/<repo>/releases/download/v0.52.0 \
  *       --download-base https://mirror.example.org/olive            (repeat: the first is primary, the rest are mirrors)
  *
@@ -17,7 +17,7 @@
  *      with apksigner: see RELEASING.md);
  *   4. checks each APK: a valid signature (apksigner), its signing-certificate SHA-256 (pinned into the manifest), its package and
  *      versionCode (aapt2) against the version, and its zip structure (no duplicate entries, no zip bomb);
- *   5. computes size, SHA-256 and the per-chunk SHA-256 list, and writes the DRAFT manifest, SHA256SUMS and NEXT-STEPS.txt.
+ *   5. computes size, SHA-256 and the per-chunk SHA-256 list, and writes the DRAFT manifest, SHA256SUMS.direct and NEXT-STEPS.txt.
  * It does NOT sign the manifest and never reads a private key: signing is the separate, offline step
  * (tools/update/sign-update-manifest.mjs). Nothing is uploaded.
  *
@@ -28,7 +28,11 @@
  * Options
  *   --channel NAME          default "stable"
  *   --abi ABI               repeatable: arm64-v8a (default), armeabi-v7a, x86_64, universal
- *   --apk ABI=FILE          use a prebuilt, already release-signed APK for that abi instead of building
+ *   --apk ABI=FILE          use a prebuilt, already release-signed APK for that abi instead of building. The file must ALREADY
+ *                           carry the update public key and manifest address (built with the same dart-defines this script uses);
+ *                           the script cannot see inside the app, so it also needs --has-update-key to say you checked. A build
+ *                           without them (the CI artifact) has no update feature: phones that took it could never be updated in place.
+ *   --has-update-key        confirm that every --apk file was built with OLIVE_UPDATE_PUBKEYS and OLIVE_UPDATE_MANIFEST_URL
  *   --valid-days N          how long the manifest stays valid (default 180, at most 400): an old copy cannot be replayed for ever
  *   --min-supported CODE    versionCode below which adults see "Please update" (default 1: nobody is nudged; raise it only for a security fix)
  *   --issued ISO            default now; --sequence N default seconds since the epoch of --issued (must rise with every manifest)
@@ -46,7 +50,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REPO, baseUrlProblem, buildNumber, readVersions, versionProblems } from '../release_lib.mjs';
 import { apkBadging, apkSigners } from './apk_tools.mjs';
 import {
-  ABIS, APP_ID, LIMITS, chooseChunkSize, formatTime, hashFile, inspectApkZip, parseTime, parseTrust, policyProblems, validatePayload,
+  ABIS, APP_ID, LIMITS, chooseChunkSize, formatTime, hashFile, inspectApkZip, parseTime, parseTrust, policyProblems, trustEntry, urlProblem, validatePayload,
 } from './manifest_lib.mjs';
 import { parseNotesFile } from './notes_lib.mjs';
 
@@ -54,7 +58,7 @@ const CLIENT = join(REPO, 'scaffold', 'client');
 const TARGET_PLATFORM = { 'arm64-v8a': 'android-arm64', 'armeabi-v7a': 'android-arm', x86_64: 'android-x64' };
 
 function parseArgs(argv) {
-  const o = { channel: 'stable', abis: [], apks: {}, downloadBases: [], validDays: 180, minSupported: 1, entry: 'lib/main_live.dart', allowDebugSigned: false, allowLoopbackHttp: false };
+  const o = { channel: 'stable', abis: [], apks: {}, downloadBases: [], validDays: 180, minSupported: 1, entry: 'lib/main_live.dart', allowDebugSigned: false, allowLoopbackHttp: false, hasUpdateKey: false };
   const need = (i, a) => { if (i >= argv.length) throw new Error(`${a} needs a value`); return argv[i]; };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -73,6 +77,7 @@ function parseArgs(argv) {
     else if (a === '--base-url') o.baseUrl = need(++i, a);
     else if (a === '--entry') o.entry = need(++i, a);
     else if (a === '--signer-sha256') o.signerSha256 = need(++i, a);
+    else if (a === '--has-update-key') o.hasUpdateKey = true;
     else if (a === '--allow-debug-signed') o.allowDebugSigned = true;
     else if (a === '--allow-loopback-http') o.allowLoopbackHttp = true;
     else if (a === '-h' || a === '--help') o.help = true;
@@ -117,6 +122,20 @@ export const apkFileName = (version, abi) => `olive-${version}-direct-${abi}.apk
 
 const die = (m) => { throw new Error(m); };
 
+/**
+ * Why [v] may not be handed to the build command as one argument, or null. On Windows the build runs through cmd.exe, which
+ * would read `&`, `|`, `%`, `^`, quotes and the like as commands; they are refused on every platform so the rule is the same
+ * (and testable) everywhere. A manifest address with a query is fine as long as it avoids those characters.
+ */
+export function shellUnsafeProblem(v) {
+  return /^[A-Za-z0-9._~:/?=+@,-]*$/.test(String(v)) ? null : 'contains a character a command line would treat specially (such as & | < > ^ % ! quotes, backticks, ; ( ) $, spaces or non-ASCII); use a plain address without them';
+}
+
+/** The manifest address that gets compiled into the app: the same URL rule as the files it points at, and a shell-safe spelling. */
+export function manifestUrlProblem(url, { allowLoopbackHttp = false } = {}) {
+  return urlProblem(url, { allowLoopbackHttp }) ?? shellUnsafeProblem(url);
+}
+
 /** The `flutter build apk` argument list for one abi. Exported so a test can assert exactly what is (and is not) passed. */
 export function flutterArgs({ abi, entry, pubkeys, manifestUrl, baseUrl, allowDebugSigned }) {
   return [
@@ -147,10 +166,16 @@ export async function run(argv, { log = console.log, env = process.env } = {}) {
     if (!o.pubkeys) die('--pubkeys is required: the app\'s PUBLIC update key, from gen-update-key.mjs');
     const trust = parseTrust(o.pubkeys);
     if (trust.size === 0) die('--pubkeys holds no usable "kid:key" entry');
+    // The define is rebuilt from what parsed, never passed through as typed: junk beside a good entry is a mistake to refuse.
+    const rawEntries = o.pubkeys.split(',').map((x) => x.trim()).filter(Boolean);
+    if (rawEntries.length !== trust.size) die('--pubkeys holds an entry that is not a valid "kid:key" (or a repeated key id); nothing is built with a mistyped key');
+    const pubkeys = [...trust].map(([kid, raw]) => trustEntry(kid, raw)).join(',');
     if (!o.manifestUrl) die('--manifest-url is required: where the app will look for the signed manifest');
+    { const p = manifestUrlProblem(o.manifestUrl, { allowLoopbackHttp: o.allowLoopbackHttp }); if (p) die(`--manifest-url: ${p}. This address is compiled into the app; a release build refuses http and a wrong address means the feature silently never works`); }
+    { const p = shellUnsafeProblem(o.entry); if (p) die(`--entry: ${p}`); }
     if (o.downloadBases.length === 0) die('--download-base is required (repeat it for a mirror)');
     if (o.downloadBases.length < 2) log('  note  only one download address: a published update should name a primary AND a mirror (--download-base twice)');
-    if (o.baseUrl) { const p = baseUrlProblem(o.baseUrl); if (p) die(`--base-url: ${p}`); }
+    if (o.baseUrl) { const p = baseUrlProblem(o.baseUrl) ?? shellUnsafeProblem(o.baseUrl); if (p) die(`--base-url: ${p}`); }
     for (const abi of o.abis) if (!ABIS.includes(abi)) die(`unknown abi ${abi}`);
     if (!(o.validDays > 0 && o.validDays <= LIMITS.validityDays)) die(`--valid-days must be 1 to ${LIMITS.validityDays}`);
     if (!Number.isSafeInteger(o.minSupported) || o.minSupported < 1 || o.minSupported > versionCode) die('--min-supported must be a versionCode from 1 up to this version');
@@ -162,6 +187,10 @@ export async function run(argv, { log = console.log, env = process.env } = {}) {
     if (!existsSync(notesPath)) die(`no release notes at ${notesPath}. Make them with tools/update/draft-release-notes.mjs ${versionName}, then rewrite them in plain words.`);
     const notes = parseNotesFile(readFileSync(notesPath, 'utf8'));
 
+    if (Object.keys(o.apks).length) {
+      if (!o.hasUpdateKey) die('--apk packages a file this script cannot look inside. An app built WITHOUT the update public key and manifest address (the CI artifact is one) has no update feature, and every phone that installed it could never be updated in place again: the next update would have to be sideloaded by hand. Build the file with --dart-define=OLIVE_UPDATE_PUBKEYS=<your public entry> and --dart-define=OLIVE_UPDATE_MANIFEST_URL=<the manifest address>, then pass --has-update-key to say you did');
+      log('  WARNING  --has-update-key: you are vouching that the prebuilt file carries the update key and manifest address; nothing here can check it');
+    }
     // ---- hygiene
     if (!Object.keys(o.apks).length) {
       if (existsSync(join(CLIENT, 'android', 'app', 'google-services.json'))) die('android/app/google-services.json exists: it would be compiled into a public file');
@@ -182,7 +211,7 @@ export async function run(argv, { log = console.log, env = process.env } = {}) {
         log(`using the prebuilt ${abi} file`);
       } else {
         if (!TARGET_PLATFORM[abi]) die(`abi ${abi} cannot be built here; pass a prebuilt file with --apk ${abi}=FILE`);
-        const args = flutterArgs({ abi, entry: o.entry, pubkeys: o.pubkeys, manifestUrl: o.manifestUrl, baseUrl: o.baseUrl, allowDebugSigned: o.allowDebugSigned });
+        const args = flutterArgs({ abi, entry: o.entry, pubkeys, manifestUrl: o.manifestUrl, baseUrl: o.baseUrl, allowDebugSigned: o.allowDebugSigned });
         // The public key and manifest address are not secrets; they are printed so the owner can see exactly what was built in.
         log(`flutter ${args.join(' ')}`);
         const r = spawnSync(env.FLUTTER_BIN || 'flutter', args, { cwd: CLIENT, stdio: 'inherit', shell: process.platform === 'win32' });
@@ -199,7 +228,7 @@ export async function run(argv, { log = console.log, env = process.env } = {}) {
     const text = `${JSON.stringify(draft, null, 2)}\n`;
     if (Buffer.byteLength(text) > LIMITS.manifestBytes) die(`the manifest would be ${Buffer.byteLength(text)} bytes; the app refuses anything over ${LIMITS.manifestBytes}`);
     writeFileSync(join(outDir, 'update-manifest.draft.json'), text);
-    writeFileSync(join(outDir, 'SHA256SUMS'), files.map((f) => `${f.sha256}  ${f.fileName}\n`).join(''));
+    writeFileSync(join(outDir, 'SHA256SUMS.direct'), files.map((f) => `${f.sha256}  ${f.fileName}\n`).join(''));
     writeFileSync(join(outDir, 'NEXT-STEPS.txt'), nextSteps(versionName, files, o));
     log(`\nDraft written to ${outDir}`);
     files.forEach((f) => log(`  ${f.fileName}  ${f.size} bytes  sha256 ${f.sha256.slice(0, 16)}...  signer ${f.signerSha256.slice(0, 16)}...  ${f.chunks.length} chunks of ${f.chunkSize}`));
@@ -247,7 +276,7 @@ function nextSteps(version, files, o) {
     '1. Read update-manifest.draft.json: version, the notes in plain words, every address, the sizes.',
     '2. On the machine that holds your update-signing key (offline, outside any repository):',
     '     node tools/update/sign-update-manifest.mjs --draft update-manifest.draft.json --key /abs/path/to/olive-update.key --out update-manifest.json [--prev <the manifest now live>]',
-    `3. Upload ${files.map((f) => f.fileName).join(', ')} and SHA256SUMS to every download address you listed, and upload`,
+    `3. Upload ${files.map((f) => f.fileName).join(', ')} and SHA256SUMS.direct to every download address you listed, and upload`,
     `   update-manifest.json to ${o.manifestUrl} (the manifest last, so no phone ever sees a manifest whose files are not there yet).`,
     '4. Check what is really published, with the same checks the app makes:',
     `     node tools/update/verify-update-release.mjs --manifest ${o.manifestUrl} --pubkeys <the same key entry>`,

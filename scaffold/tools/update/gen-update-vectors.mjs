@@ -106,6 +106,10 @@ add('shape: validity longer than 400 days', signed(mutate((o) => { o.expiresAt =
 add('huge: a declared size far beyond the cap', signed(mutate((o) => { o.apks[0].size = 600 * 1048576; o.apks[0].chunkSize = 8 * 1048576; o.apks[0].chunks = Array.from({ length: 75 }, () => h('d')); })), { ok: false, code: 'sizeTooLarge' });
 add('huge: more than four addresses', signed(mutate((o) => { o.apks[0].urls = Array.from({ length: 5 }, (_, i) => `https://m${i}.example.org/olive/a.apk`); })), { ok: false, code: 'badShape' });
 add('huge: more than twelve notes', signed(mutate((o) => { o.notes = Array.from({ length: 13 }, (_, i) => `Note ${i}`); })), { ok: false, code: 'badShape' });
+add('plain text: a note with markup is refused even by a tolerant reader', signed(mutate((o) => { o.notes[0] = 'Tap <b>here</b> to continue.'; })), { ok: false, code: 'badShape' });
+add('plain text: a headline with a bidirectional override is refused', signed(mutate((o) => { o.headline = `Safe${ch(0x202e)}fas`; })), { ok: false, code: 'badShape' });
+add('plain text: a note with edge spaces is refused', signed(mutate((o) => { o.notes[1] = ' padded '; })), { ok: false, code: 'badShape' });
+add('plain text: a note with a backtick is refused', signed(mutate((o) => { o.notes[0] = 'Run `this` now.'; })), { ok: false, code: 'badShape' });
 add('not json', 'this is not json', { ok: false, code: 'notJson' });
 add('not json: an array', '[]', { ok: false, code: 'notJson' });
 
@@ -121,6 +125,7 @@ const canonCases = [
 
 const out = {
   description: 'Shared test vectors for the Olive Branch signed update manifest (docs/UPDATE-MANIFEST.md). Regenerate only with tools/update/gen-update-vectors.mjs; the keys behind it were discarded.',
+  vectorsFormat: 1,
   signDomain: SIGN_DOMAIN,
   now: formatTime(NOW),
   trust: trusted.trust,

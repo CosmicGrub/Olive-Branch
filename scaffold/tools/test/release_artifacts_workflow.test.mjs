@@ -32,6 +32,21 @@ check(g, 'it builds the direct flavor APK and the play flavor bundle', [/flutter
 check(g, 'both builds opt into the debug key explicitly (there is no keystore in CI)', (code.match(/olive\.allowDebugSignedRelease=true/g) || []).length, 2);
 check(g, 'it targets the live entry point, never the offline demo', (code.match(/--target=lib\/main_live\.dart/g) || []).length, 2);
 check(g, 'it never replaces an existing release file (no --clobber)', /--clobber/.test(code), false);
+// Collision with tools/cut-release.mjs: it creates the release (and the tag push fires this workflow) before attach runs, and it
+// uploads its own checksum file. gh refuses a second asset of the same name, so every name this workflow uploads must differ.
+const cut = readFileSync(join(REPO, 'scaffold', 'tools', 'cut-release.mjs'), 'utf8');
+const pack = readFileSync(join(REPO, 'scaffold', 'tools', 'update', 'build-update-package.mjs'), 'utf8');
+const cutSums = /join\(outDir, '([^']*SHA256SUMS[^']*)'\)/.exec(cut)?.[1];
+const packSums = /join\(outDir, '(SHA256SUMS[^']*)'\)/.exec(pack)?.[1];
+const ciSums = /sha256sum olive-\*\.apk > (\S+?)\)/.exec(code)?.[1];
+check(g, 'the checksum file this workflow writes has its own name', [ciSums, ciSums !== cutSums, ciSums !== packSums], ['SHA256SUMS.ci-build', true, true]);
+check(g, 'cut-release and the package script do not share a checksum name either (both land on the same vX.Y.Z release)', [cutSums, packSums, cutSums !== packSums], ['SHA256SUMS', 'SHA256SUMS.direct', true]);
+const uploads = [...code.matchAll(/for f in ([^;]+); do/g)][0]?.[1].split(/\s+/) ?? [];
+check(g, 'the attach step uploads exactly the APK pattern, the CI checksum file and build-info', uploads.map((u) => u.replace('out/', '')), ['olive-*.apk', ciSums, 'build-info.txt']);
+const cutApk = /apkName = `([^`]*)`/.exec(cut)?.[1] ?? '';
+check(g, 'the CI APK name pattern cannot equal the APK name cut-release uses', [cutApk.endsWith('.ci-build.apk'), /\.ci-build\.apk/.test(code)], [false, true]);
+check(g, 'a name already on the release is skipped, not an error and not replaced (no --clobber)', [/gh release view[^\n]*--json assets/.test(code), /grep -Fxq/.test(code), /already on the release, left as it is/.test(code), /--clobber/.test(code)], [true, true, true, false]);
+check(g, 'files are uploaded one at a time so one existing name cannot abort the rest', /gh release upload "\$TAG"[^\n]*"\$f"/.test(code), true);
 check(g, 'a release it has to create is a DRAFT PRE-RELEASE (a robot announces nothing)', /gh release create[\s\S]*--draft --prerelease/.test(code), true);
 check(g, 'the tag input never reaches a shell by interpolation (it goes through an env var)', /run: \|[^]*\$\{\{\s*(github\.event\.inputs|inputs)\./.test(code.replace(/env:[\s\S]*?\n    steps:/g, '')), false);
 check(g, 'the tag is checked against the checkout before anything is built', code.indexOf('check-release-tag.mjs') > 0 && code.indexOf('check-release-tag.mjs') < code.indexOf('flutter build apk'), true);
