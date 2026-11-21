@@ -44,7 +44,8 @@ import 'care_local_screens.dart';
 import 'care_profile_screens.dart';
 import 'care_profile_store.dart';
 import 'care_screens.dart';
-import 'call_provider.dart' show CallGrant, CallUnavailableReason, callUnavailableLine;
+import 'call_provider.dart' show CallGrant, CallUnavailableReason, callUnavailableLine, tabletUnreachableLine;
+import 'call_signaling.dart' show ServerCallSignaling;
 import 'call_screen.dart';
 import 'call_security_info.dart';
 import 'closing_ritual.dart';
@@ -205,6 +206,21 @@ Future<bool> Function(String pin)? _liveVerifyWipePin(
   };
 }
 
+/// The real call start, for the guardian home's own Call button (the same flow as the Calls tile in this hub):
+/// asks the server whether calls are on and her tablet is reachable, starts the call, opens the call screen.
+Future<void> startGuardianCall(
+  BuildContext context, {
+  required String baseUrl,
+  required String guardianId,
+  required String childId,
+  required String childName,
+  http.Client? httpClient,
+}) =>
+    GuardianMoreScreen(
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId, childName: childName,
+      availabilityHttpClient: httpClient,
+    )._startRealCall(context);
+
 class GuardianMoreScreen extends StatelessWidget {
   const GuardianMoreScreen({
     super.key,
@@ -364,6 +380,14 @@ class GuardianMoreScreen extends StatelessWidget {
           }
           return;
         }
+        // lan-p2p: her tablet is not reaching the server just now. One plain next step, and nothing was started.
+        if (availability != null && availability.available && availability.tabletReachable == false) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text(tabletUnreachableLine), duration: Duration(seconds: 6)));
+          }
+          return;
+        }
         started = await api.startCall(childId);
       } finally {
         if (availabilityHttpClient == null) api.close();
@@ -381,7 +405,9 @@ class GuardianMoreScreen extends StatelessWidget {
       // The grant says which engine carries this call (jitsi or livekit).
       final grant = CallGrant.fromJson(started);
       if (context.mounted) {
-        _open(context, CallScreen(who: 'dad', displayName: 'Dad',
+        _open(context, CallScreen(who: 'dad', displayName: 'Dad', remoteLabel: childName,
+          signalingFactory: ServerCallSignaling.factory(
+              () => apiFor(url, userId: gid, client: availabilityHttpClient), childId),
           knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL,
           onCallEnd: sessionId == null ? null : () => _endRealCall(url, gid, childId, sessionId)));
       }

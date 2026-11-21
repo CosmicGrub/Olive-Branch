@@ -116,7 +116,7 @@ class GuardianHome extends StatelessWidget {
     required this.actorLocalTime, this.childStateSentence,
     required this.childBands, required this.actorBands, this.overlapLabel,
     this.baseUrl, this.guardianId, this.childId, this.availabilityHttpClient,
-    this.dayPart, this.reachable});
+    this.dayPart, this.reachable, this.onCall});
 
   final String childName, childLocalTime, childZoneAbbr, actorLocalTime;
   /// Real as of the same /now route send_time_guard.dart's live path now
@@ -148,6 +148,10 @@ class GuardianHome extends StatelessWidget {
   final String? baseUrl;
   final String? guardianId;
   final String? childId;
+
+  /// Her tap on "Call". The live wrapper supplies the real call start (guardian_more.dart's startGuardianCall);
+  /// null (a static preview, a test) keeps the old stand-in screen, unchanged.
+  final void Function(BuildContext context)? onCall;
   /// Injectable for tests only — matches GuardianMoreScreen's own field.
   final http.Client? availabilityHttpClient;
 
@@ -208,8 +212,10 @@ class GuardianHome extends StatelessWidget {
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, height: 48,
               child: FilledButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => const CallScreen(who: 'dad', displayName: 'Dad'))),
+                onPressed: () => onCall != null
+                  ? onCall!(context)
+                  : Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const CallScreen(who: 'dad', displayName: 'Dad'))),
                 child: ShareRedact(child: Text('Call $childName')))),
           ])),
         ShareRedact(child: _Ribbon(label: "$childName's day", bands: childBands, height: 20)),

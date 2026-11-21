@@ -79,6 +79,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'call_knock.dart' show KnockEnd;
 import 'call_knock_screen.dart' show CallKnockScreen;
+import 'call_poller.dart';
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
 import 'child_home.dart';
@@ -112,6 +113,7 @@ class LiveChildHomeScreen extends StatefulWidget {
     this.pushService,
     this.incomingCallChannel,
     this.navigatorKey,
+    this.pollIncomingCalls = false,
     this.familyService,
     this.clock,
     this.growthRepository,
@@ -152,6 +154,12 @@ class LiveChildHomeScreen extends StatefulWidget {
   /// log fallback instead of opening CallKnockScreen — not a regression,
   /// the same behavior every build without this param already had.
   final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// Ask the server every couple of seconds whether a grown-up is calling her: the foreground ring that needs no
+  /// push service (call_poller.dart). It is what makes her tablet ring while the tablet is open, and it tells the
+  /// server her tablet is awake. Off by default so a screen test never makes a request it did not ask for.
+  final bool pollIncomingCalls;
+
   /// Age bands and family structure (suites J and K), local-first: the structure a guardian built
   /// and released on THIS device. Null = the shared in-process [localFamilyService]. Nothing here
   /// touches the network; syncing between devices comes later.
@@ -221,6 +229,8 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   PushChannel? _pushChannel;
   PushService? _pushService;
   IncomingCallController? _calls;
+  PendingCallPoller? _poller;
+  final Map<String, String?> _ringFrom = <String, String?>{};
   // Her derived home (age band, My people, birthday line) from the local family structure.
   // Null (never loaded, or the local read failed) renders the home exactly as before.
   FamilyChildSnapshot? _family;
@@ -286,6 +296,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
   void dispose() {
     _pushChannel?.dispose();
     _pushService?.dispose();
+    _poller?.stop();
     _calls?.dispose();
     super.dispose();
   }
@@ -522,23 +533,36 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
     if (widget.localOnly || widget.pushChannel != null) return;
     final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
     if (navKey == null) return;
-    if (widget.pushService == null && FcmConfig.fromEnvironment() == null) return; // push is off in this build
+    final bool pushOn = widget.pushService != null || FcmConfig.fromEnvironment() != null;
+    // Push off AND no foreground poll asked for: nothing can ring her, as before.
+    if (!pushOn && !widget.pollIncomingCalls) return;
     Future<OliveApi> freshApi() => apiFor(widget.baseUrl, childId: widget.childId, client: widget.httpClient);
     final IncomingCallController calls = IncomingCallController(
       navigatorKey: navKey,
-      channel: widget.incomingCallChannel ?? IncomingCallChannel(),
+      // With push off there is no phone-side ring surface to attach to; the poll below is the road in.
+      channel: pushOn ? (widget.incomingCallChannel ?? IncomingCallChannel()) : null,
       childId: widget.childId,
       apiProvider: freshApi,
       // The caller's name is not in the push (it is content-free); a neutral phrase until the home knows who is free.
       buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
           CallKnockScreen(
-            from: _presence?.name ?? neutralGrownUp, who: 'ivy',
+            from: _ringFrom[ref] ?? _presence?.name ?? neutralGrownUp, who: 'ivy',
             displayName: _childName.isEmpty ? 'there' : _childName,
             sessionId: ref, childId: widget.childId,
             apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
     );
     _calls = calls;
     unawaited(calls.attach());
+    if (widget.pollIncomingCalls) {
+      _poller = PendingCallPoller.forApi(
+        apiProvider: freshApi,
+        childId: widget.childId,
+        onCall: (PendingCall c) {
+          _ringFrom[c.sessionId.toLowerCase()] = c.from;
+          calls.onRing(c.sessionId);
+        },
+      )..start();
+    }
   }
 
   // Push and calls for a CONNECTED child device (§11, §7.18). Runs after this screen has a real session, and is

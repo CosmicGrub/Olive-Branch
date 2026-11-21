@@ -828,6 +828,7 @@ class _OliveLiveState extends State<OliveLive> {
             baseUrl: _dartDefineBaseUrl,
             childId: widget.childId,
             navigatorKey: _navigatorKey,
+            pollIncomingCalls: true,
             localOnly: widget.localHome,
             localName: widget.localName,
             localAge: widget.localAge,

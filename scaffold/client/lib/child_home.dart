@@ -58,6 +58,8 @@ import 'package:http/http.dart' as http;
 import 'access_scope.dart';
 import 'activity_overrides.dart';
 import 'calendar_day_logic.dart';
+import 'child_call_start.dart';
+import 'auth_session.dart' show apiFor;
 import 'call_screen.dart';
 import 'child_home_bands.dart';
 import 'child_home_bands_ui.dart';
@@ -290,8 +292,7 @@ class ChildHome extends StatelessWidget {
         return MyPeopleScreen(
           snapshot: f, childName: childName, nicknames: _nicknameRepo(),
           age: labels.age.age == null ? AgeLockState(age: childAge) : labels.age,
-          onCall: (BuildContext c, String personId, String name) => Navigator.of(c).push(MaterialPageRoute<void>(
-              builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
+          onCall: (BuildContext c, String personId, String name) => _callGrownUp(c),
           onMessage: (BuildContext c, String personId, String name) =>
               Navigator.of(c).push(MaterialPageRoute<void>(builder: (_) => _inbox())),
         );
@@ -395,7 +396,7 @@ class ChildHome extends StatelessWidget {
       tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIdsFor(context)),
       destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
       clock: clock,
-      presence: presence == null ? null : _PresenceCard(presence!, childName: childName),
+      presence: presence == null ? null : _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
       // Sleeps fade at 11 (§21.5): the 13 to 17 home counts nothing for her.
       footer: sleepsUntilHandover == null || band == 't1317' ? null : _Sleeps(sleepsUntilHandover!),
       today: band == 't1317' ? _teen.today(now: (clock ?? DateTime.now)(), purge: _purge) : null,
@@ -450,13 +451,25 @@ class ChildHome extends StatelessWidget {
     return _home(context);
   }
 
+  /// Her tap on a Call button. With a live connection it starts a real call to an approved grown-up of hers (the
+  /// server decides who); with none (a static preview) it opens the old stand-in screen, unchanged.
+  void _callGrownUp(BuildContext c, [String? toUserId]) {
+    final String? url = baseUrl, id = childId;
+    if (url == null || id == null) {
+      Navigator.of(c).push(MaterialPageRoute<void>(builder: (_) => CallScreen(who: 'ivy', displayName: childName)));
+      return;
+    }
+    unawaited(startChildCall(c,
+        apiProvider: () => apiFor(url, childId: id, client: httpClient), childId: id, childName: childName,
+        toUserId: toUserId));
+  }
+
   Widget _home(BuildContext context) {
     final FamilyChildSnapshot? f = family;
     if (f != null && f.view.homeVariant == 'icons3') {
       return AgeHome34(
         snapshot: f, childName: childName, speak: speak,
-        onCall: (BuildContext c, String who) => Navigator.of(c).push(MaterialPageRoute<void>(
-            builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
+        onCall: (BuildContext c, String who) => _callGrownUp(c),
         onStories: (BuildContext c) => Navigator.of(c).push(MaterialPageRoute<void>(
             builder: (_) => StorytellerScreen(childName: childName))),
         onColour: (BuildContext c) => Navigator.of(c).push(MaterialPageRoute<void>(
@@ -540,7 +553,7 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
             child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
-        if (presence != null) _PresenceCard(presence!, childName: childName),
+        if (presence != null) _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
         const SizedBox(height: 12),
         ?_grewRow(),
 
@@ -658,7 +671,7 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
             child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
-        if (presence != null) _PresenceCard(presence!, childName: childName),
+        if (presence != null) _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
         const SizedBox(height: 12),
         ?_grewRow(),
         heroTile,
@@ -696,9 +709,12 @@ class ParentPresence {
 }
 
 class _PresenceCard extends StatelessWidget {
-  const _PresenceCard(this.p, {required this.childName});
+  const _PresenceCard(this.p, {required this.childName, this.onCall});
   final ParentPresence p;
   final String childName;
+
+  /// Her tap on "Call". Null keeps the old stand-in screen (a static preview).
+  final void Function(BuildContext context, [String? toUserId])? onCall;
   @override
   Widget build(BuildContext context) {
     final GrownupLabels labels = GrownupLabelScope.of(context);
@@ -722,8 +738,10 @@ class _PresenceCard extends StatelessWidget {
       const SizedBox(height: 12),
       SizedBox(width: double.infinity, height: kChildTarget,
         child: FilledButton(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
+          onPressed: () => onCall != null
+              ? onCall!(context, p.userId)
+              : Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
           child: Text('Call $name'))),
     ]),
   ));

@@ -58,6 +58,7 @@ import 'call_knock.dart';
 import 'call_modes.dart' show CallMode;
 import 'call_provider.dart' show CallGrant;
 import 'call_screen.dart';
+import 'call_signaling.dart' show ServerCallSignaling;
 import 'push_channel.dart' show PushPointer;
 import 'read_aloud.dart' show ReadAloudScope;
 
@@ -248,9 +249,9 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
 
     setState(() => _outcome = _KnockOutcome.answering);
     try {
-      final api = widget.apiProvider != null
-          ? await widget.apiProvider!()
-          : OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current);
+      final Future<OliveApi> Function() provide = widget.apiProvider ??
+          (() async => OliveApi(widget.baseUrl!, widget.sessionToken!, session: AuthSession.current));
+      final api = await provide();
       final Map<String, dynamic> joined;
       try {
         joined = await api.joinCall(widget.childId!, widget.sessionId!);
@@ -264,7 +265,8 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
       _report(KnockEnd.answered);
       unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         builder: (_) => CallScreen(
-          who: widget.who, displayName: widget.displayName, initialMode: mode,
+          who: widget.who, displayName: widget.displayName, initialMode: mode, remoteLabel: widget.from,
+          signalingFactory: ServerCallSignaling.factory(provide, widget.childId!),
           knownGrant: grant, knownToken: grant.token, knownWsURL: grant.wsURL,
           onCallEnd: widget.onCallEnded))));
     } catch (e) {

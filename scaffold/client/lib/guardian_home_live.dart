@@ -63,7 +63,13 @@ import 'package:http/http.dart' as http;
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'calendar_day_logic.dart';
+import 'dart:async' show unawaited;
+import 'call_knock.dart' show KnockEnd;
+import 'call_knock_screen.dart' show CallKnockScreen;
+import 'call_poller.dart';
 import 'guardian_home.dart';
+import 'guardian_more.dart' show startGuardianCall;
+import 'incoming_call.dart';
 
 enum _LoadState { loading, error, ready }
 
@@ -74,6 +80,8 @@ class LiveGuardianHomeScreen extends StatefulWidget {
     required this.guardianId,
     required this.childId,
     this.httpClient,
+    this.navigatorKey,
+    this.pollIncomingCalls = false,
   });
 
   final String baseUrl;
@@ -86,6 +94,13 @@ class LiveGuardianHomeScreen extends StatefulWidget {
   /// share the same fake client a test injects here, rather than each
   /// needing its own separate wiring.
   final http.Client? httpClient;
+
+  /// The app's navigator, so a ring can knock from anywhere. Null (tests) means no ring is wired.
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// Ask the server every couple of seconds whether the child is calling this grown-up (the foreground ring that
+  /// needs no push service). Off by default so a screen test never makes a request it did not ask for.
+  final bool pollIncomingCalls;
 
   @override
   State<LiveGuardianHomeScreen> createState() => _LiveGuardianHomeScreenState();
@@ -103,10 +118,49 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
   List<RibbonBand> _childBands = const [];
   List<RibbonBand> _actorBands = const [];
 
+  IncomingCallController? _calls;
+  PendingCallPoller? _poller;
+  final Map<String, String?> _ringFrom = <String, String?>{};
+
   @override
   void initState() {
     super.initState();
+    _attachCalls();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _poller?.stop();
+    _calls?.dispose();
+    super.dispose();
+  }
+
+  /// The child is calling this grown-up: the same knock the tablet shows, in a grown-up's words, answered through
+  /// the same join route. Quiet when nothing is calling.
+  void _attachCalls() {
+    final GlobalKey<NavigatorState>? navKey = widget.navigatorKey;
+    if (navKey == null || !widget.pollIncomingCalls) return;
+    Future<OliveApi> freshApi() => apiFor(widget.baseUrl, userId: widget.guardianId, client: widget.httpClient);
+    final IncomingCallController calls = IncomingCallController(
+      navigatorKey: navKey,
+      childId: widget.childId,
+      apiProvider: freshApi,
+      buildKnock: (String ref, void Function(KnockEnd) ended, Future<void> Function() callEnded) =>
+          CallKnockScreen(
+            from: _ringFrom[ref] ?? (_childName.isEmpty ? 'She' : _childName), who: 'dad', displayName: 'Dad',
+            sessionId: ref, childId: widget.childId, apiProvider: freshApi, onEnded: ended, onCallEnded: callEnded),
+    );
+    _calls = calls;
+    unawaited(calls.attach());
+    _poller = PendingCallPoller.forApi(
+      apiProvider: freshApi,
+      childId: widget.childId,
+      onCall: (PendingCall c) {
+        _ringFrom[c.sessionId.toLowerCase()] = c.from;
+        calls.onRing(c.sessionId);
+      },
+    )..start();
   }
 
   Future<void> _load() async {
@@ -208,6 +262,9 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
             availabilityHttpClient: widget.httpClient,
             dayPart: _dayPart,
             reachable: _reachable,
+            onCall: (BuildContext c) => unawaited(startGuardianCall(c,
+                baseUrl: widget.baseUrl, guardianId: widget.guardianId, childId: widget.childId,
+                childName: _childName, httpClient: widget.httpClient)),
           )),
         ])));
     }

@@ -1977,7 +1977,8 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     const grant = await buildCallGrant(callCfg, minted,
       { displayName: childName, isChild: true, observerOnly: false, role: 'caller', sessionId: session.id });
     // What the child is told is only the grant: no ring word, no reason, nothing about who may be reachable.
-    return { status: 201, body: { ...grant, sessionId: session.id } };
+    const toName = cleanDisplayName(target.name);
+    return { status: 201, body: { ...grant, sessionId: session.id, ...(toName ? { toName } : {}) } };
   }
 
   api.register({

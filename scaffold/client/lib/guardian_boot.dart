@@ -313,6 +313,7 @@ Widget _guardianApp({
   required String title,
   required Widget home,
   GuardianLocalController? local,
+  GlobalKey<NavigatorState>? navigatorKey,
 }) =>
     AnimatedBuilder(
       animation: theme,
@@ -320,6 +321,7 @@ Widget _guardianApp({
         final scheme = colorSchemeFor(theme.value);
         final themeData = ThemeData(colorScheme: scheme, useMaterial3: true);
         return MaterialApp(
+          navigatorKey: navigatorKey,
           title: title,
           theme: themeData,
           darkTheme: themeData,
@@ -385,6 +387,8 @@ class OliveLiveGuardian extends StatefulWidget {
 
 class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
   late final ThemeController _themeController = ThemeController(widget.initialTheme);
+  // The ring (a child calling a grown-up) knocks from wherever she is in the app.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void dispose() {
@@ -401,6 +405,8 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
           baseUrl: kLiveBaseUrl,
           guardianId: widget.guardianId,
           childId: widget.childId ?? kLiveChildId,
+          navigatorKey: _navigatorKey,
+          pollIncomingCalls: true,
         );
       case GuardianEntry.serverPinSetup:
         return GuardianSetupScreen(
@@ -422,6 +428,7 @@ class _OliveLiveGuardianState extends State<OliveLiveGuardian> {
         title: 'Olive (live guardian)',
         home: _home(),
         local: widget.local,
+        navigatorKey: _navigatorKey,
       );
 }
 

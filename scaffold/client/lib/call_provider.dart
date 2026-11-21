@@ -318,7 +318,7 @@ String callUnavailableLine(CallUnavailableReason reason, {required bool isGuardi
   }
   return switch (reason) {
     CallUnavailableReason.providerOff =>
-      "Calls are not switched on here. On the home PC switch calls on (calls-up-dev), then try again.",
+      "Calls are not switched on here. On the home PC switch calls on (calls-up-dev, or calls-on for Jitsi), then try again.",
     CallUnavailableReason.tabletUnreachable => tabletUnreachableLine,
     CallUnavailableReason.unreachable =>
       "Can't reach the call right now. Check you are on the home Wi-Fi and that the home PC is on with calls switched on.",
