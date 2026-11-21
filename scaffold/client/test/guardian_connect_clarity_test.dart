@@ -25,13 +25,14 @@ import 'package:olive_client/connected_devices_screen.dart';
 import 'package:olive_client/device_keys.dart';
 import 'package:olive_client/guardian_home.dart';
 import 'package:olive_client/guardian_local_scope.dart';
+import 'package:olive_client/contact_labels.dart' show GrownupKind;
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/guardian_settings_hub.dart';
 import 'package:olive_client/guardian_state_line.dart';
-import 'package:olive_client/lan_pairing_transport.dart';
 import 'package:olive_client/local_family.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/local_services.dart';
+import 'package:olive_client/local_store.dart' show LocalNamespace;
 import 'package:olive_client/pairing_protocol.dart';
 import 'package:olive_client/pairing_qr.dart';
 import 'package:olive_client/pairing_records.dart';
@@ -341,7 +342,7 @@ void main() {
         localAddress: () async => null,
         startHost: (AdultWindow w) async {
           opened = w;
-          return null;
+          return _NoHost();
         })));
       await t.enterText(find.byKey(const Key('connectPinField')), '4829');
       await t.runAsync(() async {
@@ -469,6 +470,15 @@ void main() {
 }
 
 /// A window of another pairing version: it answers a hello, but states pv 2.
+class _NoHost implements WindowHost {
+  @override
+  int? get port => null;
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> readvertise() async {}
+}
+
 class _OtherVersion implements PairingTransport {
   @override
   Future<Map<String, dynamic>?> send(Map<String, dynamic> message) async =>
