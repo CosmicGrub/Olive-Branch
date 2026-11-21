@@ -373,19 +373,29 @@ let NANA;
   await call('POST', `/v1/guardian-invites/${second}/accept`, null);
   const dead = await call('POST', `/v1/guardian-invites/${second}/bootstrap`, null, { displayName: 'Nana' });
   check('C claim', 'bootstrap for an already-registered email -> 409 email_already_registered (no session minted)', `${dead.status} ${dead.body?.error} ${'token' in (dead.body ?? {})}`, '409 email_already_registered false');
-  // KNOWN LIMIT, recorded rather than hidden: `claim` matches app_user.email
-  // against the invited email, and no route sets or verifies an email on a
-  // sign-up-created account (POST /v1/auth/signup stores none; only the invite
-  // bootstrap writes one). B was created by sign-up, so it can never claim an
-  // invite addressed to anyone, even to the person who owns it. Closing that
-  // needs a verified-email step (a mailer), which this lane does not build.
+  // Account recovery lane (0053 lane note): `claim` used to require app_user.email = the invited email, but no
+  // route sets an email on a sign-up-created account (POST /v1/auth/signup stores none; only the invite
+  // bootstrap writes one), so a sign-up-created grown-up could never be invited a second time. An account with
+  // NO email on file may now claim with the invite id alone -- the same strength as bootstrap, and the real gate
+  // is the inviter, who sees the claimant's NAME and must confirm with their PIN. An account WITH a different
+  // email is still refused.
   const bEmail = await admin.query(`SELECT email FROM app_user WHERE id = $1`, [B.userId]);
-  check('C claim', 'a sign-up-created account has no email (claim cannot match it)', bEmail.rows[0].email, null);
-  check('C claim', 'so a sign-up-created account cannot claim an invite -> 404 (claim covers bootstrap-created accounts only)',
-    (await call('POST', `/v1/guardian-invites/${second}/claim`, B.tok)).status, 404);
+  check('C claim', 'a sign-up-created account has no email on file', bEmail.rows[0].email, null);
   check('C claim', 'claim needs a session', (await call('POST', `/v1/guardian-invites/${second}/claim`, null)).status, 401);
-  check('C claim', 'another family\'s account (different email) cannot claim it -> 404', (await call('POST', `/v1/guardian-invites/${second}/claim`, B.tok)).status, 404);
-  check('C claim', 'the inviter\'s own account cannot claim it either -> 404', (await call('POST', `/v1/guardian-invites/${second}/claim`, A.tok)).status, 404);
+  check('C claim', 'an account with a DIFFERENT email on file still cannot claim it -> 404',
+    (await call('POST', `/v1/guardian-invites/${second}/claim`, xBoot.body.token)).status, 404);
+  check('C claim', 'the inviter\'s own account is already a member -> 409 already_a_member',
+    (await call('POST', `/v1/guardian-invites/${second}/claim`, A.tok)).body?.error, 'already_a_member');
+  // a SQUATTER from another family who holds a leaked invite id: can claim, gets nothing, the inviter turns them away
+  const squat = (await call('POST', `/v1/children/${CHILD_A2}/guardianships`, A.tok, inviteBody(emailFor('aunt'), { role: 'trusted_adult', label: 'Aunt' }))).body.invite.id;
+  await call('POST', `/v1/guardian-invites/${squat}/accept`, null);
+  const sq = await call('POST', `/v1/guardian-invites/${squat}/claim`, B.tok);
+  check('C claim', 'a sign-up-created account (no email) can claim with the invite id -> waiting', `${sq.status} ${sq.body?.status}`, '200 waiting_for_confirmation');
+  check('C claim', '...and holds NO access to the child yet', (await call('GET', `/v1/children/${CHILD_A2}/now`, B.tok)).status, 403);
+  check('C claim', '...the inviter\'s listing names them (so the wrong person is visible)', (await call('GET', `/v1/children/${CHILD_A2}/guardian-invites`, A.tok)).body.invites.find((i) => i.id === squat)?.claimantName, `Second-${RUN}`);
+  check('C claim', 'the inviter turns them away -> 200', (await call('POST', `/v1/guardian-invites/${squat}/decline`, A.tok)).status, 200);
+  check('C claim', '...they still hold no edge to that child', (await admin.query(`SELECT count(*)::int n FROM guardianship WHERE user_id = $1 AND child_id = $2`, [B.userId, CHILD_A2])).rows[0].n, 0);
+  check('C claim', '...and cannot claim the declined invite again -> 410 declined', `${(await call('POST', `/v1/guardian-invites/${squat}/claim`, B.tok)).status}`, '410');
   const cl = await call('POST', `/v1/guardian-invites/${second}/claim`, NANA.tok);
   check('C claim', 'the account with the invited email claims it -> waiting', `${cl.status} ${cl.body?.status}`, '200 waiting_for_confirmation');
   check('C claim', 'claim granted nothing yet', (await call('GET', `/v1/children/${CHILD_A2}/now`, NANA.tok)).status, 403);

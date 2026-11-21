@@ -12,6 +12,11 @@
 # DEV_LOGIN=1 in scaffold/.env plus `node server/seed-dev.mjs`. The server must answer on 127.0.0.1:$PORT (default
 # 8123); this script then runs `adb reverse` so the device reaches it. It never launches an app and never
 # uninstalls one. Signing: release, debug-signed (olive.allowDebugSignedRelease).
+#
+# Cleartext: a release build refuses plain http by design. These device builds reach the server over `adb reverse`
+# (http to the phone's own 127.0.0.1), so they alone pass --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true, which lets
+# the app speak http to the literal addresses 127.0.0.1 and ::1 and to nothing else (lib/server_transport_policy.dart).
+# No other script, workflow, Dockerfile or release config may pass it: tools/check-dev-cleartext.mjs fails CI if one does.
 set -euo pipefail
 WHICH="${1:-both}"
 ADB="${ADB:-adb}"
@@ -33,7 +38,7 @@ build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
   flutter build apk --release --target-platform android-arm64 -t "lib/$entry.dart" \
-    --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true ${FCM_ARGS[@]+"${FCM_ARGS[@]}"} "$@" \
+    --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true ${FCM_ARGS[@]+"${FCM_ARGS[@]}"} "$@" \
     --android-project-arg=olive.allowDebugSignedRelease=true >"$OUT/$name.log" 2>&1 || { tail -20 "$OUT/$name.log"; exit 1; }
   cp build/app/outputs/flutter-apk/app-release.apk "$OUT/$name.apk"
 }

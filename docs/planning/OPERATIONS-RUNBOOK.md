@@ -40,6 +40,7 @@ Practical notes learned while building. Nothing here contains credentials.
 
 - The dev stack is the compose project `olive-fresh` (`scaffold/docker-compose.dev.yml`): database, migrate (one-shot), server and the `delivery` worker. `docker compose -p olive-fresh -f docker-compose.dev.yml up -d --build db migrate server delivery` rebuilds it from the current checkout and applies new migrations. Name `delivery`: it is the one delivery worker (nothing moves a banked message into a child's inbox without it) and, left out of a named `up`, it keeps running the OLD image. Settings come from `scaffold/.env` (git-ignored; `SESSION_SECRET` and `MEDIA_SIGNING_SECRET` are required, copy `.env.example`). `callroom` (the LiveKit-era room coordinator) is behind the `callroom` profile and is not part of the stack unless you pass `--profile callroom`.
 - Rebuilt on 2026-11-15 from main at PR #225: 51 migration files (0001 to 0052; there is no 0019) applied in order by `migrate`, `delivery` enabled with `DELIVERY_IN_SERVER=0`, `/readyz` as the healthcheck, `npm run smoke:stack` 25 passed, 0 failed, 1 skipped. The old volume had been migrated from a feature branch (its `0049_identity_signup` is main's 0050), so the migrator correctly refused and the disposable dev volume was recreated (`down -v`; a `pg_dump` was taken first). A device paired against the old volume has to pair again.
+- **Cleartext on the device lane.** Release builds refuse plain http by design, but `adb reverse` makes the dev server look like `http://127.0.0.1:8123` on the phone, so `device-sync.sh` (and only it) builds with `--dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true`. That lets the app use http to the literal addresses `127.0.0.1` and `::1` and nothing else (never `localhost`, a LAN address or a public host). For a hand build against the dev server pass the same define yourself, as exactly `=true`; never pass it in a store or release cut, a workflow, a Dockerfile or any other script: `node scaffold/tools/check-dev-cleartext.mjs` (also run by `tools/verify.sh`) fails CI if anything else does. If the app on a device says cleartext http is refused in release builds, the build was made without the define (a hand build, or an older APK): rerun `device-sync.sh`.
 - **Device path.** `scaffold/tools/device-sync.sh` expects the server on `127.0.0.1:8123` and runs `adb reverse tcp:8123 tcp:8123`; the stack publishes exactly that port on loopback, so nothing about it changed. Check from a device without installing anything: `adb -s <serial> reverse tcp:8123 tcp:8123`, then `adb -s <serial> shell "(printf 'GET /readyz HTTP/1.0\r\n\r\n'; sleep 2) | toybox nc 127.0.0.1 8123"` answers `200` and `{"status":"ready",...}`. The guardian shell built by `device-sync.sh` signs in with the dev login, which needs `DEV_LOGIN=1` in `scaffold/.env` and `node server/seed-dev.mjs` (off by default); a locally paired child tablet needs neither.
 - **Server suites against the dev stack.** `tools/verify.sh` needs the Postgres 16 client tools and a Linux node, so run it in a throwaway container from the stack's own image, sharing the database container's network: `docker run --rm -u root --network container:olive-fresh-db-1 -v <checkout>:/src:ro --entrypoint bash olive-fresh-server -c 'unset NODE_ENV; mkdir /work && cd /src && tar --exclude=node_modules --exclude=.git --exclude=scaffold/.env -cf - . | tar -xf - -C /work && cd /work/scaffold && PORT=5432 DB=verify_run bash tools/verify.sh'`. It creates and drops its own `verify_run` database, so `olive_devicetest` is untouched, and it exits non-zero here only because the Dart, Gradle and LiveKit sections have no toolchain in the container; read the per-suite lines. The two homework suites also want `imagemagick tesseract-ocr python3 python3-pil fonts-dejavu-core` installed in the container. **It rewrites the cluster-wide role passwords** (`app_owner`, `app_runtime`, `backup_reader`) to its own, so the running server and delivery worker lose their database login until you put them back, and then drop its database: `docker exec olive-fresh-db-1 psql -U postgres -c "ALTER ROLE app_owner PASSWORD 'app_owner'" -c "ALTER ROLE app_runtime PASSWORD 'app_runtime'" -c "ALTER ROLE backup_reader PASSWORD 'backup_reader'" -c "DROP DATABASE verify_run"` (the values `tools/docker-dev/init-db.sql` creates them with; the delivery worker recovers on its next tick). Never point it at a stack you cannot afford to have briefly unable to log in to its database.
 - If a database was migrated with older (CRLF) checksums the migrator refuses; the dev database is disposable (`down -v`, then up).
@@ -53,8 +54,9 @@ Practical notes learned while building. Nothing here contains credentials.
 
 - A fresh server has no accounts and refuses `DEV_LOGIN` in production. Mint one single-use sign-up token: `docker exec <server-container> node tools/provision-signup.mjs issue --label "family 1"`. It prints the token once; hand it over in person. `status`, `disable`, `enable` and `cap <n|none>` are the kill switch and the account cap (same tool). Never put a token, a name or an email in a ticket or a commit.
 - The grown-up signs up in the app (name, time zone, PIN), creates the child (`POST /v1/children`, own PIN), and invites the second grown-up (`POST /v1/children/:childId/guardianships`). The invitee accepts, bootstraps (or, with an existing account, claims), and the inviter confirms with their PIN: that confirm is the only step that grants access. There is no mailer; the invite id travels out of band.
-- Passkeys need a real domain: set `WEBAUTHN_RP_ID` (and the Android signing-key hash in `WEBAUTHN_ANDROID_ORIGINS`) and the server serves `/.well-known/assetlinks.json`. With no domain, sign-in is the device credential from sign-up; there is no account recovery yet, so a grown-up who loses every enrolled device needs the other grown-up or the operator.
-- Migration order on main: 0049 delivery receipts, 0050 identity (this section), 0051 schema level (`/readyz`), 0052 call end reasons. They apply in order; the runner refuses a gap.
+- Passkeys need a real domain: set `WEBAUTHN_RP_ID` (and the Android signing-key hash in `WEBAUTHN_ANDROID_ORIGINS`) and the server serves `/.well-known/assetlinks.json`. With no domain, sign-in is the device credential from sign-up. A grown-up who loses every enrolled device is recovered by the operator (next bullet) or, if they still have another signed-in phone, with a pairing code from it.
+- **Account recovery (migration 0053).** A grown-up who lost every signed-in phone and remembers the account PIN: talk to them first, then `docker exec <server-container> node tools/provision-recovery.mjs issue --label "family 1"` (the note you gave `provision-signup.mjs issue`; if two accounts share a note it lists them and you rerun with `--user <account id>`). It prints one code, once, good for 72 hours; hand it over in person or on a call you trust. In the app: Sign in, "I have a recovery code", the code and the PIN. That signs the account's OTHER phones out and leaves a line in the family's security history. `cancel --user <id>` withdraws a code. An account with no PIN cannot be given a code. Never put a code in a ticket, a message or a commit. If the stack is rebuilt, the new image must contain `tools/provision-recovery.mjs` (it ships with `tools/`).
+- Migration order on main: 0049 delivery receipts, 0050 identity (this section), 0051 schema level (`/readyz`), 0052 call end reasons, 0053 account recovery. They apply in order; the runner refuses a gap.
 
 ## Moving main onto your own olive-live stack (runbook, NOT executed by anyone)
 
@@ -97,6 +99,59 @@ LIVE="docker compose -p olive-live --env-file .env.live -f docker-compose.prod.y
 
 - The development PC has limited RAM. Running several Flutter and Gradle processes at once exhausted it (git and Docker failed to fork). Keep at most two or three heavy jobs at a time; run Gradle with `--no-daemon` and a 1 GB heap or run `./gradlew --stop` after builds; run `flutter test` with at most two jobs; push early.
 - On low memory, `git push` can fail with an out-of-memory error; use `-c http.postBuffer=52428800 -c core.compression=0`.
+
+## Heavy-job slots (`scaffold/tools/slot.sh`)
+
+At most two heavy jobs (a `flutter test`, a full node suite run, a build) run at once on the shared machine. A slot is a directory `slot1` or `slot2` under the shared lock directory (`OLIVE_LOCK_DIR`, default `/z/wt-locks` in Git Bash) holding two files: `stamp` (UTC time taken or last renewed) and `owner` (a label you choose, never a login). `mkdir` is the atomic take. Use the script, not hand-made directories:
+
+```
+bash scaffold/tools/slot.sh acquire any --owner my-task [--wait 600]   # takes the first free slot
+bash scaffold/tools/slot.sh renew   1   --owner my-task                # a job that runs longer than the window
+bash scaffold/tools/slot.sh release 1   --owner my-task                # always, also on failure (use a trap)
+bash scaffold/tools/slot.sh status                                     # slot1 FREE | HELD | UNSTAMPED | STALE
+```
+
+- `acquire` never takes over a held slot and never removes anything. When both are busy it exits 1 and says who holds them.
+- **Stale** means the stamp is older than 90 minutes (`SLOT_STALE_MIN`) **and** no flutter, dart or node test process is running. A stale lock is **reported** in the `status` output and in your report; it is **not** removed by anyone but its owner. An old stamp with a test still running is a long job, not a stale lock: the owner should `renew`.
+- `release` and `renew` refuse (exit 3) unless `--owner` matches the lock's `owner` file, stale or not. A lock without an `owner` file (hand-made) cannot be released with the script; its creator removes it.
+- A lock whose directory exists but has no readable stamp is `UNSTAMPED` and counts as held.
+- Always release in a `trap ... EXIT` so a failed test run does not strand the slot. Heavy Gradle builds belong to the device lane only; run `flutter test -j 1`.
+
+## Privacy gate (`scaffold/tools/privacy-gate.mjs`)
+
+The repository is public. The gate reads the lines a change **adds** and exits non-zero (1) on any hit; exit 2 means it could not read the diff, which also fails (it does not say clean when it cannot look). It catches:
+
+| rule | what |
+| --- | --- |
+| `identity` | the current OS/git user name, host name and e-mail local part, plus anything in `PRIVACY_GATE_EXTRA` (comma list), read at run time so the names never have to be written in the repo; a public `github.com/owner/repo` or `ghcr.io/owner` path is not counted |
+| `path` | drive-letter paths, `/Users/x`, `/home/x`, `/mnt/c/...`, git-bash `/c/Users/...`, UNC shares; a placeholder segment (`<name>`, `...`, `you`, `runner`) is fine |
+| `email` | e-mail addresses; `example.*`, `.test`/`.invalid`, `noreply@...` and `git@github.com` are fine |
+| `ip` | IPv4/IPv6/MAC addresses; loopback, `0.0.0.0`, the emulator alias `10.0.2.x`, the RFC 5737 and RFC 3849 documentation ranges and netmasks are fine |
+| `secret` | cloud/API keys and tokens, private-key blocks, JWTs, URL credentials, quoted password/token assignments with a high-entropy value |
+| `private-link` | claude.ai artifact/chat/share links, shared Google/Notion/Dropbox/OneDrive documents, tunnel hosts, webhook URLs |
+| `sensitive-file` | `google-services.json`, `GoogleService-Info.plist`, keystores, `key.properties`, `local.properties`, `.env` (not `.env.example`), `*.pem`/`*.p12` |
+| `device` | a literal `adb -s <serial>` / `ANDROID_SERIAL=<serial>`, default Windows machine names (pass serials at run time through the environment, never commit them) |
+
+```
+node scaffold/tools/privacy-gate.mjs                       # what is STAGED (run before every commit)
+node scaffold/tools/privacy-gate.mjs --range origin/main...HEAD   # everything the branch adds
+node scaffold/tools/privacy-gate.mjs --text msg.txt        # a commit message or PR body
+git diff --cached | node scaffold/tools/privacy-gate.mjs --stdin
+```
+
+It also runs inside `tools/verify.sh` (the "Privacy gate" block, branch against `origin/main` plus anything staged; override the base with `PRIVACY_BASE`), so CI runs it on every pull request (the verify job checks out full history for this). Hits print a redacted excerpt, never the full value.
+
+- A genuine placeholder is waived for **one line and one rule** with a comment such as `privacy-gate: allow ip`. There is no file-level or wildcard waiver, and a sensitive file name cannot be waived at all (rename the fixture instead, for example `google-services.sample.json`).
+- It folds zero-width and full-width characters and percent-encoding before matching, and long lines are scanned in windows so a hostile 1 MB line cannot hang it.
+- What it cannot do: recognise a secret with no known shape, or a name it was never told. Read your own diff as well.
+
+## Windows: `npm run test:stack` aborting after "126 passed, 0 failed"
+
+`packages/api/test/stack.test.mjs` is the only suite that opens real sockets. Calling `process.exit()` (even from `setImmediate`) while those TCP handles are still closing races the exit-time teardown against a thread still posting to the event loop, and libuv aborts the process with `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76`; npm then reports exit code 127 on a fully green run. Delaying the exit narrows the window but does not close it (measured: 1 to 5 ms crashed every run, 20 ms one in five, 50 ms and more none, which is a timing window, not a leak in the suite). The suite now sets `process.exitCode` and lets the event loop drain, which never races. Any new suite that opens sockets should do the same: **never `process.exit()` after real sockets on Windows**. It is a Node/libuv Windows teardown race, not a defect in the code under test; Linux CI never shows it.
+
+## Reading a failed widget run
+
+`tools/verify.sh` names the failing Dart tests through `scaffold/tools/list-test-failures.sh`. The `flutter test --reporter compact` log has no "Failing tests" section; each failing test is a progress frame such as `00:04 +1 -1: group name of the test [E]`, and the script prints one `FAILED: <name>` per such frame (a test file that cannot load shows as `FAILED: loading <path>`). Use it on any saved log: `bash scaffold/tools/list-test-failures.sh run.log` (or pipe the log in). Exit 3 means the counter shows failures but no name was found, so read the raw log.
 
 ## Pausing and resuming
 

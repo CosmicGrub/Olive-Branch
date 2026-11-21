@@ -15,10 +15,14 @@
 // on the server, so this screen has no clock logic of its own for deciding what to show. [parseInbox]
 // (child_receive.dart) whitelists what is drawn.
 //
-// OPENING. Opening a tile she has not opened marks it opened here at once, tells the server through
-// POST .../inbox/:id/opened, and opens its receipt. If the server cannot be told, the receipt waits in the offline
-// outbox ([ReceiptQueue]) and goes later; the tile stays opened for her either way. It never delays the screen she
-// asked for and she is never told it is waiting.
+// OPENING. On a server-connected device a tile opens the calm player ([MessagePlayerScreen], message_player.dart):
+// the sentence, and the video, the voice, the drawing or the photo when there is one. The message counts as OPENED
+// the first time it really plays or is really shown, never on the tap alone: only then does the tile become a plain
+// one, the server hear about it through POST .../inbox/:id/opened, and her receipt screen follow. A message that
+// could not be played (no signal, expired, no file) stays as it was and can be tried again, with no error or retry
+// on her screen. If the server cannot be told, the receipt waits in the offline outbox ([ReceiptQueue]) and goes
+// later; the tile stays opened for her either way. It never delays the screen she asked for and she is never told
+// it is waiting. The preview build (no server) keeps the old behaviour: the tap opens the receipt.
 //
 // A LOCALLY PAIRED TABLET has no server session: it is not "live" here, it is handed no messages, and so this
 // screen is empty. The demo build (the preview with no server address at all) is the only caller that passes the
@@ -28,9 +32,8 @@
 // relativeInboxLabel()); this screen never does its own time-zone math. `dayPartKind` is honestly left null for a
 // real fetched entry (the server does not compute one): receipt_screen.dart handles that absence.
 //
-// Not built: playing the picture or the recording (no player exists in this client; the signed media URL route
-// GET .../inbox/:id/media-url is declared in api_client.dart and unused). Until it is, "opened" is recorded when she
-// opens the tile, and the receipt sentence is the one receipt_screen.dart has always shown.
+// The receipt sentence is the one receipt_screen.dart has always shown. An end-to-end encrypted video cannot be
+// opened by this client (no key exchange yet): it is shown as its sentence only and never recorded as opened.
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -39,7 +42,9 @@ import 'calendar_day_logic.dart';
 import 'child_receive.dart';
 import 'form_factors.dart' as ff;
 import 'grownup_labels.dart' show GrownupLabelScope, GrownupLabels, asSubject, neutralGrownUp;
+import 'message_player.dart';
 import 'receipt_screen.dart';
+import 'server_transport_policy.dart' show OliveTransport;
 
 class InboxMessage {
   const InboxMessage({
@@ -104,6 +109,9 @@ class InboxScreen extends StatefulWidget {
     this.httpClient,
     this.receiptQueue,
     this.refreshEvery = const Duration(seconds: 60),
+    this.mediaFetcher,
+    this.playbackFactory,
+    this.pictureBuilder = defaultPictureBuilder,
   });
   final String childName;
   /// The preview build's example messages. Ignored when the screen is live (it shows only what the server sent).
@@ -119,6 +127,15 @@ class InboxScreen extends StatefulWidget {
   /// How often an open screen asks again. Null turns the timer off (tests).
   final Duration? refreshEvery;
 
+  /// Injectable for tests: how a vetted media address becomes a local file. Defaults to the app's own http client.
+  final MediaFetcher? mediaFetcher;
+
+  /// Injectable for tests: the audio/video player. Defaults to the video_player plugin.
+  final MessagePlaybackPort Function()? playbackFactory;
+
+  /// Injectable for tests: how a picture is drawn.
+  final PictureBuilder pictureBuilder;
+
   bool get _isLive => baseUrl != null && childId != null && sessionToken != null;
 
   @override
@@ -132,6 +149,8 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
   ReceiptQueue? _queueOrNull;
   /// Ids she opened on this screen. A fetch that raced her tap can come back 'delivered'; these stay opened.
   final Set<String> _openedHere = <String>{};
+  /// The receipt wording captured at the moment a message first played (her frame, her clock).
+  final Map<String, ({String label, String? part})> _openedAt = <String, ({String label, String? part})>{};
 
   ReceiptQueue get _queue => _queueOrNull ??= widget.receiptQueue ?? ReceiptQueue.forChild(widget.childId!);
 
@@ -188,7 +207,83 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// What SHE reads on the player: her word for the grown-up and what they sent.
+  String _lineFor(InboxMessage m) {
+    final String phrase = kReceivedPhrase[m.kind] ?? kReceivedPhrase['video_msg']!;
+    return '${asSubject(_senderLabel(GrownupLabelScope.read(context), m))} $phrase';
+  }
+
+  Future<MediaTicket?> _ticketFor(InboxMessage m) async {
+    try {
+      return await withChildApi<MediaTicket?>(
+        baseUrl: widget.baseUrl!, sessionToken: widget.sessionToken!, httpClient: widget.httpClient,
+        body: (OliveApi api) async =>
+            parseMediaTicket(await api.fetchInboxMediaUrl(widget.childId!, m.id), widget.baseUrl!),
+      );
+    } on ApiException catch (e) {
+      // 404 is simply "no file for this message (any more)"; the player shows its sentence and nothing else.
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<LocalMedia> _fetchMedia(Uri uri) async {
+    final MediaFetcher? injected = widget.mediaFetcher;
+    if (injected != null) return injected(uri);
+    final http.Client client = widget.httpClient ?? OliveTransport.clientFor(widget.baseUrl!);
+    try {
+      return await httpMediaFetcher(client)(uri);
+    } finally {
+      if (widget.httpClient == null) client.close();
+    }
+  }
+
+  /// The first time a message really plays or is really shown: the tile becomes a plain one, the server is told
+  /// (or the receipt waits in the outbox), and the receipt wording is fixed to this moment.
+  Future<void> _playedFirstTime(InboxMessage m) async {
+    if (m.watched || _openedHere.contains(m.id)) return;
+    final String nowHhmm = hhmmNow();
+    // A live message's day-part is honestly left null (the server does not send one); see _open's demo branch.
+    _openedAt[m.id] = (label: formatTimeOfDay(nowHhmm), part: null);
+    _openedHere.add(m.id);
+    final int i = _messages.indexWhere((InboxMessage x) => x.id == m.id);
+    if (mounted && i >= 0) setState(() => _messages[i] = m.markWatched());
+    unawaited(_recordOpened(m.id));
+  }
+
+  Future<void> _openLive(InboxMessage m) async {
+    final bool wasWatched = m.watched;
+    final String line = _lineFor(m);
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => MessagePlayerScreen(
+          line: line,
+          payloadKind: m.kind,
+          loadTicket: () => _ticketFor(m),
+          fetchMedia: _fetchMedia,
+          onOpened: () => _playedFirstTime(m),
+          playbackFactory: widget.playbackFactory,
+          pictureBuilder: widget.pictureBuilder,
+        )));
+    if (!mounted) return;
+    // Her receipt screen follows only a message she really saw or heard (now, or before).
+    final ({String label, String? part})? at = _openedAt[m.id];
+    if (!wasWatched && at == null) return;
+    unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ReceiptScreen(
+          childName: widget.childName,
+          senderName: asSubject(_senderLabel(GrownupLabelScope.read(context), m)),
+          watchedAtLabel: at?.label ?? m.deliveredAtLabel,
+          dayPartKind: at?.part,
+          baseUrl: widget.baseUrl,
+          childId: widget.childId,
+          sessionToken: widget.sessionToken,
+          httpClient: widget.httpClient,
+        ))));
+  }
+
   void _open(InboxMessage m) {
+    if (widget._isLive) {
+      unawaited(_openLive(m));
+      return;
+    }
     final bool wasUnwatched = !m.watched;
     String watchedAtLabel = m.deliveredAtLabel;
     String? dayPartKind = m.dayPartKind;

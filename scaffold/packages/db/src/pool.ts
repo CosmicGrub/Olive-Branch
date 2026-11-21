@@ -630,50 +630,56 @@ export async function recordPinAttempt(
 export async function attemptPinFor(
   pool: pg.Pool, userId: string, candidatePin: string,
 ): Promise<{ matched: boolean; hasCredential: boolean; locked: boolean }> {
-  return withSession(pool, { roleName: 'guardian', userId, childId: null }, async (q) => {
-    // FOR UPDATE — taken BEFORE anything else runs, so a concurrent call for
-    // this exact userId blocks here until this transaction commits, rather
-    // than racing ahead on a stale read. Real, not cosmetic: this is the one
-    // line that turns "check" and "act" back into a single atomic step.
-    const rows = await q(
-      `SELECT pin_hash, failed_attempts, locked_until
-         FROM pin_credential WHERE user_id = $1 FOR UPDATE`,
+  return withSession(pool, { roleName: 'guardian', userId, childId: null }, (q) =>
+    attemptPinInTx(q, userId, candidatePin));
+}
+
+/**
+ * The check-then-verify-then-record body of [attemptPinFor], for a caller that
+ * is already inside a transaction and needs the PIN decision to be part of it
+ * (account recovery: the recovery code row and the PIN counter are decided
+ * together, atomically). Same FOR UPDATE row lock, same counters, same lockout;
+ * `q` must be a session whose actor is `userId` (pin_credential's owner-only
+ * policy, 0008 -- a `system` session set up with `userId` qualifies).
+ */
+async function attemptPinInTx(
+  q: Query, userId: string, candidatePin: string,
+): Promise<{ matched: boolean; hasCredential: boolean; locked: boolean }> {
+  // FOR UPDATE: taken BEFORE anything else runs, so a concurrent call for this
+  // exact userId blocks here until this transaction commits. See the long
+  // comment above attemptPinFor.
+  const rows = await q(
+    `SELECT pin_hash, failed_attempts, locked_until
+       FROM pin_credential WHERE user_id = $1 FOR UPDATE`,
+    [userId],
+  );
+  if (!rows.length) return { matched: false, hasCredential: false, locked: false };
+  const r = rows[0];
+  if (r.locked_until && r.locked_until.getTime() > Date.now()) {
+    // A locked guardian's scrypt check is skipped entirely rather than run-and-discarded.
+    return { matched: false, hasCredential: true, locked: true };
+  }
+  const ok = verifyPin(candidatePin, r.pin_hash);
+  if (ok) {
+    await q(
+      `UPDATE pin_credential SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+        WHERE user_id = $1`,
       [userId],
     );
-    if (!rows.length) return { matched: false, hasCredential: false, locked: false };
-    const r = rows[0];
-    if (r.locked_until && r.locked_until.getTime() > Date.now()) {
-      // Same documented, deliberate timing trade-off kiosk-pin/verify's own
-      // comment already accepts: a locked guardian's scrypt check is skipped
-      // entirely rather than run-and-discarded.
-      return { matched: false, hasCredential: true, locked: true };
-    }
-    const ok = verifyPin(candidatePin, r.pin_hash);
-    // Still inside the SAME transaction, still holding the SAME row lock —
-    // this UPDATE cannot itself be raced by another attemptPinFor() call for
-    // this userId, because no other such call can even acquire the FOR
-    // UPDATE lock above until this one commits.
-    if (ok) {
-      await q(
-        `UPDATE pin_credential SET failed_attempts = 0, locked_until = NULL, updated_at = now()
-          WHERE user_id = $1`,
-        [userId],
-      );
-    } else {
-      await q(
-        `UPDATE pin_credential
-            SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
-                                        ELSE failed_attempts + 1 END,
-                locked_until = CASE WHEN failed_attempts + 1 >= $2
-                                     THEN now() + ($3 || ' milliseconds')::interval
-                                     ELSE locked_until END,
-                updated_at = now()
-          WHERE user_id = $1`,
-        [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS],
-      );
-    }
-    return { matched: ok, hasCredential: true, locked: false };
-  });
+  } else {
+    await q(
+      `UPDATE pin_credential
+          SET failed_attempts = CASE WHEN failed_attempts + 1 >= $2 THEN 0
+                                      ELSE failed_attempts + 1 END,
+              locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                   THEN now() + ($3 || ' milliseconds')::interval
+                                   ELSE locked_until END,
+              updated_at = now()
+        WHERE user_id = $1`,
+      [userId, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS],
+    );
+  }
+  return { matched: ok, hasCredential: true, locked: false };
 }
 
 /**
@@ -853,7 +859,8 @@ export async function hasSecondFactorSetup(pool: pg.Pool, userId: string): Promi
 // ----------------------------------------------------------- security events --
 export type SecurityEventKind =
   | 'passkey_added' | 'passkey_removed' | 'pin_changed' | 'pin_lockout'
-  | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added';
+  | 'device_paired' | 'export_taken' | 'invite_created' | 'guardian_added'
+  | 'account_recovered';
 
 /**
  * Fixed, content-free summaries (migration 0039). The text comes from THIS
@@ -874,6 +881,7 @@ const SECURITY_EVENT_SUMMARIES: Record<string, string> = {
   'export_taken:certified': 'A certified export of the family records was taken',
   invite_created: 'A guardian invite was created',
   guardian_added: 'A grown-up was given access to a child',
+  account_recovered: 'A guardian account was recovered on a new device; its earlier devices were signed out',
 };
 
 export function securityEventSummary(kind: SecurityEventKind, variant?: string): string {
@@ -5227,6 +5235,188 @@ export async function signUpWithAllowance(
   });
 }
 
+// ----------------------------------------------------- account recovery --
+/** A recovery code lives at most this long (the table also caps it at 14 days). */
+export const RECOVERY_CODE_TTL_HOURS = 72;
+/** Wrong PINs presented with one recovery code before the code is burned. */
+export const RECOVERY_MAX_WRONG_PINS = 5;
+
+/** 32 CSPRNG bytes, base64url: the recovery code an operator hands a person. Shown once. */
+export function newRecoveryToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** SHA-256 hex of a recovery token. Same reasoning as signupAllowanceDigest(). */
+export function recoveryTokenDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+/**
+ * Operator-only (tools/provision-recovery.mjs). Which account did an operator's
+ * sign-up note belong to? The note ("family 3") is what the operator typed when
+ * minting the allowance; the account that redeemed it is the answer. Returns
+ * every match so the CLI can refuse an ambiguous note instead of guessing.
+ */
+export async function accountsForSignupLabel(
+  pool: pg.Pool, label: string,
+): Promise<Array<{ userId: string; displayName: string }>> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `SELECT u.id, u.display_name
+         FROM signup_allowance a JOIN app_user u ON u.id = a.redeemed_by
+        WHERE a.label = $1 AND a.redeemed_by IS NOT NULL AND u.deactivated_at IS NULL
+        ORDER BY a.redeemed_at DESC`,
+      [label.trim()]);
+    return rows.map((r: any) => ({ userId: r.id, displayName: r.display_name }));
+  });
+}
+
+/**
+ * Operator-only. Mints one single-use recovery code for ONE existing, active
+ * account and returns the plaintext ONCE (only its SHA-256 is stored). Any
+ * older live code for the same account is revoked first (one live code per
+ * account). Refuses an account that has no PIN: a code with no second secret
+ * behind it would be a single point of failure.
+ */
+export async function issueRecoveryCode(
+  pool: pg.Pool,
+  opts: { userId: string; label?: string; ttlHours?: number; now?: Date },
+): Promise<
+  | { ok: true; id: string; token: string; expiresAt: string; supersededOlder: number }
+  | { ok: false; reason: 'account_not_found' | 'pin_not_set' }
+> {
+  const label = (opts.label ?? '').trim();
+  if (label.length > 80) throw new Error('issueRecoveryCode: label too long');
+  if (label.includes('@')) throw new Error('issueRecoveryCode: label must not contain an email');
+  const ttlHours = opts.ttlHours ?? RECOVERY_CODE_TTL_HOURS;
+  if (!(ttlHours > 0 && ttlHours <= 24 * 14)) throw new Error('issueRecoveryCode: ttlHours out of range');
+  const now = opts.now ?? new Date();
+  const expires = new Date(now.getTime() + ttlHours * 3_600_000);
+  const token = newRecoveryToken();
+  return withSession(pool, { roleName: 'system', userId: opts.userId, childId: null }, async (q) => {
+    const u = await q(
+      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [opts.userId]);
+    if (!u.length) return { ok: false, reason: 'account_not_found' } as const;
+    const pin = await q(`SELECT 1 FROM pin_credential WHERE user_id = $1`, [opts.userId]);
+    if (!pin.length) return { ok: false, reason: 'pin_not_set' } as const;
+    const old = await q(
+      `UPDATE account_recovery_code SET revoked_at = $2
+        WHERE user_id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL RETURNING id`,
+      [opts.userId, now.toISOString()]);
+    const rows = await q(
+      `INSERT INTO account_recovery_code (user_id, token_hash, label, created_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, expires_at`,
+      [opts.userId, recoveryTokenDigest(token), label, now.toISOString(), expires.toISOString()]);
+    return { ok: true, id: rows[0].id, token, expiresAt: new Date(rows[0].expires_at).toISOString(),
+             supersededOlder: old.length } as const;
+  });
+}
+
+/** Operator-only: cancel the live recovery code of an account (the person found their phone). */
+export async function revokeRecoveryCodes(
+  pool: pg.Pool, userId: string, now: Date = new Date(),
+): Promise<number> {
+  return withSystemSession(pool, async (q) => {
+    const rows = await q(
+      `UPDATE account_recovery_code SET revoked_at = $2
+        WHERE user_id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL RETURNING id`,
+      [userId, now.toISOString()]);
+    return rows.length;
+  });
+}
+
+export type RecoverError =
+  | 'invalid_recovery'   // unknown, expired, used, burned, or the account is gone: ONE outcome
+  | 'pin_incorrect'      // a live code, a wrong PIN
+  | 'pin_locked'         // a live code, the account's PIN is in its lockout
+  | 'pin_not_set'        // a live code, but the account has no PIN to prove
+  | 'recovery_locked';   // this wrong PIN was the one that burned the code
+
+/**
+ * POST /v1/auth/recover's real work -- no session (the whole point is that the
+ * person has none). ONE transaction decides everything:
+ *
+ *   1. The code is looked up by its SHA-256 and locked FOR UPDATE, so two
+ *      racing redemptions cannot both pass. An unknown, expired, already
+ *      redeemed, burned/revoked code and a code whose account is gone or
+ *      deactivated are ONE outcome (invalid_recovery): a caller without a live
+ *      code learns nothing about which codes or accounts exist.
+ *   2. The account's own PIN is checked THROUGH THE SAME COUNTER every other
+ *      PIN check uses (attemptPinInTx): five wrong PINs lock the account's PIN
+ *      for the usual lockout, and the code carries its own count too -- the
+ *      fifth wrong PIN burns the code. Both writes commit (a wrong PIN is
+ *      returned, never thrown, so the transaction is not rolled back).
+ *   3. Only then: the code is spent (compare-and-swap on redeemed_at), a NEW
+ *      guardian device is enrolled, every OTHER guardian device of the account
+ *      is revoked (the phone that was lost must stop working at once; a
+ *      revoked device's next request is cut off by its session's deviceId
+ *      claim), and a security_event is written for each child the account
+ *      guards so the other grown-ups can see it.
+ *
+ * The code identifies the ACCOUNT; nothing the caller sends can name another
+ * one. A PIN that belongs to a different account simply does not match this
+ * one (and counts against this one).
+ */
+export async function recoverAccount(
+  pool: pg.Pool,
+  input: { token: string; pin: string; deviceLabel: string; now: Date },
+): Promise<
+  | { ok: true; userId: string; deviceId: string; deviceCredential: string; devicesSignedOut: number }
+  | { ok: false; reason: RecoverError }
+> {
+  const digest = recoveryTokenDigest(input.token);
+  // Step 0: which account does this code name? (unlocked read; the real decision is re-made under a lock)
+  const peek = await withSystemSession(pool, async (q) => {
+    const r = await q(`SELECT user_id FROM account_recovery_code WHERE token_hash = $1`, [digest]);
+    return r.length ? (r[0].user_id as string) : null;
+  });
+  if (!peek) return { ok: false, reason: 'invalid_recovery' };
+  // pin_credential's owner-only policy admits a write only when the actor is that user (see signUpWithAllowance).
+  return withSession(pool, { roleName: 'system', userId: peek, childId: null }, async (q) => {
+    const codes = await q(
+      `SELECT id, user_id, expires_at, failed_attempts, revoked_at, redeemed_at
+         FROM account_recovery_code WHERE token_hash = $1 FOR UPDATE`, [digest]);
+    const code = codes[0];
+    if (!code || code.user_id !== peek || code.revoked_at || code.redeemed_at ||
+        new Date(code.expires_at) <= input.now) {
+      return { ok: false, reason: 'invalid_recovery' } as const;
+    }
+    const user = await q(
+      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL FOR UPDATE`, [peek]);
+    if (!user.length) return { ok: false, reason: 'invalid_recovery' } as const;
+
+    const attempt = await attemptPinInTx(q, peek, input.pin);
+    if (!attempt.hasCredential) return { ok: false, reason: 'pin_not_set' } as const;
+    if (attempt.locked) return { ok: false, reason: 'pin_locked' } as const;
+    if (!attempt.matched) {
+      const burned = code.failed_attempts + 1 >= RECOVERY_MAX_WRONG_PINS;
+      await q(
+        `UPDATE account_recovery_code
+            SET failed_attempts = failed_attempts + 1,
+                revoked_at = CASE WHEN $2::boolean THEN $3::timestamptz ELSE revoked_at END
+          WHERE id = $1`,
+        [code.id, burned, input.now.toISOString()]);
+      return { ok: false, reason: burned ? 'recovery_locked' : 'pin_incorrect' } as const;
+    }
+
+    const spent = await q(
+      `UPDATE account_recovery_code SET redeemed_at = $2
+        WHERE id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL RETURNING id`,
+      [code.id, input.now.toISOString()]);
+    if (spent.length !== 1) throw new Error('recoverAccount: recovery code CAS lost');
+    const device = await enrolGuardianDevice(q, peek, input.deviceLabel, input.now);
+    const out = await q(
+      `UPDATE paired_device SET revoked_at = $2
+        WHERE role = 'guardian' AND target_id = $1 AND revoked_at IS NULL AND id <> $3
+        RETURNING id`,
+      [peek, input.now.toISOString(), device.deviceId]);
+    await q(`UPDATE account_recovery_code SET redeemed_device_id = $2 WHERE id = $1`,
+      [code.id, device.deviceId]);
+    await insertSecurityEvent(q, peek, 'account_recovered');
+    return { ok: true, userId: peek, ...device, devicesSignedOut: out.length } as const;
+  });
+}
+
 /**
  * The day a brand-new child starts with, until a grown-up edits it (PUT
  * /v1/children/:childId/day-parts replaces the whole schedule). ONE definition,
@@ -5344,9 +5534,19 @@ export type ClaimInviteError =
 /**
  * POST /v1/guardian-invites/:inviteId/claim — an EXISTING account presents an
  * accepted invite (the "second invite to an already-registered email" dead
- * end). The invite id alone is never enough: the caller's own session must
- * belong to the account whose email IS the invited email, so holding a leaked
- * invite id lets nobody else attach. A mismatch is reported as not_found.
+ * end). The caller's own session must belong to an account that can plausibly
+ * be the invitee:
+ *   - an account WITH an email on file must match the invited email (so holding
+ *     a leaked invite id does not let an unrelated emailed account attach); a
+ *     mismatch is reported as not_found;
+ *   - an account with NO email on file (every account sign-up creates: there is
+ *     no mailer and no verified email, docs/planning/DECISIONS.md) cannot be
+ *     compared with anything, so it may claim with the invite id alone. That is
+ *     the same strength as POST .../bootstrap, which makes a brand-new account
+ *     from the invite id alone, and the real gate is the same one: the inviter
+ *     sees the claimant's NAME and must say yes with their own PIN (confirm),
+ *     or turns them away (decline). A squatter who claims first can be
+ *     declined; the invite then ends and the inviter sends a new one.
  * Grants nothing; the inviter's confirm step creates the edge.
  */
 export async function claimGuardianInvite(
@@ -5357,7 +5557,8 @@ export async function claimGuardianInvite(
     if (!rows.length) return { ok: false, reason: 'not_found' };
     const row = rows[0];
     const user = await q(
-      `SELECT id FROM app_user WHERE id = $1 AND deactivated_at IS NULL AND email = $2`,
+      `SELECT id FROM app_user
+        WHERE id = $1 AND deactivated_at IS NULL AND (email IS NULL OR email = $2)`,
       [userId, row.invited_email]);
     if (!user.length) return { ok: false, reason: 'not_found' };
     if (row.revoked_at) return { ok: false, reason: 'revoked' };

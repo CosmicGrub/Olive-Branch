@@ -157,6 +157,11 @@ export function createPairingMissBudget({ env = process.env, now } = {}) {
   return new MissBudget({ limit: posNum(env.PAIRING_MISS_BUDGET_PER_MIN, 20), now });
 }
 
+/** MissBudget for POST /v1/auth/recover (codes that match no live row). Env: RECOVERY_MISS_BUDGET_PER_MIN. */
+export function createRecoveryMissBudget({ env = process.env, now } = {}) {
+  return new MissBudget({ limit: posNum(env.RECOVERY_MISS_BUDGET_PER_MIN, 10), now });
+}
+
 /**
  * Per-principal limiter for AUTHENTICATED WRITE routes (S-B6): a valid but
  * hostile or buggy session could otherwise issue unbounded POST/PUT/DELETEs.

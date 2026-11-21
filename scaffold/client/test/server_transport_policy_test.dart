@@ -60,6 +60,86 @@ void main() {
     });
   });
 
+  group('developer-only cleartext define (OLIVE_ALLOW_DEV_CLEARTEXT)', () {
+    const relDev = OliveTransportPolicy(release: true, allowDevCleartext: true);
+    const dbgDev = OliveTransportPolicy(release: false, allowDevCleartext: true);
+
+    test('this test run carries no define, so the build-time default is OFF', () {
+      expect(kAllowDevCleartext, isFalse);
+      expect(const OliveTransportPolicy(release: true).allowDevCleartext, isFalse);
+    });
+    test('release + define: http to the literal loopback addresses is allowed', () {
+      for (final ok in [
+        'http://127.0.0.1', 'http://127.0.0.1:8123', 'http://127.0.0.1:8123/v1', 'http://[::1]:8123', 'http://[::1]',
+      ]) {
+        expect(relDev.violation(u(ok)), isNull, reason: ok);
+      }
+    });
+    test('release + define: every other http host is still refused', () {
+      for (final bad in [
+        'http://localhost:8123', 'http://LOCALHOST:8123', 'http://foo.localhost', 'http://127.0.0.2:8123',
+        'http://127.1:8123', 'http://127.0.0.1.evil.com', 'http://evil-127.0.0.1.com', 'http://0.0.0.0:8123',
+        'http://[0:0:0:0:0:0:0:1]:8123', 'http://[::ffff:127.0.0.1]:8123', 'http://[::]:8123',
+        'http://10.0.2.2:8123', 'http://192.168.1.20:8123', 'http://10.0.0.5', 'http://172.16.0.5', // privacy-gate: allow ip
+        'http://169.254.10.10', 'http://olive-dev.local', 'http://[fd12:3456::1]', 'http://api.example.com', // privacy-gate: allow ip
+        'http://8.8.8.8', 'http://[2001:db8::1]', 'http://2130706433', 'http://0x7f.0.0.1', // privacy-gate: allow ip
+      ]) {
+        expect(relDev.violation(u(bad)), contains('release'), reason: bad);
+      }
+    });
+    test('release + define: credentials, query, fragment and odd schemes on loopback are still refused', () {
+      for (final bad in [
+        'http://user:pw@127.0.0.1:8123', 'http://127.0.0.1@evil.com', 'http://127.0.0.1:8123?x=1', // privacy-gate: allow email
+        'http://127.0.0.1:8123#f', 'ftp://127.0.0.1', 'ws://127.0.0.1:8123', 'file://127.0.0.1/x',
+      ]) {
+        expect(relDev.violation(u(bad)), isNotNull, reason: bad);
+      }
+    });
+    test('release + define: https is unaffected', () {
+      expect(relDev.violation(u('https://api.example.com')), isNull);
+      expect(relDev.violation(u('https://127.0.0.1:8443')), isNull);
+    });
+    test('release WITHOUT the define: loopback http is refused (the rule for every normal build)', () {
+      for (final h in ['http://127.0.0.1:8123', 'http://[::1]:8123', 'http://localhost:8123']) {
+        expect(rel.violation(u(h)), contains('release'), reason: h);
+        expect(const OliveTransportPolicy(release: true, allowDevCleartext: false).violation(u(h)), contains('release'), reason: h);
+      }
+    });
+    test('debug builds are unchanged by the define in both directions', () {
+      for (final h in ['http://127.0.0.1:8123', 'http://10.0.2.2:8080', 'http://192.168.1.20:8123', 'http://localhost:8080']) { // privacy-gate: allow ip
+        expect(dbgDev.violation(u(h)), isNull, reason: h);
+        expect(dbg.violation(u(h)), isNull, reason: h);
+      }
+      expect(dbgDev.violation(u('http://api.example.com')), isNotNull);
+      expect(dbg.violation(u('http://api.example.com')), isNotNull);
+    });
+    test('isLiteralLoopback is exactly 127.0.0.1 and ::1', () {
+      expect(OliveTransportPolicy.isLiteralLoopback('127.0.0.1'), isTrue);
+      expect(OliveTransportPolicy.isLiteralLoopback('::1'), isTrue);
+      expect(OliveTransportPolicy.isLiteralLoopback('[::1]'), isTrue);
+      for (final no in ['', 'localhost', '127.0.0.2', '127.0.0.1.', ' 127.0.0.1', '0:0:0:0:0:0:0:1', '::2', '10.0.2.2']) {
+        expect(OliveTransportPolicy.isLiteralLoopback(no), isFalse, reason: no);
+      }
+    });
+    test('OliveTransport: with the define a release build gets a real client for loopback and a refusing one elsewhere', () {
+      addTearDown(OliveTransport.resetForTesting);
+      OliveTransport.policy = relDev;
+      expect(OliveTransport.refusalFor('http://127.0.0.1:8123'), isNull);
+      expect(OliveTransport.clientFor('http://127.0.0.1:8123'), isNot(isA<RefusingClient>()));
+      expect(OliveTransport.clientFor('http://192.168.1.20:8123'), isA<RefusingClient>()); // privacy-gate: allow ip
+      expect(OliveTransport.refusalFor('127.0.0.1:8123'), isNotNull); // no scheme: unparseable, refused
+      OliveTransport.policy = rel;
+      expect(OliveTransport.clientFor('http://127.0.0.1:8123'), isA<RefusingClient>());
+    });
+    test('with the define, loopback http skips pinning (pins are for https hosts) and the pin rules still apply to https', () {
+      addTearDown(OliveTransport.resetForTesting);
+      OliveTransport.policy = relDev;
+      OliveTransport.pins = PinSet([_vectorPin]);
+      expect(OliveTransport.refusalFor('http://127.0.0.1:8123'), isNull);
+      expect(OliveTransport.refusalFor('https://api.example.com'), contains('backup'));
+    });
+  });
+
   group('DER and SPKI pins', () {
     final der = Uint8List.fromList(base64.decode(_vectorDerB64));
     test('the SPKI pin matches the openssl-computed vector', () async {

@@ -461,6 +461,9 @@ class OliveApi {
   // free functions below (sign-up has no session yet; the rest take the
   // caller's session token explicitly, same shape as [revokeGuardianInvite]).
   static const authSignup = '/v1/auth/signup';
+  // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
+  // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
+  static const authRecover = '/v1/auth/recover';
   static const meChildren = '/v1/me/children';
   static const children = '/v1/children';
   static const childGuardianInvites = '/v1/children/:childId/guardian-invites';
@@ -658,6 +661,16 @@ class OliveApi {
   Future<Map<String, dynamic>> markInboxOpened(String childId, String messageId) => _post(
       inboxOpened.replaceFirst(':childId', Uri.encodeComponent(childId)).replaceFirst(':messageId', Uri.encodeComponent(messageId)),
       const {});
+
+  /// A signed media URL for ONE delivered message -- GET [inboxMediaUrl], server/routes.mjs's real handler.
+  /// `{signedUrl, absolute, kind, ttl}`; a message that is not delivered to this child (or is expired, or has no
+  /// file) is the same 404. The URL is a short-lived capability and carries no session. The caller must not
+  /// trust it blindly: message_player.dart's [parseMediaTicket] refuses any URL that does not point back at
+  /// the server this client already talks to.
+  Future<Map<String, dynamic>> fetchInboxMediaUrl(String childId, String messageId) => _get(
+      inboxMediaUrl
+          .replaceFirst(':childId', Uri.encodeComponent(childId))
+          .replaceFirst(':messageId', Uri.encodeComponent(messageId)));
 
   /// `{free: null}` or `{free: {guardianId, name, theirLocalTime,
   /// freeUntilHerTime}}` — GET [childPresence], server/routes.mjs's real
@@ -1992,6 +2005,30 @@ Future<Map<String, dynamic>> signUpWithAllowance(
         'allowanceToken': allowanceToken,
         'displayName': displayName,
         'homeTz': homeTz,
+        'pin': pin,
+        if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
+      },
+      client: client,
+    );
+
+/// Gets a grown-up back into their account after every signed-in phone was lost -- POST
+/// [OliveApi.authRecover]. No session yet: the operator-issued, single-use [recoveryCode] AND the account's own
+/// [pin] are the proof (one without the other signs nobody in). Returns `{token, expiresAt, userId, deviceId,
+/// deviceCredential, devicesSignedOut}` for a NEW device of the same account; the account's earlier phones are
+/// signed out by the server. Throws [ApiException] (invalid_recovery, pin_incorrect, pin_locked, pin_not_set,
+/// recovery_locked, recovery_rate_limited).
+Future<Map<String, dynamic>> recoverAccountWithCode(
+  String baseUrl, {
+  required String recoveryCode,
+  required String pin,
+  String deviceLabel = '',
+  http.Client? client,
+}) =>
+    _identityPost(
+      baseUrl,
+      OliveApi.authRecover,
+      {
+        'recoveryCode': recoveryCode,
         'pin': pin,
         if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
       },

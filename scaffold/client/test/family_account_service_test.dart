@@ -46,6 +46,160 @@ void main() {
     fail('expected an AccountFailure');
   }
 
+  group('getting back in with a recovery code', () {
+    const String rcode = 'recovery-code-0123456789abcdef-xyz';
+
+    test('the code and the PIN make a new sign-in for the SAME account and sign the old phone out', () async {
+      final Phone lost = await signedUp('Sam');
+      final DeviceIdentity oldId = (await lost.identities.load())!;
+      final String userId = oldId.targetId;
+      server.addRecoveryCode(userId, rcode);
+      final Phone fresh = Phone(server);
+      server.requests.clear();
+      await fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821'));
+      final RecordedRequest r = server.requests.single;
+      expect(r.path, '/v1/auth/recover');
+      expect(r.hasAuth, isFalse);
+      expect(r.body.keys.toSet(), <String>{'recoveryCode', 'pin', 'deviceLabel'});
+      final DeviceIdentity? id = await fresh.identities.load();
+      expect(id!.targetId, userId);
+      expect(id.deviceId, isNot(oldId.deviceId));
+      expect(id.deviceCredential, isNotNull);
+      expect(AuthSession.current, isNotNull);
+      expect(server.devices[oldId.deviceId]!.revoked, isTrue);
+      expect(server.devices[id.deviceId]!.revoked, isFalse);
+      expect(fresh.service.hasUnsavedSignIn, isFalse);
+      expect(server.recoveries[rcode]!.used, isTrue);
+    });
+
+    test('a pasted code with line breaks and spaces is cleaned; the PIN is not kept anywhere on the phone', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone fresh = Phone(server);
+      await fresh.act((s) => s.recoverAccount(recoveryCode: '  recovery-code-0123456789\nabcdef-xyz \n', pin: '4821'));
+      expect(await fresh.identities.load(), isNotNull);
+      expect(fresh.secure.data.values.where((String v) => v.contains('4821')), isEmpty);
+      expect((await fresh.record.load())!.stage, AccountStage.signedUp);
+    });
+
+    test('a wrong code is one plain answer and leaves nothing behind', () async {
+      final Phone fresh = Phone(server);
+      final AccountFailure f = await failureOf(fresh.act((s) => s.recoverAccount(
+          recoveryCode: 'not-a-real-recovery-code-0123', pin: '4821')));
+      expect(f.problem.reason, 'invalid_recovery');
+      expect(f.problem.message, contains("didn't work"));
+      expect(f.problem.message, isNot(contains('invalid_recovery')));
+      expect(await fresh.identities.load(), isNull);
+      expect(AuthSession.current, isNull);
+    });
+
+    test('a wrong PIN says so, the code survives, and the right PIN then works', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone fresh = Phone(server);
+      final AccountFailure f = await failureOf(fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '0000')));
+      expect(f.problem.reason, 'pin_incorrect');
+      expect(f.problem.kind, ProblemKind.fixInput);
+      expect(await fresh.identities.load(), isNull);
+      await fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821'));
+      expect(await fresh.identities.load(), isNotNull);
+    });
+
+    test('five wrong PINs cancel the code: even the right PIN no longer works', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone fresh = Phone(server);
+      final List<String> reasons = <String>[];
+      for (int i = 0; i < 5; i++) {
+        reasons.add((await failureOf(fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '0000')))).problem.reason);
+      }
+      expect(reasons.last, 'recovery_locked');
+      final AccountFailure f = await failureOf(fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821')));
+      expect(f.problem.reason, 'invalid_recovery');
+      expect(await fresh.identities.load(), isNull);
+    });
+
+    test('a code cannot be used twice (replay)', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone first = Phone(server);
+      await first.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821'));
+      final Phone second = Phone(server);
+      final AccountFailure f = await failureOf(second.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821')));
+      expect(f.problem.reason, 'invalid_recovery');
+      expect(await second.identities.load(), isNull);
+    });
+
+    test('another family\'s PIN does not open this account', () async {
+      final Phone victim = await signedUp('Sam');
+      final Phone other = await signedUp('Pat', code: 'another-allowance-0123456789a');
+      server.users[(await other.identities.load())!.targetId]!.pin = '9753';
+      server.addRecoveryCode((await victim.identities.load())!.targetId, rcode);
+      final Phone thief = Phone(server);
+      final AccountFailure f = await failureOf(thief.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '9753')));
+      expect(f.problem.reason, 'pin_incorrect');
+      expect(await thief.identities.load(), isNull);
+      expect(server.devices.values.where((d) => d.revoked), isEmpty);
+    });
+
+    test('malformed input never reaches the network', () async {
+      final Phone fresh = Phone(server);
+      server.requests.clear();
+      for (final List<String> bad in <List<String>>[
+        <String>['', '4821'], <String>['short', '4821'], <String>['x' * 300, '4821'],
+        <String>[rcode, ''], <String>[rcode, 'abcd'], <String>[rcode, '123'], <String>[rcode, '123456789'],
+      ]) {
+        final AccountFailure f = await failureOf(fresh.act((s) => s.recoverAccount(recoveryCode: bad[0], pin: bad[1])));
+        expect(f.problem.kind, ProblemKind.fixInput, reason: bad.join('/'));
+      }
+      expect(server.requests, isEmpty);
+    });
+
+    test('a phone whose sign-in still works is told so and nothing is sent to /recover', () async {
+      final Phone p = await signedUp('Sam');
+      server.addRecoveryCode((await p.identities.load())!.targetId, rcode);
+      server.requests.clear();
+      final AccountFailure f = await failureOf(p.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821')));
+      expect(f.problem.reason, 'already_signed_in');
+      expect(server.requests.where((RecordedRequest r) => r.path == '/v1/auth/recover'), isEmpty);
+      expect(server.recoveries[rcode]!.used, isFalse);
+    });
+
+    test('a phone whose own sign-in was ended CAN recover (the dead key is replaced, not a dead end)', () async {
+      final Phone p = await signedUp('Sam');
+      final DeviceIdentity dead = (await p.identities.load())!;
+      server.devices[dead.deviceId] = (userId: dead.targetId, credential: dead.deviceCredential!, revoked: true);
+      server.addRecoveryCode(dead.targetId, rcode);
+      await p.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821'));
+      final DeviceIdentity now = (await p.identities.load())!;
+      expect(now.deviceId, isNot(dead.deviceId));
+      expect(now.targetId, dead.targetId);
+    });
+
+    test('a lost connection is said in words, and a code that was spent but not heard is not guessed at', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone fresh = Phone(server);
+      server.interceptor = (http.BaseRequest r) async => throw const SocketException('down');
+      final AccountFailure f = await failureOf(fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821')));
+      expect(f.problem.kind, ProblemKind.tryAgain);
+      expect(f.problem.message, isNot(contains('SocketException')));
+      expect(await fresh.identities.load(), isNull);
+    });
+
+    test('a failed save of the new sign-in is held in memory and said plainly', () async {
+      final Phone lost = await signedUp('Sam');
+      server.addRecoveryCode((await lost.identities.load())!.targetId, rcode);
+      final Phone fresh = Phone(server);
+      fresh.secure.failWrites = true;
+      await fresh.act((s) => s.recoverAccount(recoveryCode: rcode, pin: '4821'));
+      expect(fresh.service.hasUnsavedSignIn, isTrue);
+      fresh.secure.failWrites = false;
+      expect(await fresh.service.retrySaveSignIn(), isTrue);
+      expect(await fresh.identities.load(), isNotNull);
+    });
+  });
+
   group('sign-up', () {
     test('makes the account, keeps the sign-in key, and sends only what the real handler reads', () async {
       final Phone p = await signedUp('Sam');
@@ -393,11 +547,41 @@ void main() {
       expect((await robin.act((s) => s.snapshot())).children.single.id, w.child.id);
     });
 
-    test('an account with a different email cannot claim someone else\'s invite', () async {
+    test('an account with a different email on file cannot claim someone else\'s invite', () async {
       final ({Phone inviter, AccountChild child, CreatedInvite invite}) w = await invited();
-      final Phone other = await signedUp('Pat', code: 'another-allowance-0123456789a');
+      final FakeUser emailed = server.addUser('Pat', email: 'pat@example.com', pin: '5921');
+      final Phone other = Phone(server);
+      final String dev = server.mintDevice(emailed.id);
+      await other.identities.save(DeviceIdentity(
+          sessionToken: server.sessionFor(emailed.id), deviceId: dev, role: 'guardian', targetId: emailed.id,
+          deviceCredential: server.devices[dev]!.credential));
       final AccountFailure f = await failureOf(other.act((s) => s.useInviteWithAccount(w.invite.code)));
       expect(f.problem.message, contains('different email'));
+      expect(server.guardianship[w.child.id], hasLength(1));
+    });
+
+    test('an account made by sign-up (no email on file) CAN be invited a second time: the inviter sees who and decides', () async {
+      final ({Phone inviter, AccountChild child, CreatedInvite invite}) w = await invited();
+      final Phone nana = await signedUp('Nana', code: 'another-allowance-0123456789a');
+      await nana.act((s) => s.useInviteWithAccount(w.invite.code));
+      expect((await nana.pending.load())!.stage, JoinStage.waiting);
+      // Nothing is granted by claiming: the inviter sees her NAME and says yes with their own PIN.
+      expect(server.guardianship[w.child.id], hasLength(1));
+      final AccountSnapshot ss = await w.inviter.act((s) => s.snapshot());
+      expect(ss.waitingForYou.single.claimantName, 'Nana');
+      await w.inviter.act((s) => s.confirmInvite(w.invite.code, '4821'));
+      expect(await nana.act((s) => s.checkJoin()), JoinStatus.confirmed);
+      expect(server.guardianship[w.child.id], hasLength(2));
+    });
+
+    test('a squatter who holds a leaked code can claim, but is turned away and gets nothing', () async {
+      final ({Phone inviter, AccountChild child, CreatedInvite invite}) w = await invited();
+      final Phone squatter = await signedUp('Mallory', code: 'another-allowance-0123456789a');
+      await squatter.act((s) => s.useInviteWithAccount(w.invite.code));
+      final AccountSnapshot ss = await w.inviter.act((s) => s.snapshot());
+      expect(ss.waitingForYou.single.claimantName, 'Mallory');
+      await w.inviter.act((s) => s.turnAwayInvite(w.invite.code));
+      expect(await squatter.act((s) => s.checkJoin()), JoinStatus.turnedAway);
       expect(server.guardianship[w.child.id], hasLength(1));
     });
 

@@ -49,7 +49,7 @@ Full list with evidence in [GAP-REGISTER.md](GAP-REGISTER.md); numbers in bracke
 | 35 | Caps: 6 grown-ups (identity design) versus 4 parents and 8 carers (village) [G-37] | The village caps; 12 child devices. |
 | 36 | Can one grown-up remove another? (identity Q1) | No. Leave is self-only; revoking another phone only after a visible, cancellable 72 hour notice. |
 | 37 | Both-parent approval for adding a grown-up's phone, and lapse time (identity Q2) | Default `all` once there are two or more grown-ups, `any` for child devices; pending approvals lapse after 14 days. |
-| 38 | Recovery card for a sole grown-up who loses their only phone (identity Q3) | Not in v1; re-found the family. |
+| 38 | Recovery card for a sole grown-up who loses their only phone (identity Q3) | Not in v1; re-found the family. The operator-code-plus-PIN path (52) covers a grown-up who remembers the PIN. |
 | 39 | Two keys: one for all devices, one for grown-ups only (identity Q4) | Yes, so no future synced grown-up data is readable by a child device. |
 | 40 | In a server-backed family, who decides who is a guardian? (identity Q5) | The server's edges decide and the server countersigns the ledger. Needs the owner's yes and the S-D26 text before any server migration. |
 | 41 | Grown-ups with access to only some children (identity Q6) | Unsupported in a local-only family in v1; supported in server mode through edge scope. |
@@ -61,6 +61,18 @@ Full list with evidence in [GAP-REGISTER.md](GAP-REGISTER.md); numbers in bracke
 | 47 | Care guide region (emergency numbers) without location [G-31] | A grown-up-chosen setting, shown as "not set" until chosen. |
 | 48 | Teen "My health sheet" from 13, shared only with the teen's agreement | Yes, as in the QR brainstorm. |
 | 49 | Reversal window: the nine About Mia decisions were adopted under "go with your recommendations" without a separate yes per item [G-40] | Owner may reverse any; recorded in DECISIONS.md. |
+
+## Account recovery and the message player (new; the safe minimum is built, each row is the owner's to change)
+
+Built in the recovery-and-player PR (MASTERFILE 7.21). Nothing below blocks the build; each says what was chosen and what the owner may flip.
+
+| # | Decision | Recommendation / status |
+|---|---|---|
+| 52 | Recovery without email: what does a successful recovery do to the account's other phones, passkeys and the other grown-ups? | **Built as the safe minimum:** the operator hands over a one-time code and the grown-up proves the account PIN. Every other guardian phone of that account is signed out (a lost phone must stop working); passkeys are left alone (they are device-bound and biometric); the other grown-ups see one content-free line in the history, no push, no waiting period. An account with no PIN is refused a code. Recommend, once the family tenant exists, a 24 hour visible waiting period before the old phones are cut off for a family with two or more grown-ups. A sole grown-up who loses the phone and forgets the PIN still re-founds the family (see 38). |
+| 53 | Claiming an invite with an account that has no email | **Built:** a sign-up account may claim on the invite id alone, the same strength as the existing "make an account from the invite"; the inviter sees the name and says yes with their PIN. A squatter holding a leaked code can claim first and be turned away, which ends that invite. Recommend later: turning a claimant away resets the claim so the real invitee can still use the invite. |
+| 54 | "Watched means played through" versus the server's `opened` | The server records one state, `opened`, and the player tells it at the first play. The sender's "Watched at ..." and the child's receipt therefore speak at first play, not at the end. Recommend a small migration adding `played_through_at` (set at the end of playback) and moving the receipt wording to it. |
+| 55 | The platform player plugin (`video_player`) | Added to play audio and video from a local file. It is an official plugin but this change did not build an APK; CI's Android job is the first compile. If it breaks the build, the fallback is to show the sentence only (the screen already does when a file cannot be played). |
+| 56 | End-to-end encrypted video (`e2e_video`) on the child's screen | Shown as its sentence only and never recorded as opened, because the client has no key exchange. Revisit when the family key work lands. |
 
 ## Hosting, calls and credentials (parked)
 

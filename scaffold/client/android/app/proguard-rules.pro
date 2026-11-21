@@ -34,3 +34,7 @@
 -keep class com.swmansion.** { *; }
 -dontwarn com.facebook.react.**
 -dontwarn org.jitsi.meet.sdk.**
+
+# The child message player (video_player_android) references RtspMediaSource; its standalone module is excluded
+# in build.gradle.kts (Jitsi already bundles those classes), and rtsp:// is never played. Not a build error.
+-dontwarn androidx.media3.exoplayer.rtsp.**

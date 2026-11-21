@@ -54,6 +54,27 @@ if ! npm ci --silent >/tmp/npm-ci.out 2>&1; then
   exit 2
 fi
 npm run --silent build >/dev/null 2>&1 || { echo "  BUILD FAILED"; exit 2; }
+
+echo ""
+echo "── Privacy gate (this repository is PUBLIC) ───────────────────"
+# Scans the lines this branch ADDS over its base for usernames, local paths and drive letters,
+# e-mails, IPs, secrets/tokens, private links and google-services.json (tools/privacy-gate.mjs;
+# docs/planning/OPERATIONS-RUNBOOK.md "Privacy gate"). It exits non-zero on any hit and, like
+# everything in this file, fails CLOSED: if the base cannot be resolved that is a problem, not a skip.
+PRIVACY_BASE="${PRIVACY_BASE:-origin/main}"
+if git rev-parse --verify -q "$PRIVACY_BASE^{commit}" >/dev/null 2>&1; then
+  # committed lines on the branch AND anything staged but not yet committed
+  if node tools/privacy-gate.mjs --range "$PRIVACY_BASE...HEAD" >/tmp/privacy.out 2>&1 \
+     && node tools/privacy-gate.mjs >>/tmp/privacy.out 2>&1; then
+    record "privacy gate (branch vs $PRIVACY_BASE)" 1 0
+  else
+    cat /tmp/privacy.out | sed 's/^/    /'
+    record "privacy gate (branch vs $PRIVACY_BASE)" 0 1
+  fi
+else
+  echo "  privacy gate: cannot resolve base '$PRIVACY_BASE' (set PRIVACY_BASE, or fetch full history) -- a gate that cannot read the diff does not say clean"
+  record "privacy gate (no base to diff)" 0 1
+fi
 for spec in \
   "time engine|packages/time-engine/test/golden.test.mjs" \
   "co-view (read/watch together core)|packages/co-view/test/coview.test.mjs" \
@@ -142,6 +163,9 @@ for spec in \
   "pairing PAKE golden vectors (Node reference for client/lib/cpace.dart)|tools/test/pake_vectors.test.mjs" \
   "CPace draft-21 appendix B.1 vectors (CPACE-X25519-SHA512), byte for byte|tools/test/cpace_draft21.test.mjs" \
   "play frame golden vectors (Node reference for client/lib/play_frame.dart)|tools/test/play_frame_vectors.test.mjs" \
+  "privacy gate: rules, hostile encodings, diff parsing, real CLI (public-repo hygiene)|tools/test/privacy_gate.test.mjs" \
+  "slot lock tool: acquire/release/stale/refuse (heavy-job slots)|tools/test/slot.test.mjs" \
+  "list-test-failures: names failing tests from a flutter compact log|tools/test/list_test_failures.test.mjs" \
   "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
@@ -203,9 +227,16 @@ if [ -x "$FLUTTER_BIN" ]; then
   f=$(printf '%s' "$lines" | grep -oE '^[0-9]+:[0-9]+ \+[0-9]+ -[0-9]+' | tail -1 | grep -oE '\-[0-9]+$' | tr -d '-')
   record "dart widget invariants" "${p:-0}" "${f:-0}"
   # A failed count with no name is a failure nobody can root-cause from the CI log: say WHICH
-  # tests failed (the reporter lists them after "Failing tests:").
+  # tests failed. The compact reporter has NO "Failing tests:" section (the old sed here matched
+  # nothing); a failing test is a "<mm:ss> +P -F: <name> [E]" frame, which
+  # tools/list-test-failures.sh extracts. If a nonzero count yields no name, dump the raw tail
+  # instead -- never leave a bare number.
   if [ "${f:-0}" != "0" ]; then
-    printf '%s' "$lines" | sed -n '/Failing tests:/,$p' | head -30 | sed 's/^/    /'
+    names=$(printf '%s' "$lines" | bash tools/list-test-failures.sh); lrc=$?
+    if [ -n "$names" ]; then printf '%s\n' "$names" | head -60 | sed 's/^/    /'
+    else echo "    (no failing test name could be extracted; raw tail of the run follows)"
+         printf '%s\n' "$lines" | tail -40 | sed 's/^/    /'; fi
+    [ "$lrc" = "3" ] && echo "    list-test-failures: counter shows failures but no [E] frame was found"
   fi
 else
   # Not a skip. The toolchain is a declared dependency of this suite.
@@ -440,6 +471,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite bootstrap route (real DB)|packages/api/test/guardian_bootstrap_route.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
+            "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs" \
             "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
@@ -522,6 +554,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: letters route|server/test/letters_route.test.mjs" \
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \
+            "as app_runtime: account recovery|server/test/account_recovery_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
@@ -594,6 +627,19 @@ if node tools/test/release_shrink.test.mjs >/tmp/rs.out 2>&1 && node tools/check
 else
   sed 's/^/  /' /tmp/rs.out
   echo "  RELEASE RESOURCE SHRINKING GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
+echo "── Dev-only cleartext define ──────────────────────────────────"
+# Not counted into TOTAL_PASS. The dev-only cleartext define (see tools/check-dev-cleartext.mjs) lets a RELEASE build speak http to the literal loopback
+# addresses (127.0.0.1, ::1) so the device lane can reach the dev server over `adb reverse`. Only tools/device-sync.sh
+# may pass it; this fails if any other script, workflow, Dockerfile or release config does (a store build must never
+# carry it) or if device-sync.sh stops passing it as exactly `=true`.
+if node tools/test/dev_cleartext_guard.test.mjs >/tmp/dc.out 2>&1 && node tools/check-dev-cleartext.mjs >>/tmp/dc.out 2>&1; then
+  echo "  dev cleartext define       $(grep -c 'PASS' /tmp/dc.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/dc.out
+  echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
 echo ""
