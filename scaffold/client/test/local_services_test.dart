@@ -125,12 +125,15 @@ void main() {
       // key, the certificate a grown-up's device signed, and a PIN verifier. All sealed, all small, no PIN.
       // The optional family account (section 8.5.12) adds one more: how far setup got and an opaque child id.
       // Sealed, small, and never a name, PIN, invite code or sign-in key.
+      // The tablet update path (section 7.25) adds `updatestage`: the checked update a tablet is holding for a grown-up
+      // to install (version, the signed notice, plain-words release notes, when an install began). Sealed; it is the
+      // one device area allowed to be bigger than 8 KiB because the signed notice it keeps may be up to 256 KiB.
       final List<LocalDataEntry> device =
           localDataCatalogue.where((LocalDataEntry e) => e.scope == LocalScope.device).toList();
       expect(device.map((LocalDataEntry e) => e.area).toList(),
-          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'account']);
+          <String>['role', 'devicekey', 'childpairing', 'adultunlock', 'updatestage', 'account']);
       for (final LocalDataEntry e in device) {
-        expect(e.maxBytes, lessThanOrEqualTo(8 * 1024));
+        expect(e.maxBytes, lessThanOrEqualTo(e.area == 'updatestage' ? 512 * 1024 : 8 * 1024));
         if (e.area != 'role') expect(e.encrypted, isTrue, reason: '${e.area} is sealed');
       }
       expect(device.first.what.toLowerCase(), contains('not a name'));

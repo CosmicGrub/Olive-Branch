@@ -22,6 +22,7 @@
 import 'package:flutter/material.dart';
 
 import 'alerts_card.dart';
+import 'tablet_update_screens.dart' show TabletUpdateCard;
 
 class GuardianEscalationScreen extends StatelessWidget {
   const GuardianEscalationScreen({
@@ -70,6 +71,9 @@ class GuardianEscalationScreen extends StatelessWidget {
               ?.copyWith(color: scheme.onSurfaceVariant)),
           // What the phone allows for rings and alerts (alerts_card.dart); draws nothing where there is no phone side.
           const AlertsCard(),
+          // Section 7.25: an update for this tablet, handed over by the grown-up's phone or fetched here. Inside Guardian
+          // mode only (a grown-up proved themselves to be here); draws nothing on a build with no update machinery.
+          TabletUpdateCard(adultPresent: () => escalatedUntil?.isAfter(DateTime.now()) ?? false),
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),

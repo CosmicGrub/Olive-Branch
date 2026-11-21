@@ -292,6 +292,12 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'type it there to leave or unlock the app, and the count of wrong tries toward a 15 minute '
           'lock. The PIN itself is never kept and a child cannot create or change it. Sealed on the device.'),
   LocalDataEntry(
+      area: 'updatestage', scope: LocalScope.device, encrypted: true, maxBytes: 512 * 1024,
+      what: 'An app update this tablet has taken from the phone of a grown-up and checked, waiting for a grown-up to '
+          'install it: the version, the signed notice, the plain-words list of what is new, when an install was '
+          'started, and how the last try ended. The update file itself is kept in the private folder of the app and '
+          'removed once installed. Never anything about the child.'),
+  LocalDataEntry(
       area: 'pairedkids', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
           'the date), so one can be forgotten later. Sealed on the device.'),

@@ -1,12 +1,10 @@
 // OLIVE BRANCH — the tablet update transfer, over the in-memory transport twin: the happy path, awkward sizes, a lost
 // link and resume, a restarted app resuming from the partial file, and the phone refusing to start. Headless.
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/play_loopback.dart';
-import 'package:olive_client/play_transport.dart';
 import 'package:olive_client/tablet_update_hash.dart';
 import 'package:olive_client/tablet_update_port.dart';
 import 'package:olive_client/tablet_update_receiver.dart';

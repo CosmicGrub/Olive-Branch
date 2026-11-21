@@ -9,6 +9,7 @@
 import 'dart:typed_data';
 
 import 'device_keys.dart' show b64, unb64;
+import 'local_services.dart';
 import 'local_store.dart';
 
 enum StageState { receiving, ready, installing }
@@ -20,6 +21,8 @@ class StagedUpdate {
     required this.versionCode,
     required this.fileName,
     required this.document,
+    this.headline = '',
+    this.notes = const <String>[],
     this.installStartedAtMs,
     this.fromVersionCode,
   });
@@ -34,6 +37,10 @@ class StagedUpdate {
   /// The signed notice, byte for byte.
   final Uint8List document;
 
+  /// Plain words for a grown-up, from the verified notice, kept so "what is new" survives the update itself.
+  final String headline;
+  final List<String> notes;
+
   /// The "update began" marker: when the grown-up started the install and which version was running.
   final int? installStartedAtMs;
   final int? fromVersionCode;
@@ -44,6 +51,8 @@ class StagedUpdate {
         versionCode: versionCode,
         fileName: fileName,
         document: document,
+        headline: headline,
+        notes: notes,
         installStartedAtMs: installStartedAtMs ?? this.installStartedAtMs,
         fromVersionCode: fromVersionCode ?? this.fromVersionCode,
       );
@@ -54,6 +63,8 @@ class StagedUpdate {
         'vc': versionCode,
         'f': fileName,
         'doc': b64(document),
+        'h': headline,
+        'n': notes,
         if (installStartedAtMs != null) 'at': installStartedAtMs,
         if (fromVersionCode != null) 'from': fromVersionCode,
       };
@@ -66,6 +77,9 @@ class StagedUpdate {
     final Object? vn = j['vn'], vc = j['vc'], f = j['f'], doc = j['doc'], at = j['at'], from = j['from'];
     if (st == null || vn is! String || vn.isEmpty || vn.length > 40 || vc is! int || vc < 1) return null;
     if (f is! String || !_bareName.hasMatch(f) || f.contains('..') || doc is! String) return null;
+    final Object? h = j['h'], n = j['n'];
+    if (h != null && (h is! String || h.length > 100)) return null;
+    if (n != null && (n is! List || n.length > 12 || n.any((Object? x) => x is! String || x.length > 300))) return null;
     if (at != null && at is! int) return null;
     if (from != null && from is! int) return null;
     final Uint8List bytes;
@@ -81,6 +95,8 @@ class StagedUpdate {
         versionCode: vc,
         fileName: f,
         document: bytes,
+        headline: (h as String?) ?? '',
+        notes: n == null ? const <String>[] : <String>[for (final Object? x in n as List<Object?>) x! as String],
         installStartedAtMs: at as int?,
         fromVersionCode: from as int?);
   }
@@ -142,6 +158,10 @@ class MemoryStagedUpdateStore implements StagedUpdateStore {
 /// The durable one: the sealed `updatestage` area.
 class LocalStoreStagedUpdateStore implements StagedUpdateStore {
   LocalStoreStagedUpdateStore(this._ns);
+
+  /// The sealed device area `updatestage` of the current on-device store (see localDataCatalogue).
+  factory LocalStoreStagedUpdateStore.device() => LocalStoreStagedUpdateStore(LocalServices.current.area('updatestage'));
+
   final LocalNamespace _ns;
 
   @override

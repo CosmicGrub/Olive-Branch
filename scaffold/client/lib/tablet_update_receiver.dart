@@ -30,15 +30,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'play_transport.dart';
+import 'tablet_update_checks.dart';
 import 'tablet_update_hash.dart';
 import 'tablet_update_port.dart';
 import 'tablet_update_store.dart';
 import 'tablet_update_wire.dart';
-
-/// The most the engine's own cap on an APK; the tablet holds the same line in case an engine ever allows more.
-const int kTabletMaxApkBytes = 500 * 1024 * 1024;
-const int kTabletMinChunk = 16 * 1024;
-const int kTabletMaxChunk = 8 * 1024 * 1024;
 
 /// Room the tablet wants beyond the file itself (the installer copies the file once more).
 const int kTabletSpaceMargin = 64 * 1024 * 1024;
@@ -281,7 +277,7 @@ class TabletUpdateReceiver extends ChangeNotifier {
     }
     try {
       final VerifiedUpdate u = await engine.verify(doc, forInstall: false);
-      await _checkAgainstInstalled(u);
+      checkNoticeAgainstInstalled(u, _installed ?? await engine.installed());
       _offered = u;
       _set(ReceivePhase.offered);
     } on TabletUpdateRefused catch (e) {
@@ -291,20 +287,6 @@ class TabletUpdateReceiver extends ChangeNotifier {
     }
   }
 
-  /// What the tablet checks itself, whatever the engine said: this app, strictly newer, the pinned signer is the
-  /// installed signer, sizes inside the caps, chunk list consistent with the size.
-  Future<void> _checkAgainstInstalled(VerifiedUpdate u) async {
-    final InstalledFacts inst = _installed ?? await engine.installed();
-    if (u.packageName != inst.packageName) throw const TabletUpdateRefused(TabletUpdateCode.wrongApp);
-    if (u.versionCode < inst.versionCode) throw const TabletUpdateRefused(TabletUpdateCode.older);
-    if (u.versionCode == inst.versionCode) throw const TabletUpdateRefused(TabletUpdateCode.upToDate);
-    final ApkFacts a = u.apk;
-    if (a.size < 1 || a.size > kTabletMaxApkBytes) throw const TabletUpdateRefused(TabletUpdateCode.tooBig);
-    if (a.chunkSize < kTabletMinChunk || a.chunkSize > kTabletMaxChunk) throw const TabletUpdateRefused(TabletUpdateCode.notGenuine);
-    if (a.chunkSha256.length != (a.size + a.chunkSize - 1) ~/ a.chunkSize) throw const TabletUpdateRefused(TabletUpdateCode.notGenuine);
-    if (a.signerSha256 != inst.signerSha256) throw const TabletUpdateRefused(TabletUpdateCode.wrongSigner);
-  }
-
   // ---- the file ----------------------------------------------------------------------------------------------------
 
   /// The grown-up said "Get it". Checks space and battery, then asks for the file from the last verified byte.
@@ -312,13 +294,7 @@ class TabletUpdateReceiver extends ChangeNotifier {
         if (_phase != ReceivePhase.offered) throw const TabletUpdateRefused(TabletUpdateCode.busy);
         if (!adultPresent()) throw const TabletUpdateRefused(TabletUpdateCode.notAllowed);
         final VerifiedUpdate u = _offered!;
-        final DeviceGuards g = await engine.guards();
-        if (g.freeBytes < u.apk.size * 2 + kTabletSpaceMargin) {
-          throw const TabletUpdateRefused(TabletUpdateCode.noSpace);
-        }
-        if (g.batteryPercent >= 0 && g.batteryPercent < 20 && !g.charging) {
-          throw const TabletUpdateRefused(TabletUpdateCode.lowBattery);
-        }
+        await checkGuards(engine, u.apk.size, margin: kTabletSpaceMargin);
         _dir = await engine.stagingDirectory();
         _part = File('${_dir!.path}${Platform.pathSeparator}u${_docSha!.substring(0, 16)}.part');
         await _openAndResumeFromDisk(u.apk);
@@ -444,28 +420,24 @@ class TabletUpdateReceiver extends ChangeNotifier {
   Future<void> _finalize() async {
     _set(ReceivePhase.verifying);
     final VerifiedUpdate u = _offered!;
-    final ApkFacts a = u.apk;
     try {
       await _raf!.flush();
       await _raf!.close();
       _raf = null;
       final File part = _part!;
-      if (await part.length() != a.size) throw const TabletUpdateRefused(TabletUpdateCode.truncated);
-      if (await _whole!.finish() != a.sha256) throw const TabletUpdateRefused(TabletUpdateCode.hashMismatch);
-      final ApkInspection i = await engine.inspect(part);
-      final InstalledFacts inst = await engine.installed();
-      if (i.packageName != inst.packageName) throw const TabletUpdateRefused(TabletUpdateCode.wrongPackage);
-      if (i.versionCode != u.versionCode) throw const TabletUpdateRefused(TabletUpdateCode.notGenuine);
-      if (i.versionCode <= inst.versionCode) throw const TabletUpdateRefused(TabletUpdateCode.older);
-      if (i.signerSha256 != inst.signerSha256 || i.signerSha256 != a.signerSha256) {
-        throw const TabletUpdateRefused(TabletUpdateCode.wrongSigner);
-      }
+      await checkApkFileAgainstNotice(engine: engine, update: u, file: part, knownSha: await _whole!.finish());
       final String name = 'update-${u.versionCode}.apk';
       final File staged = File('${_dir!.path}${Platform.pathSeparator}$name');
       if (await staged.exists()) await staged.delete();
       await part.rename(staged.path);
       await store.saveStaged(StagedUpdate(
-          stage: StageState.ready, versionName: u.versionName, versionCode: u.versionCode, fileName: name, document: u.document));
+          stage: StageState.ready,
+          versionName: u.versionName,
+          versionCode: u.versionCode,
+          fileName: name,
+          document: u.document,
+          headline: u.headline,
+          notes: u.notes));
       await store.saveLastResult(null);
       _set(ReceivePhase.ready);
       await _send(EndMsg(_sid!, EndWhy.done));
