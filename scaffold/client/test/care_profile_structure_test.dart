@@ -83,7 +83,8 @@ void main() {
       for (final File f in Directory('lib').listSync().whereType<File>().where((File f) => f.path.endsWith('.dart')))
         if (RegExp(r'''['"](aboutchild|aboutplans)['"]''').hasMatch(_code(f.path))) f.uri.pathSegments.last,
     };
-    expect(files, <String>{'care_profile_store.dart', 'local_services.dart', 'clear_local_data_screen.dart'});
+    // local_snapshot.dart names them only in its backup-class table (family: guardians' record, never the child's).
+    expect(files, <String>{'care_profile_store.dart', 'local_services.dart', 'clear_local_data_screen.dart', 'local_snapshot.dart'});
   });
 
   test('the profile screens are the guardian shell: they import no child screen and no pairing file', () {
