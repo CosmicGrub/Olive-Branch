@@ -10,6 +10,9 @@
 //                                            a PIN. Returns a session and the device's long-lived credential.
 //   sign in      POST /v1/auth/session/refresh (this device, automatic) or a code from another signed-in device
 //                                            (POST /v1/device-pairing/redeem, pairing_redeem_screen.dart).
+//   get back in  POST /v1/auth/recover       when NO phone is signed in any more: a recovery code from whoever
+//                                            runs the server AND the account's own PIN (migration 0053).
+//                                            Signs the account's earlier phones out.
 //   add a child  POST /v1/children           own-PIN step-up. The same transaction gives the caller the guardianship.
 //   invite       POST /v1/children/:id/guardianships        own-PIN step-up.
 //   join         GET  /v1/guardian-invites/:id, POST .../accept, POST .../bootstrap (a new person) or POST .../claim
@@ -409,6 +412,49 @@ class FamilyAccountService {
         final Map<String, dynamic> r = await signUpWithAllowance(baseUrl,
             allowanceToken: code, displayName: name, homeTz: homeTz, pin: pin,
             deviceLabel: deviceLabel, client: _client);
+        await _afterAccountMade(r, userKey: 'userId');
+        await _safe(() => _record.save(AccountRecord(stage: AccountStage.signedUp, at: _now())));
+      });
+
+  // ---- getting back in ----------------------------------------------------------------------------
+
+  /// Is the sign-in this phone holds still alive? True: it works. False: there is none, or it was ended (this
+  /// phone was signed out of the account, or the account was closed; the dead key is removed as a side effect).
+  /// A lost connection is thrown, because then nobody can tell.
+  Future<bool> _signInIsAlive() async {
+    if (_unsaved != null) return true;
+    if (!await _hasStoredSignIn()) return false;
+    final AuthSession s = await _session();
+    try {
+      await s.refresh();
+      return true;
+    } on DeviceRevokedException {
+      return false;
+    } on ForbiddenException catch (e) {
+      if (e.error == 'account_deactivated') return false;
+      rethrow;
+    }
+  }
+
+  /// Gets a grown-up back into their account when no signed-in phone is left: the recovery code the person who
+  /// runs the server gave them, and the account's own PIN. The server signs the account's earlier phones out and
+  /// this phone becomes its sign-in. Refused (before anything is sent) while this phone's own sign-in still
+  /// works. The PIN is held only for the one call.
+  Future<void> recoverAccount({required String recoveryCode, required String pin}) =>
+      _run<void>('recover', AccountAction.recover, () async {
+        final String? code = cleanRecoveryCode(recoveryCode);
+        if (code == null) {
+          throw _fix('Enter the recovery code you were given. It is long, and has no spaces.', 'recovery_code_required');
+        }
+        if (!looksLikePin(pin)) throw _fix('Enter your PIN. It is 4 to 8 digits.', 'pin_required');
+        if (await _signInIsAlive()) {
+          throw const AccountFailure(AccountProblem(
+              'This phone is already signed in to an account, and it works. You do not need a recovery code here.',
+              ProblemKind.cannot,
+              reason: 'already_signed_in'));
+        }
+        final Map<String, dynamic> r = await recoverAccountWithCode(baseUrl,
+            recoveryCode: code, pin: pin, deviceLabel: deviceLabel, client: _client);
         await _afterAccountMade(r, userKey: 'userId');
         await _safe(() => _record.save(AccountRecord(stage: AccountStage.signedUp, at: _now())));
       });

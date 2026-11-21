@@ -8,10 +8,55 @@ import 'package:olive_client/child_home.dart';
 import 'package:olive_client/child_receive.dart';
 import 'package:olive_client/form_factors.dart' as ff;
 import 'package:olive_client/inbox_screen.dart';
+import 'package:olive_client/message_player.dart';
 import 'package:olive_client/offline_outbox.dart';
 import 'package:olive_client/receipt_screen.dart';
 
 Widget wrap(Widget child) => MaterialApp(home: child);
+
+/// A player that plays at once, with no platform behind it.
+class _FakePlayback implements MessagePlaybackPort {
+  @override
+  final ValueNotifier<PlaybackSnapshot> state = ValueNotifier<PlaybackSnapshot>(const PlaybackSnapshot());
+  @override
+  Future<void> openFile(String path) async {}
+  @override
+  Future<void> play() async => state.value = const PlaybackSnapshot(playing: true);
+  @override
+  Future<void> pause() async => state.value = const PlaybackSnapshot();
+  @override
+  Future<void> replay() async => play();
+  @override
+  Widget? view() => null;
+  @override
+  Future<void> dispose() async {}
+}
+
+Future<LocalMedia> _fakeFetch(Uri uri) async => LocalMedia('/nowhere/olive_test_media');
+
+Widget _fakePicture(BuildContext c, String path, VoidCallback onShown, VoidCallback onFailed) {
+  WidgetsBinding.instance.addPostFrameCallback((_) => onShown());
+  return const SizedBox(key: Key('fakePicture'), width: 40, height: 40);
+}
+
+const String _mediaUrlBody =
+    '{"signedUrl":"http://api.test/media/children/child-a/messages/abc?exp=1&sig=ab","absolute":true,"kind":"video_msg","ttl":300}';
+
+/// The server's media-url answer on top of whatever else a test says.
+MockClient _withMedia(Future<http.Response> Function(http.Request) inner) => MockClient((http.Request req) async {
+      if (req.method == 'GET' && req.url.path.endsWith('/media-url')) {
+        return http.Response(_mediaUrlBody, 200);
+      }
+      return inner(req);
+    });
+
+/// Taps a tile, lets the player play, and leaves it: she is then on the message's receipt, as before.
+Future<void> _openTile(WidgetTester t, Finder f) async {
+  await t.tap(f);
+  await t.pumpAndSettle();
+  await t.pageBack();
+  await t.pumpAndSettle();
+}
 
 const List<InboxMessage> _messages = <InboxMessage>[
   InboxMessage(id: '1', senderName: 'Dad', deliveredAtLabel: '7:04 AM', dayPartKind: 'before_school'),
@@ -41,7 +86,8 @@ http.Response _inbox(List<Map<String, Object?>> rows) =>
 Widget _live(MockClient mock, _Mem mem, {Duration? refreshEvery}) => wrap(InboxScreen(
       childName: 'Ivy', messages: const <InboxMessage>[],
       baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'tok',
-      httpClient: mock, receiptQueue: mem.queue, refreshEvery: refreshEvery));
+      httpClient: mock, receiptQueue: mem.queue, refreshEvery: refreshEvery,
+      mediaFetcher: _fakeFetch, playbackFactory: _FakePlayback.new, pictureBuilder: _fakePicture));
 
 List<String> _allText(WidgetTester t) => <String>[
       for (final Element e in find.byType(Text).evaluate()) ((e.widget as Text).data ?? ''),
@@ -197,7 +243,7 @@ void main() {
     group('live — what the delivery worker made ready', () {
       testWidgets('shows only what the server sent, never the example messages, and no spinner or sentence '
           'at any point', (tester) async {
-        final MockClient mock = MockClient((http.Request req) async {
+        final MockClient mock = _withMedia((http.Request req) async {
           expect(req.url.path, '/v1/children/child-a/inbox');
           return _inbox(<Map<String, Object?>>[
             _row('real-1'), _row('real-2', state: 'opened', name: 'Mom', label: 'Yesterday, 3:00 PM'),
@@ -219,7 +265,7 @@ void main() {
       });
 
       testWidgets('rows the server says are not hers yet or are gone are not drawn', (tester) async {
-        final MockClient mock = MockClient((_) async => _inbox(<Map<String, Object?>>[
+        final MockClient mock = _withMedia((_) async => _inbox(<Map<String, Object?>>[
               _row('a', state: 'ready'), _row('b', state: 'pending'), _row('c', state: 'expired'),
               _row('d', state: 'revoked'), _row('ok'),
             ]));
@@ -230,15 +276,15 @@ void main() {
 
       testWidgets('opening a live-fetched message threads the real live params into ReceiptScreen',
           (tester) async {
-        final MockClient mock = MockClient((_) async => _inbox(<Map<String, Object?>>[_row('real-1')]));
+        final MockClient mock = _withMedia((_) async => _inbox(<Map<String, Object?>>[_row('real-1')]));
         await tester.pumpWidget(wrap(InboxScreen(
           childName: 'Ivy', messages: const <InboxMessage>[],
           baseUrl: 'http://api.test', childId: 'child-a', sessionToken: 'real-session-tok',
-          httpClient: mock, receiptQueue: _Mem().queue, refreshEvery: null)));
+          httpClient: mock, receiptQueue: _Mem().queue, refreshEvery: null,
+          mediaFetcher: _fakeFetch, playbackFactory: _FakePlayback.new, pictureBuilder: _fakePicture)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
 
         final ReceiptScreen receipt = tester.widget(find.byType(ReceiptScreen));
         expect(receipt.baseUrl, 'http://api.test');
@@ -249,7 +295,7 @@ void main() {
       testWidgets('opening an unopened message tells the server through POST .../inbox/:id/opened, once',
           (tester) async {
         final List<http.Request> posts = <http.Request>[];
-        final MockClient mock = MockClient((http.Request req) async {
+        final MockClient mock = _withMedia((http.Request req) async {
           if (req.method == 'POST') {
             posts.add(req);
             return http.Response(jsonEncode({'ok': true}), 200);
@@ -260,8 +306,7 @@ void main() {
         await tester.pumpWidget(_live(mock, mem));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
 
         expect(posts, hasLength(1));
         expect(posts.single.url.path, '/v1/children/child-a/inbox/real-1/opened');
@@ -271,7 +316,7 @@ void main() {
 
       testWidgets('a failing receipt POST never delays the receipt screen and waits in the outbox, unseen',
           (tester) async {
-        final MockClient mock = MockClient((http.Request req) async {
+        final MockClient mock = _withMedia((http.Request req) async {
           if (req.method == 'POST') throw http.ClientException('no route to host');
           return _inbox(<Map<String, Object?>>[_row('real-1')]);
         });
@@ -279,8 +324,7 @@ void main() {
         await tester.pumpWidget(_live(mock, mem));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
 
         expect(find.byType(ReceiptScreen), findsOneWidget);
         expect(tester.takeException(), isNull);
@@ -302,7 +346,7 @@ void main() {
           (tester) async {
         final List<String> order = <String>[];
         bool online = false;
-        final MockClient mock = MockClient((http.Request req) async {
+        final MockClient mock = _withMedia((http.Request req) async {
           order.add('${req.method} ${req.url.path}');
           if (req.method == 'POST') {
             if (!online) throw http.ClientException('down');
@@ -313,8 +357,7 @@ void main() {
         final _Mem mem = _Mem();
         await tester.pumpWidget(_live(mock, mem, refreshEvery: const Duration(minutes: 1)));
         await tester.pumpAndSettle();
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(mem.items, hasLength(1));
@@ -331,15 +374,14 @@ void main() {
 
       testWidgets('a fetch that raced her tap cannot turn the tile back to unopened', (tester) async {
         // The server answers 'delivered' for the whole run, as if it had not yet processed her receipt.
-        final MockClient mock = MockClient((http.Request req) async =>
+        final MockClient mock = _withMedia((http.Request req) async =>
             req.method == 'POST' ? http.Response('{"ok":true}', 200) : _inbox(<Map<String, Object?>>[_row('real-1')]));
         final _Mem mem = _Mem();
         await tester.pumpWidget(_live(mock, mem, refreshEvery: const Duration(minutes: 1)));
         await tester.pumpAndSettle();
         Color? fill() => tester.widget<CircleAvatar>(find.byType(CircleAvatar).first).backgroundColor;
         final Color? before = fill();
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
         await tester.pageBack();
         await tester.pumpAndSettle();
         final Color? opened = fill();
@@ -352,15 +394,14 @@ void main() {
 
       testWidgets('opening an ALREADY-opened message does not tell the server again', (tester) async {
         final List<http.Request> posts = <http.Request>[];
-        final MockClient mock = MockClient((http.Request req) async {
+        final MockClient mock = _withMedia((http.Request req) async {
           if (req.method == 'POST') { posts.add(req); return http.Response('{}', 200); }
           return _inbox(<Map<String, Object?>>[_row('real-1', state: 'opened')]);
         });
         await tester.pumpWidget(_live(mock, _Mem()));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.textContaining('Dad sent a video'));
-        await tester.pumpAndSettle();
+        await _openTile(tester, find.textContaining('Dad sent a video'));
 
         expect(find.byType(ReceiptScreen), findsOneWidget);
         expect(posts, isEmpty);

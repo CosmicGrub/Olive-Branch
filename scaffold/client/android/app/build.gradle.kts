@@ -162,6 +162,18 @@ configurations.configureEach {
     }
 }
 
+// ONE copy of media3's RTSP source per APK. video_player_android (the child's message player) declares
+// androidx.media3:media3-exoplayer-rtsp, and the Jitsi SDK's react-native-video AAR already bundles the SAME
+// classes (androidx.media3.exoplayer.rtsp.RtspMediaSource and $Factory) inside its own jar, so
+// :app:checkReleaseDuplicateClasses failed with "Duplicate class ... found in modules media3-exoplayer-rtsp-1.9.2
+// and react-native-video-...-jitsi". Nothing here plays rtsp:// (the player only opens a local file the app
+// downloaded), so the standalone module is excluded from the APP's resolution; the plugin still compiles against
+// it in its own project, and the Jitsi copy of those classes is the one that ships, so the plugin's reference to
+// RtspMediaSource still resolves at R8. Do not add a second copy back.
+configurations.configureEach {
+    exclude(group = "androidx.media3", module = "media3-exoplayer-rtsp")
+}
+
 // flutter_webrtc ALSO embeds a few org.webrtc.* helper classes of its own (Camera1Helper
 // and friends) in its library jar, which collide with the Jitsi WebRTC's identical names
 // at R8/D8 ("Type org.webrtc.Camera1Helper is defined multiple times"). In the Jitsi build

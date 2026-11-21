@@ -42,6 +42,7 @@ const Map<String, String> _functionToErrorType = <String, String>{
   'claimGuardianInvite': 'ClaimInviteError',
   'confirmGuardianInvite': 'ConfirmInviteError',
   'declineGuardianInvite': 'DeclineInviteError',
+  'recoverAccount': 'RecoverError',
 };
 
 /// The reasons `requireOwnPin` can answer with (server/routes.mjs).
