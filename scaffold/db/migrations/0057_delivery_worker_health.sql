@@ -1,5 +1,5 @@
 -- ============================================================================
---  OLIVE BRANCH — 0056: a dead delivery worker is visible, and a stuck
+--  OLIVE BRANCH — 0057: a dead delivery worker is visible, and a stuck
 --  `pending` row can no longer crowd out a fresh one.
 --
 --  TWO LIVE GAPS, ONE MIGRATION (both are about the delivery worker).
@@ -127,7 +127,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION delivery_health() IS
-  'Aggregate-only delivery-worker monitoring read (0056): queue counts, ages in seconds and the worker '
+  'Aggregate-only delivery-worker monitoring read (0057): queue counts, ages in seconds and the worker '
   'heartbeat ages. Raises app.health_probe for one query like health_counts() (0047); never returns a row of family data.';
 
 REVOKE ALL ON FUNCTION delivery_health() FROM PUBLIC;

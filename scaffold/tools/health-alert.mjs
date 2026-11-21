@@ -71,7 +71,7 @@ try {
   );
   rows = res.rows;
   // ISS-069: is a delivery worker running, and is anything due and unclaimed? delivery_health()
-  // (0056) is aggregate-only, like health_counts(): ages and counts, never a row. A database that
+  // (0057) is aggregate-only, like health_counts(): ages and counts, never a row. A database that
   // predates it (42883) simply has no worker to watch; any other failure is itself reported below.
   try {
     const d = (await client.query('SELECT * FROM delivery_health()')).rows[0];

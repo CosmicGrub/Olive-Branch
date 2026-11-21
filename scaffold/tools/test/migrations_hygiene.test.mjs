@@ -68,10 +68,10 @@ const testFixtures = new Set(readdirSync(join(SCAFFOLD, 'db', 'test')).filter(f 
   // that is no longer needed only hides a deleted migration (ISS-075), so it is gone.
   const ALLOWED_GAPS = [19];
   // Numbers held by open work that has not reached main (0054 encrypted family backup, 0055
-  // account recovery paths). A number here is allowed to be missing ONLY while its file is absent:
+  // account recovery paths, 0056 lost device). A number here is allowed to be missing ONLY while its file is absent:
   // the moment it lands the check below fails and the entry must be deleted, so this cannot go
   // stale and hide a deleted migration. It is empty once those branches merge.
-  const HELD_FOR_OPEN_WORK = [54, 55];
+  const HELD_FOR_OPEN_WORK = [54, 55, 56];
   const gapsIn = (list) => {
     const out = [];
     for (let n = 1; n <= list[list.length - 1]; n++) if (!list.includes(n)) out.push(n);
