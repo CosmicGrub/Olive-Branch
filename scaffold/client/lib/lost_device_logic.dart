@@ -179,6 +179,18 @@ String deviceStatusLine(FamilyDevice d, DateTime now) {
   }
 }
 
+/// The notice every grown-up sees while a phone or tablet is marked as lost: who, what it means, and until when.
+String lostNoticeSentence(FamilyDevice d, DateTime now) {
+  final String by = d.markedByMe
+      ? ' by you'
+      : d.markedByName == null
+          ? ''
+          : ' by ${d.markedByName}';
+  final DateTime? due = d.revokeDueAt;
+  final String until = due == null ? '' : ' It can come back until ${whenWords(due, now)}.';
+  return '${d.title} was marked as lost$by. It is paused and gets nothing new. $kNothingDeleted$until';
+}
+
 /// One line about the erase order, or null when there is nothing to say.
 String? wipeStatusLine(FamilyDevice d) => switch (d.wipe) {
       WipeProgress.none => null,

@@ -32,6 +32,7 @@ LostDeviceService buildLostDeviceService(String baseUrl, FamilyAccountService ac
 
 class LostDeviceService {
   LostDeviceService({required this.baseUrl, required FamilyAccountService account, http.Client? client})
+      // ignore: prefer_initializing_formals
       : _account = account,
         _client = client ?? OliveTransport.clientFor(baseUrl),
         _ownsClient = client == null;

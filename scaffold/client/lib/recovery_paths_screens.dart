@@ -783,6 +783,7 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
     return _Page(title: 'Lost phone safety', children: <Widget>[
       const _Note('If a phone is lost, you can get back in, and nothing is lost. Set this up now, while your phone works.'),
       _Problem(_problem),
+      if (_busy && s != null) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
       if (_loading && s == null) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
       if (s != null) ..._sections(s),
     ]);

@@ -33,6 +33,7 @@ import 'family_account_service.dart';
 import 'family_account_store.dart' show JoinStage, PendingJoin;
 import 'local_family.dart' show HomeZone, kHomeZoneDevice, kHomeZones;
 import 'pairing_redeem_screen.dart' show PairingRedeemScreen;
+import 'lost_device_screens.dart' show LostDeviceNoticeBanner, YourDevicesScreen;
 import 'recovery_paths_screens.dart' show LostPhoneScreen, RecoveryNoticeBanner, RecoverySafetyScreen;
 import 'recovery_paths_service.dart' show RecoveryPathsService;
 import 'screen_privacy.dart' show SensitiveScreen;
@@ -443,6 +444,9 @@ class _FamilyAccountScreenState extends State<FamilyAccountScreen> {
         RecoveryNoticeBanner(
             service: widget.recovery!,
             onOpen: () => _go(RecoverySafetyScreen(service: widget.recovery!))),
+        LostDeviceNoticeBanner(
+            service: widget.recovery!.lostDevices,
+            onOpen: () => _go(YourDevicesScreen(service: widget.recovery!.lostDevices))),
         _Tile(
           key: const Key('tileLostPhoneSafety'),
           icon: Icons.phonelink_erase_outlined,

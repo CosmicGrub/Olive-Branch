@@ -130,8 +130,8 @@ void main() {
       server.requests.clear();
       await tapKey(t, 'markLost_${f.phone.id}');
       expect(find.byKey(const Key('confirmDoes')), findsOneWidget);
-      expect(find.textContaining('Nothing is deleted'), findsOneWidget);
-      expect(find.textContaining('3 days'), findsOneWidget);
+      expect(t.widget<Text>(find.byKey(const Key('confirmDoes'))).data, contains('Nothing is deleted'));
+      expect(t.widget<Text>(find.byKey(const Key('confirmDoes'))).data, contains('3 days'));
       expect(find.text('What this cannot do'), findsOneWidget);
       expect(find.byKey(const Key('confirmLimits')), findsOneWidget);
       expect(find.textContaining('cannot find'), findsOneWidget);
@@ -286,6 +286,64 @@ void main() {
       await tapKey(t, 'resumeThisPhone');
       expect(server.requests, isEmpty);
       expect(find.textContaining('4 to 8 digits'), findsOneWidget);
+    });
+  });
+
+  group('the notice on the account page', () {
+    Future<void> pumpBanner(WidgetTester t, Phone p, {VoidCallback? onOpen}) async {
+      AuthSession.use(p.session);
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(body: LostDeviceNoticeBanner(service: svc(p), onOpen: onOpen ?? () {}, now: server.now))));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('nothing while every phone works; a calm card, in words, while one is marked as lost', (t) async {
+      await size(t);
+      final f = await family();
+      await pumpBanner(t, f.dad);
+      expect(find.byKey(const Key('lostDeviceBanner')), findsNothing);
+      await t.runAsync(() => f.mom.act((_) => svc(f.mom).markLost(deviceId: f.phone.id, pin: '4821')));
+      await pumpBanner(t, f.dad);
+      expect(find.byKey(const Key('lostDeviceBanner')), findsOneWidget);
+      expect(find.text('A phone or tablet is marked as lost'), findsOneWidget);
+      expect(find.textContaining("Mom's phone: Old phone was marked as lost by Mom"), findsOneWidget);
+      expect(find.textContaining('Nothing is deleted'), findsOneWidget);
+      expect(find.textContaining('can come back until'), findsOneWidget);
+      plain(t);
+    });
+
+    testWidgets('it opens the list when tapped, and says "more" when there are several', (t) async {
+      await size(t);
+      final f = await family();
+      await t.runAsync(() => f.mom.act((_) => svc(f.mom).markLost(deviceId: f.phone.id, pin: '4821')));
+      await t.runAsync(() => f.mom.act((_) => svc(f.mom).markLost(deviceId: f.tablet.id, pin: '4821')));
+      int opened = 0;
+      await pumpBanner(t, f.dad, onOpen: () => opened++);
+      expect(find.text('Phones or tablets are marked as lost'), findsOneWidget);
+      expect(find.textContaining('And 1 more'), findsOneWidget);
+      await t.tap(find.byKey(const Key('lostDeviceBanner')));
+      expect(opened, 1);
+    });
+
+    testWidgets('a phone that cannot ask shows nothing, and never an error', (t) async {
+      await size(t);
+      final f = await family();
+      server.failNext = http.Response('x', 503);
+      await pumpBanner(t, f.dad);
+      expect(find.byKey(const Key('lostDeviceBanner')), findsNothing);
+      expect(find.byKey(const Key('lostProblem')), findsNothing);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('a phone that is itself marked as lost shows nothing here (its own card is on the list)', (t) async {
+      await size(t);
+      final f = await family();
+      final Future<http.Response?> Function(http.BaseRequest)? prev = server.interceptor;
+      server.interceptor = (http.BaseRequest r) async => r.url.path == '/v1/me/devices'
+          ? http.Response('{"error":"device_paused"}', 401, headers: <String, String>{'content-type': 'application/json'})
+          : prev!(r);
+      await pumpBanner(t, f.mom);
+      expect(find.byKey(const Key('lostDeviceBanner')), findsNothing);
     });
   });
 

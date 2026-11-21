@@ -89,6 +89,11 @@ class LostFake {
     final String? tok = req.headers['authorization']?.replaceFirst('Bearer ', '');
     final String? uid = tok == null ? null : server.sessions[tok];
     log.add('${req.method} $path');
+    final http.Response? failing = server.failNext;
+    if (failing != null) {
+      server.failNext = null;
+      return failing;
+    }
     if (uid == null) return _err(401, 'bad_signature');
     if (path == '/v1/me/devices' && req.method == 'GET') {
       return _json(200, <String, Object>{
