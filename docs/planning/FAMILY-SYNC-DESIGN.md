@@ -9,6 +9,8 @@ The identity lane and the village lane stay as they are. This document adds one 
 
 **First slice built (build steps S1, S2, S3, road E of S4, and the emergency-card half of S5; MASTERFILE 8.24.9).** Differences from this text, so nobody reads it as built-as-written: the seal is the existing ChaCha20-Poly1305 `guardianSeal` with a random 96-bit nonce (not XChaCha20); the stream id is derived from the family id, area and child (not minted by the first event, so two grown-ups starting offline share one stream); the heads exchange is a per-writer contiguous-prefix summary (equivalent for convergence, simpler to test); bundles are sealed under the guardian key; the hand-carried road is a copied and pasted text (no plugin for files); acks, courier, mailbox, wake push, locked sections, the late-joiner carry, hospital-mode-while-forked and Node vectors are NOT built; and no menu reaches the screen because founding a family and joining a second grown-up's phone are not wired into the app yet.
 
+**Wired into the app (MASTERFILE 8.24.10).** Road A is built (`family_sync_lan.dart`: an HTTP service on private addresses, advertised on mDNS with a keyed ten-minute tag, answering only a sender who can open a sealed update); it carries the update, the screen share and the ledger entries a peer lacks. A family of one grown-up can found a family record and add the second grown-up's phone with a one-time code (`family_join.dart`); the screens are in More, Safety. Differences from the design text: the sync session does not ride the play-admission handshake (the sealed update already authenticates the sender, so the road needs no hello); the quiet notification and the wake push are not built; a third grown-up and key rotation are not built.
+
 ---
 
 ## 0. The short answer

@@ -67,7 +67,12 @@ class FamilySyncScreen extends StatefulWidget {
     this.myName = '',
     this.childName = 'her',
     this.clipboard = const SystemClipboardPort(),
+    this.shareNow,
   });
+
+  /// "Share now over Wi-Fi": meets the other phone on the same network and swaps updates. Null where the build has no
+  /// Wi-Fi road (the copy-and-paste update still works). Returns the sentence to show.
+  final Future<String> Function()? shareNow;
 
   final SyncEngine engine;
   final String childId;
@@ -131,7 +136,7 @@ class _FamilySyncScreenState extends State<FamilySyncScreen> {
         if (mine == null) return syncRefusalText('empty');
         final SyncAppend r = await _sync.share(mine, byName: widget.myName, state: await widget.ledger());
         return r.event != null
-            ? 'Saved on this phone. It reaches the other phone when you copy an update and paste it there.'
+            ? _savedText
             : syncRefusalText(r.reason ?? '?');
       });
 
@@ -144,8 +149,14 @@ class _FamilySyncScreenState extends State<FamilySyncScreen> {
   Future<void> _keep(EmergencyVersion v) => _run(() async {
         final SyncAppend r = await _sync.choose(v, byName: widget.myName, state: await widget.ledger());
         if (r.event == null) return syncRefusalText(r.reason ?? '?');
-        return 'Saved on this phone. It reaches the other phone when you copy an update and paste it there.';
+        return _savedText;
       });
+
+  String get _savedText => widget.shareNow == null
+      ? 'Saved on this phone. It reaches the other phone when you copy an update and paste it there.'
+      : 'Saved on this phone. It reaches the other phone when you share over Wi-Fi, or copy an update and paste it there.';
+
+  Future<void> _wifi() => _run(() async => widget.shareNow!());
 
   Future<void> _copy() => _run(() async {
         final SyncBundleOut out = await exportBundle(widget.engine);
@@ -192,6 +203,10 @@ class _FamilySyncScreenState extends State<FamilySyncScreen> {
         const SizedBox(height: 16),
         Text('Moving updates', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
+        if (widget.shareNow != null) ...<Widget>[
+          FilledButton(key: const Key('sync-wifi'), onPressed: _busy ? null : _wifi, child: const Text('Share now over Wi-Fi')),
+          const SizedBox(height: 8),
+        ],
         Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
           FilledButton(key: const Key('sync-copy'), onPressed: _busy ? null : _copy, child: const Text('Copy an update for the other phone')),
           OutlinedButton(key: const Key('sync-paste'), onPressed: _busy ? null : _paste, child: const Text('Paste an update from the other phone')),

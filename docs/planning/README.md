@@ -16,7 +16,8 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [QR-VETTING-BRAINSTORM.md](QR-VETTING-BRAINSTORM.md) | The owner-facing brainstorm: welcoming devices and people, the About Mia profile and the care guides, adopted decisions. (The reshaped version is on open PR #198.) |
 | [EXTERNAL-CRYPTO-REVIEW-BRIEF.md](EXTERNAL-CRYPTO-REVIEW-BRIEF.md) | The brief for an outside cryptographer to review the pairing key exchange. Predates PRs #196 and #197; refresh before sending. |
 | [TWO-DEVICE-PAIRING-TEST-PLAN.md](TWO-DEVICE-PAIRING-TEST-PLAN.md) | The run sheet for the first real two-device pairing test. Its discovery step predates PR #196; update before running. |
-| [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design; the first slice (emergency card, copy-and-paste update) is built but not reachable from any menu: how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
+| [TWO-PHONE-SHARE-TEST-PLAN.md](TWO-PHONE-SHARE-TEST-PLAN.md) | The run sheet for the first real two-phone test of adding a grown-up, sharing the emergency card and sending a screen (not run yet). |
+| [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design; the first slice (emergency card, copy-and-paste update, the same-Wi-Fi road, adding a second grown-up by a code) is built and reachable from More, Safety (not run on two real phones): how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
 
 Related documents elsewhere in the repo:
 

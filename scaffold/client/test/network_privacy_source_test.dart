@@ -39,8 +39,11 @@ void main() {
     expect(offenders, isEmpty, reason: '$offenders');
   });
 
-  test('only the LAN filter, discovery, the session server (via the filter), the pairing controller and the adult proximity QR touch interface addresses', () {
-    final Set<String> allowed = <String>{'lan_bind.dart', 'local_discovery.dart', 'local_pairing.dart', 'local_session.dart', 'connect_child_screen.dart'};
+  test('only the LAN filter, discovery, the session server (via the filter), the pairing controller, the adult proximity QR and the same-Wi-Fi road between grown-ups (via the filter) touch interface addresses', () {
+    final Set<String> allowed = <String>{
+      'lan_bind.dart', 'local_discovery.dart', 'local_pairing.dart', 'local_session.dart', 'connect_child_screen.dart',
+      'family_sync_lan.dart', // binds only the LAN-bind filter's addresses; records and logs none (the test below)
+    };
     final List<String> users = <String>[
       for (final File f in files)
         if (RegExp(r'ownLocalIPv4|lanBindAddresses|NetworkInterface').hasMatch(code(f))) name(f)

@@ -10,6 +10,7 @@
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
 import 'dart:async' show unawaited;
+import 'family_phones_screen.dart';
 import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -849,6 +850,12 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'applock', icon: Icons.lock_clock_outlined, title: 'App lock and privacy',
           subtitle: 'Lock on leaving, screens on this phone, quick hide',
           onTap: () => _openAppLock(context)),
+        if (local?.services.familyHub != null)
+          SettingsRow(id: 'sharewith', icon: Icons.people_alt_outlined, title: 'Share with another grown-up',
+            subtitle: 'The emergency card and pictures of a screen, phone to phone on the same Wi-Fi',
+            onTap: () => _open(context, FamilyPhonesScreen(hub: local!.services.familyHub!, childId: childId,
+              principal: _careMe, cardService: EmergencyCardService.forChild(childId), childName: childName,
+              defaultName: local.family?.guardianLabel ?? ''))),
         if (local?.services.shares != null)
           SettingsRow(id: 'screenshares', icon: Icons.mobile_screen_share_outlined, title: 'Screens shared between grown-ups',
             subtitle: 'Pictures of a screen sent from one grown-up to another. They expire, and can be taken back',

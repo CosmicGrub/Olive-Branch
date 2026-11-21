@@ -42,6 +42,7 @@ import 'family_account_entry.dart';
 import 'family_account_store.dart';
 import 'guardian_home_live.dart';
 import 'app_lock.dart';
+import 'family_phones_screen.dart' show FamilyRoadKeeper;
 import 'screen_share_ui.dart';
 import 'guardian_local_scope.dart';
 import 'play_notice.dart' show PlayAudience, PlayAudienceScope;
@@ -341,7 +342,11 @@ Widget _guardianApp({
                     child: AppLockGuard(
                         controller: local.services.appLock,
                         // Share this screen with another grown-up (screen_share_ui.dart): the capture target.
-                        child: ShareCaptureScope(service: local.services.shares, child: voiced)));
+                        // The same-Wi-Fi road to the family's other grown-up phone (family_hub.dart): up only while the
+                        // app is in front and there is a reason for it.
+                        child: FamilyRoadKeeper(
+                            hub: local.services.familyHub,
+                            child: ShareCaptureScope(service: local.services.shares, child: voiced))));
           },
           home: home,
         );

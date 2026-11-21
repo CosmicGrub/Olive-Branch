@@ -17,14 +17,23 @@ import 'device_role.dart';
 import 'local_family.dart';
 import 'local_pin.dart';
 import 'local_pin_recovery.dart';
+import 'family_hub.dart';
 import 'family_state.dart';
+import 'family_sync_engine.dart' show LocalStoreSyncRepository;
 import 'local_services.dart';
+import 'pairing_records.dart' show LocalStorePairedKidsRepository;
 import 'screen_share.dart';
 
 class GuardianLocalServices {
   GuardianLocalServices({required this.roles, required this.families, required this.pin, this.recovery,
-      AppLockPrefsRepository? lockPrefs, this.shares})
-      : lockPrefs = lockPrefs ?? MemoryAppLockPrefsRepository();
+      AppLockPrefsRepository? lockPrefs, ScreenShareService? shares, this.familyHub})
+      : lockPrefs = lockPrefs ?? MemoryAppLockPrefsRepository(),
+        shares = shares ?? familyHub?.shares;
+
+  /// Everything about the family's OTHER grown-up phone: the family record, the shared emergency card, the screen shares
+  /// and the same-Wi-Fi road they ride (family_hub.dart). Null in a tree built without it: the "Share with another
+  /// grown-up" row then never appears and a phone behaves exactly as it did before this existed.
+  final FamilyHub? familyHub;
 
   /// Sharing a screen with another grown-up inside the app (screen_share.dart). Null in a tree built without it: the
   /// "Share this screen" action then never appears.
@@ -52,7 +61,7 @@ class GuardianLocalServices {
           iterations: pinIterations ?? kLocalPinIterations,
         ),
         lockPrefs: LocalStoreAppLockPrefsRepository.over(s),
-        shares: _screenShares(s),
+        familyHub: _familyHub(s),
         recovery: GuardianRecovery(
           peers: LocalStoreGuardianPeerRepository(s.area('localpin', ownerId: kLocalGuardianScope)),
           deviceKey: () => DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey'))),
@@ -60,8 +69,9 @@ class GuardianLocalServices {
       );
 
   /// Everything in memory, for tests and the preview.
-  factory GuardianLocalServices.memory({int pinIterations = 1000, LocalFamily? family, DeviceRole? role}) =>
+  factory GuardianLocalServices.memory({int pinIterations = 1000, LocalFamily? family, DeviceRole? role, FamilyHub? familyHub}) =>
       GuardianLocalServices(
+        familyHub: familyHub,
         roles: MemoryDeviceRoleRepository(role),
         families: MemoryLocalFamilyRepository(family),
         pin: LocalPinService(MemoryLocalPinRepository(), iterations: pinIterations),
@@ -72,22 +82,14 @@ class GuardianLocalServices {
       );
 }
 
-/// Screen sharing over this phone's own family record. With no family record, or one without a second grown-up, the
-/// service finds nobody to send to and the action stays hidden. A record that cannot be read counts as no family.
-ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
-      box: LocalStoreShareBoxRepository(s.area('screenshares', ownerId: kLocalGuardianScope)),
-      identity: () async {
-        try {
-          final DeviceKey device = await DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey')));
-          final int now = DateTime.now().millisecondsSinceEpoch;
-          final FamilyContext? ctx = await FamilyContext.load(
-              LocalStoreFamilyRepository(s.area('familyledger', ownerId: kLocalGuardianScope)), device, nowMs: now);
-          if (ctx == null || !ctx.keyring.guardianDevice) return null;
-          return ShareIdentity(device: device, agreement: ctx.agreement, state: await ctx.state(nowMs: now));
-        } catch (_) {
-          return null;
-        }
-      },
+/// The family hub over this phone's sealed records. With no family record, or one without a second grown-up, the screen
+/// share service finds nobody to send to and the action stays hidden; a record that cannot be read counts as no family.
+FamilyHub _familyHub(LocalServices s) => FamilyHub(
+      familyRepo: LocalStoreFamilyRepository(s.area('familyledger', ownerId: kLocalGuardianScope)),
+      syncRepo: LocalStoreSyncRepository.forServices(s),
+      deviceKey: () => DeviceKey.loadOrCreate(LocalStoreDeviceKeyRepository(s.area('devicekey'))),
+      shareBox: LocalStoreShareBoxRepository(s.area('screenshares', ownerId: kLocalGuardianScope)),
+      kidsRepo: LocalStorePairedKidsRepository(s.area('pairedkids', ownerId: kLocalGuardianScope)),
     );
 
 /// Holds the loaded local family (so a changed age shows everywhere at once) and the

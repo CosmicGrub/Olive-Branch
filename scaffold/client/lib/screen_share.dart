@@ -530,8 +530,10 @@ class ScreenShareService {
     required bool namesHidden,
     String note = '',
     int expiryDays = kShareDefaultExpiryDays,
-  }) =>
-      _locked(() async {
+  }) async {
+    // The lock is NOT held across the network wait: two phones sending to each other at the same moment would each hold
+    // their own lock while the other's delivery waited to be received behind it.
+    final ({OutgoingShare o, Uint8List sealed}) made = await _locked(() async {
         final ShareIdentity? id = await _id();
         if (id == null) throw const ShareRefused('not-a-grown-up-device');
         final int now = _now();
@@ -549,14 +551,21 @@ class ScreenShareService {
         s.log.add(ShareLogLine(now, me, to.name));
         if (s.log.length > 50) s.log.removeRange(0, s.log.length - 50);
         await box.save(s);
-        final bool taken = await _deliver(o, o.sealed!);
-        if (taken) {
-          o.status = 'sent';
-          o.sealed = null; // the picture is no longer kept here once the other phone has it
-        }
-        await box.save(s);
-        return taken ? ShareSendOutcome.sent : ShareSendOutcome.waiting;
+        return (o: o, sealed: sealed);
       });
+    final bool taken = await _deliver(made.o, made.sealed);
+    if (taken) {
+      await _locked(() async {
+        final ShareBoxState s = await box.load();
+        final OutgoingShare? o = s.out.where((OutgoingShare e) => e.idHex == made.o.idHex).firstOrNull;
+        if (o == null || o.status != 'waiting') return; // taken back meanwhile: leave it as it is
+        o.status = 'sent';
+        o.sealed = null; // the picture is no longer kept here once the other phone has it
+        await box.save(s);
+      });
+    }
+    return taken ? ShareSendOutcome.sent : ShareSendOutcome.waiting;
+  }
 
   Future<bool> _deliver(OutgoingShare o, Uint8List bytes) async {
     try {
@@ -568,44 +577,73 @@ class ScreenShareService {
 
   /// Takes a share back. If the other phone never got it, it is simply deleted here. If it did, a signed notice is
   /// sent (now if the road is open, later if not) and the picture is no longer kept here either way.
-  Future<void> takeBack(String idHex) => _locked(() async {
+  Future<void> takeBack(String idHex) async {
+    final ({OutgoingShare o, Uint8List notice})? pending = await _locked(() async {
         final ShareIdentity? id = await _id();
         if (id == null) throw const ShareRefused('not-a-grown-up-device');
         final ShareBoxState s = await box.load();
         final OutgoingShare? o = s.out.where((OutgoingShare e) => e.idHex == idHex).firstOrNull;
-        if (o == null) return;
+        if (o == null) return null;
         // The picture is dropped here at once. A signed notice is kept even for one that never left, because the other
         // phone may have taken it in a delivery whose answer was lost; a notice for something it never had does nothing.
         o.sealed = null;
         o.retract = await sealRetract(sender: id.device, id: unhex(idHex), toDeviceKey: unhex(o.toKeyHex), nowMs: _now());
         o.status = 'retracting';
         await box.save(s);
-        if (await _deliver(o, o.retract!)) {
-          s.out.remove(o);
-          await box.save(s);
-        }
+        return (o: o, notice: o.retract!);
       });
+    if (pending == null) return;
+    if (await _deliver(pending.o, pending.notice)) {
+      await _locked(() async {
+        final ShareBoxState s = await box.load();
+        s.out.removeWhere((OutgoingShare e) => e.idHex == idHex && e.status == 'retracting');
+        await box.save(s);
+      });
+    }
+  }
 
   /// Tries the road for everything waiting. Returns how many left this phone.
-  Future<int> flush() => _locked(() async {
-        if (await _id() == null) return 0;
+  Future<int> flush() async {
+    final List<({String id, bool retract, Uint8List bytes, String to})> todo = await _locked(() async {
+        if (await _id() == null) return const <({String id, bool retract, Uint8List bytes, String to})>[];
         final ShareBoxState s = _sweep(await box.load());
-        int n = 0;
-        for (final OutgoingShare o in List<OutgoingShare>.of(s.out)) {
-          if (o.status == 'retracting' && o.retract != null) {
-            if (await _deliver(o, o.retract!)) {
-              s.out.remove(o);
-              n++;
-            }
-          } else if (o.status == 'waiting' && o.sealed != null && await _deliver(o, o.sealed!)) {
-            o.status = 'sent';
-            o.sealed = null;
-            n++;
-          }
-        }
         await box.save(s);
-        return n;
+        return <({String id, bool retract, Uint8List bytes, String to})>[
+          for (final OutgoingShare o in s.out)
+            if (o.status == 'retracting' && o.retract != null)
+              (id: o.idHex, retract: true, bytes: o.retract!, to: o.toKeyHex)
+            else if (o.status == 'waiting' && o.sealed != null)
+              (id: o.idHex, retract: false, bytes: o.sealed!, to: o.toKeyHex),
+        ];
       });
+    if (todo.isEmpty) return 0;
+    // The network wait is outside the lock (see [send]).
+    final List<({String id, bool retract})> done = <({String id, bool retract})>[];
+    for (final ({String id, bool retract, Uint8List bytes, String to}) t in todo) {
+      try {
+        if (await transport.deliver(t.to, t.bytes)) done.add((id: t.id, retract: t.retract));
+      } catch (_) {}
+    }
+    if (done.isEmpty) return 0;
+    return _locked(() async {
+      final ShareBoxState s = await box.load();
+      int n = 0;
+      for (final ({String id, bool retract}) d in done) {
+        final OutgoingShare? o = s.out.where((OutgoingShare e) => e.idHex == d.id).firstOrNull;
+        if (o == null) continue;
+        if (d.retract && o.status == 'retracting') {
+          s.out.remove(o);
+          n++;
+        } else if (!d.retract && o.status == 'waiting') {
+          o.status = 'sent';
+          o.sealed = null;
+          n++;
+        }
+      }
+      await box.save(s);
+      return n;
+    });
+  }
 
   /// Hands this phone bytes that arrived from the road. Takes a share or a take-back; anything else is refused.
   Future<ShareReceiveOutcome> receive(Uint8List bytes) => _locked(() async {
