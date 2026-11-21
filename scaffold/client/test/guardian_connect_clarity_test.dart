@@ -28,6 +28,7 @@ import 'package:olive_client/guardian_home.dart';
 import 'package:olive_client/guardian_local_scope.dart';
 import 'package:olive_client/guardian_more.dart';
 import 'package:olive_client/guardian_settings_hub.dart';
+import 'package:olive_client/her_tablet_screen.dart';
 import 'package:olive_client/guardian_state_line.dart';
 import 'package:olive_client/local_family.dart';
 import 'package:olive_client/local_pin.dart';
@@ -470,33 +471,33 @@ void main() {
       expect(row, findsOneWidget);
       expect(t.getTopLeft(row).dy, lessThan(200), reason: 'at the top of the screen, no scroll');
       final Rect settings = t.getRect(row);
-      for (final Key k in const <Key>[Key('morePairTablet'), Key('moreUnlockTablet'), Key('moreHerTablets')]) {
-        expect(t.getTopLeft(find.byKey(k)).dy, greaterThan(settings.bottom), reason: 'Her tablet comes right after Settings');
-      }
+      expect(t.getTopLeft(find.byKey(const Key('moreHerTablet'))).dy, greaterThan(settings.bottom), reason: 'Her tablet comes right after Settings');
       await t.tap(row);
       await t.pumpAndSettle();
       expect(find.byType(GuardianSettingsHubScreen), findsOneWidget);
     });
 
-    testWidgets('More: the three tablet screens sit together in one "Her tablet" section, named by what they do', (t) async {
+    testWidgets('More: the three tablet tiles are ONE "Her tablet" tile, above Archive', (t) async {
       await _size(t, 390, h: 1400);
       await t.pumpWidget(scoped(const GuardianMoreScreen(childName: 'Ivy', childAge: 7)));
       await t.pumpAndSettle();
       expect(find.text('HER TABLET'), findsOneWidget);
-      expect(find.text("Pair Ivy's tablet"), findsOneWidget);
-      expect(find.text("Unlock Ivy's tablet"), findsOneWidget);
-      expect(find.text("Ivy's tablets"), findsOneWidget);
-      for (final String old in <String>["Connect a child's device", "Unlock a child's device with my phone", 'Connected child devices', 'Connect this device']) {
+      expect(find.text("Ivy's tablet"), findsOneWidget);
+      for (final String old in <String>[
+        "Connect a child's device", "Unlock a child's device with my phone", 'Connected child devices', 'Connect this device',
+        "Pair Ivy's tablet", "Unlock Ivy's tablet", "Ivy's tablets",
+      ]) {
         expect(find.text(old), findsNothing, reason: old);
       }
-      final double pair = t.getTopLeft(find.byKey(const Key('morePairTablet'))).dy;
-      final double unlock = t.getTopLeft(find.byKey(const Key('moreUnlockTablet'))).dy;
-      final double list = t.getTopLeft(find.byKey(const Key('moreHerTablets'))).dy;
+      expect(find.byKey(const Key('morePairTablet')), findsNothing);
+      expect(find.byKey(const Key('moreUnlockTablet')), findsNothing);
+      expect(find.byKey(const Key('moreHerTablets')), findsNothing);
+      final double tile = t.getTopLeft(find.byKey(const Key('moreHerTablet'))).dy;
       final double archive = t.getTopLeft(find.text('ARCHIVE')).dy;
-      expect(pair < unlock && unlock < list && list < archive, isTrue, reason: 'one group, above Archive');
+      expect(tile < archive, isTrue, reason: 'one group, above Archive');
     });
 
-    testWidgets('each tablet row opens its renamed screen', (t) async {
+    testWidgets('the one tile opens the Her tablet screen, and its buttons open the screens that used to be tiles', (t) async {
       await _size(t, 390, h: 1400);
       LocalServices.resetForTest();
       addTearDown(LocalServices.resetForTest);
@@ -505,10 +506,11 @@ void main() {
           builder: (BuildContext ctx, Widget? child) => GuardianLocalScope(controller: c, child: child!),
           home: const GuardianMoreScreen(childName: 'Ivy', childAge: 7)));
       await t.pumpAndSettle();
-      await t.tap(find.byKey(const Key('moreHerTablets')));
+      await t.tap(find.byKey(const Key('moreHerTablet')));
       await t.pumpAndSettle();
-      expect(find.byType(ConnectedDevicesScreen), findsOneWidget);
-      expect(find.descendant(of: find.byType(AppBar), matching: find.text("Ivy's tablets")), findsOneWidget);
+      expect(find.byType(HerTabletScreen), findsOneWidget);
+      expect(find.byKey(const Key('herTabletHeadline')), findsOneWidget);
+      expect(find.text("Ivy's tablet is not connected yet"), findsOneWidget);
     });
   });
 }

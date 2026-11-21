@@ -327,8 +327,10 @@ void main() {
     Future<ConnectChildScreen> openConnect(WidgetTester t, GuardianLocalController ctl) async {
       LocalServices.install(LocalServices.memory(childId: 'kid-1', isLive: true, demoSeeds: false));
       await pumpMore(t, ctl: ctl);
-      await t.scrollUntilVisible(find.text("Pair Ivy's tablet"), 300, scrollable: find.byType(Scrollable).first);
-      await t.tap(find.text("Pair Ivy's tablet"));
+      await t.scrollUntilVisible(find.byKey(const Key('moreHerTablet')), 300, scrollable: find.byType(Scrollable).first);
+      await t.tap(find.byKey(const Key('moreHerTablet')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('herTabletConnect')));
       await t.pumpAndSettle();
       return t.widget<ConnectChildScreen>(find.byType(ConnectChildScreen));
     }
