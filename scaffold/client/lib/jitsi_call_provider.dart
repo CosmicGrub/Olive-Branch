@@ -24,10 +24,11 @@
 // release builds.
 //
 // TLS to the LAN stack's self-signed certificate is NOT handled here and never
-// by disabling verification: android/.../network_security_config.xml pins ONE
-// public certificate for ONE LAN address (tools/jitsi-selfhost/
-// generate-dev-cert.sh keeps cert and scope in lockstep). The global http
-// refusal and the system-CA-only base config are untouched.
+// by disabling verification: a DEBUG build only trusts ONE public certificate for ONE
+// LAN address, through a gitignored overlay of network_security_config.xml that
+// tools/jitsi-selfhost/generate-dev-cert.sh writes (cert and scope in lockstep). A release
+// build trusts the system authorities only. The global http refusal and the
+// system-CA-only base config are untouched.
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show MissingPluginException, PlatformException;
