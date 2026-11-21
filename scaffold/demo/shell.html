@@ -766,18 +766,21 @@ S.journal = function(){
     + 'If something is worrying you, there are people you can talk to.</div></div>';
 };
 
+var scrambleKeypad = false; // "Scramble the keypad": a grown-up's choice, off unless chosen
 S.pin = function(){
-  var keys = [1,2,3,4,5,6,7,8,9];
-  for (var i=keys.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=keys[i];keys[i]=keys[j];keys[j]=t; }
-  return '<div class="gate"><div style="font-family:var(--display);font-weight:600;font-size:18px">Welcome back</div>'
-    + '<div style="font-size:12px;color:rgba(255,255,255,.7);margin:4px 0 16px">Type your code to keep going</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:16px">'
-    + '<i style="width:10px;height:10px;border-radius:50%;background:#fff;display:block"></i>'
-    + '<i style="width:10px;height:10px;border-radius:50%;background:#fff;display:block"></i>'
-    + '<i style="width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);display:block"></i>'
-    + '<i style="width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);display:block"></i></div>'
-    + '<div class="keys">'+keys.map(function(k){return '<b>'+k+'</b>';}).join('')+'</div>'
-    + '<div style="font-family:var(--mono);font-size:9px;color:rgba(255,255,255,.5);margin-top:12px">keypad order changes every time</div></div>';
+  // The ordinary keypad: 1 2 3 / 4 5 6 / 7 8 9 / blank 0 delete. Scrambled only when a grown-up turned that on.
+  var keys = [1,2,3,4,5,6,7,8,9,0];
+  if (scrambleKeypad) for (var i=keys.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=keys[i];keys[i]=keys[j];keys[j]=t; }
+  var dot = function(on){ return '<i style="width:10px;height:10px;border-radius:50%;display:block;'
+    + (on ? 'background:#fff' : 'border:1.5px solid rgba(255,255,255,.5)') + '"></i>'; };
+  var key = function(k){ return '<b>'+k+'</b>'; };
+  return '<div class="gate"><div style="font-family:var(--display);font-weight:600;font-size:18px">Enter your code</div>'
+    + '<div style="font-size:12px;color:rgba(255,255,255,.7);margin:4px 0 4px">Then tap OK</div>'
+    + '<div style="font-size:11px;font-style:italic;color:rgba(255,255,255,.5);margin:0 0 12px">This needs a grown-up\'s code</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:14px">'+dot(true)+dot(true)+dot(false)+dot(false)+'</div>'
+    + '<div class="keys">'+keys.slice(0,9).map(key).join('')+'<span></span>'+key(keys[9])+'<b aria-label="Delete last digit">&#9003;</b></div>'
+    + '<div style="margin-top:10px;width:166px;height:36px;border-radius:12px;background:#fff;color:#12172B;font-weight:700;'
+    + 'display:flex;align-items:center;justify-content:center">OK</div></div>';
 };
 
 S.guardianHome = function(){
@@ -2891,8 +2894,10 @@ journal: function(){ return P_engine('The private journal — P7',
 pin: function(){ return P_engine('One frame after a kiosk defeat',
   '<p>Android PINNED mode is escapable, so this is an <em>expected</em> state. '
   + 'Escalation is dropped and the LiveKit token revoked before this renders. '
-  + 'The child sees no error and no adult surface. Reload the screen to see the keypad reshuffle.</p>'
-  + '<div class="ctl"><button data-go="pin">Reshuffle</button></div>'
+  + 'The child sees no error and no adult surface, only the calm card until a grown-up taps. The keypad is the '
+  + 'ordinary 1 to 9, 0 pad with an OK. A grown-up may turn on <em>Scramble the keypad</em> in Guardian mode '
+  + '(off by default): a child may be watching over their shoulder.</p>'
+  + '<div class="ctl"><button id="scrambleToggle" data-go="pin">Scramble the keypad: '+(scrambleKeypad ? 'on' : 'off')+'</button></div>'
   + wip('kiosk')); },
 
 guardianHome: function(){ return P_engine('Guardian home — the Day Ribbon',
@@ -4299,6 +4304,7 @@ $('next').onclick = function(){ if(step<TOUR.length-1){ step++; cur=TOUR[step][0
 $('prev').onclick = function(){ if(step>0){ step--; cur=TOUR[step][0]; render(); } };
 
 document.addEventListener('click', function(e){
+  if (e.target && e.target.id === 'scrambleToggle') scrambleKeypad = !scrambleKeypad; // then data-go="pin" redraws it
   var t = e.target.closest('[data-go],[data-hw],[data-hint],[data-tamper],[data-age],[data-age2],'
     + '[data-handicap],[data-streak],[data-ttt],[data-ck],[data-bs],[data-ws],[data-hm],'
     + '[data-mem],[data-chess],[data-db],[data-story],[data-gnew],[data-gundo],[data-gh],[data-wsclear],'
