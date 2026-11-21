@@ -14,7 +14,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api_client.dart' show ApiException, OliveApi;
-import 'call_provider.dart' show CallGrant;
+import 'call_provider.dart' show CallGrant, CallProviderFactory;
 import 'call_screen.dart';
 import 'call_signaling.dart' show ServerCallSignaling;
 
@@ -33,6 +33,8 @@ Future<void> startChildCall(
   required String childId,
   required String childName,
   String? toUserId,
+  /// Test seam: the engine the call screen uses. Null means the registry picks one from the grant.
+  CallProviderFactory? providerFactory,
 }) async {
   try {
     final OliveApi api = await apiProvider();
@@ -54,6 +56,7 @@ Future<void> startChildCall(
         knownGrant: grant,
         knownToken: grant.token,
         knownWsURL: grant.wsURL,
+        providerFactory: providerFactory,
         signalingFactory: ServerCallSignaling.factory(apiProvider, childId),
         onCallEnd: sessionId == null ? null : () => _endChildCall(apiProvider, childId, sessionId),
       ),

@@ -66,6 +66,7 @@ import 'calendar_day_logic.dart';
 import 'dart:async' show unawaited;
 import 'call_knock.dart' show KnockEnd;
 import 'call_knock_screen.dart' show CallKnockScreen;
+import 'call_dev_sim.dart' show DevCallSimBar, DevCallSimSide;
 import 'call_poller.dart';
 import 'guardian_home.dart';
 import 'guardian_more.dart' show startGuardianCall;
@@ -266,6 +267,7 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
                 baseUrl: widget.baseUrl, guardianId: widget.guardianId, childId: widget.childId,
                 childName: _childName, httpClient: widget.httpClient)),
           )),
+          DevCallSimBar(side: DevCallSimSide.guardian, otherName: _childName.isEmpty ? 'She' : _childName),
         ])));
     }
   }

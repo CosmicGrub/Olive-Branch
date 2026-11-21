@@ -396,7 +396,7 @@ class ChildHome extends StatelessWidget {
       tileIds: visibleHomeIds(band, childAge, viewTiles: f.view.tiles, hidden: _hiddenIdsFor(context)),
       destination: (BuildContext x, String id) => _bandDestination(x, id, f, band),
       clock: clock,
-      presence: presence == null ? null : _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
+      presence: _presenceOrCall(context),
       // Sleeps fade at 11 (§21.5): the 13 to 17 home counts nothing for her.
       footer: sleepsUntilHandover == null || band == 't1317' ? null : _Sleeps(sleepsUntilHandover!),
       today: band == 't1317' ? _teen.today(now: (clock ?? DateTime.now)(), purge: _purge) : null,
@@ -449,6 +449,15 @@ class ChildHome extends StatelessWidget {
       });
     }
     return _home(context);
+  }
+
+  /// The card that lets her call: who is free right now when the server says so, otherwise (a connected tablet with
+  /// nobody on duty to name) a plain "Call her grown-up". Null for a static preview with no connection.
+  Widget? _presenceOrCall(BuildContext context) {
+    final ParentPresence? p = presence;
+    if (p != null) return _PresenceCard(p, childName: childName, onCall: _callGrownUp);
+    if (baseUrl == null || childId == null) return null;
+    return _CallGrownUpCard(name: _grownUpIn(context), onCall: _callGrownUp);
   }
 
   /// Her tap on a Call button. With a live connection it starts a real call to an approved grown-up of hers (the
@@ -553,7 +562,7 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
             child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
-        if (presence != null) _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
+        ?_presenceOrCall(context),
         const SizedBox(height: 12),
         ?_grewRow(),
 
@@ -671,7 +680,7 @@ class ChildHome extends StatelessWidget {
                 builder: (_) => BirthdayScreen(birthday: family!.birthday!))),
             child: Text(birthdayLine(family!.birthday!))),
         const SizedBox(height: 12),
-        if (presence != null) _PresenceCard(presence!, childName: childName, onCall: _callGrownUp),
+        ?_presenceOrCall(context),
         const SizedBox(height: 12),
         ?_grewRow(),
         heroTile,
@@ -744,6 +753,23 @@ class _PresenceCard extends StatelessWidget {
                   builder: (_) => CallScreen(who: 'ivy', displayName: childName))),
           child: Text('Call $name'))),
     ]),
+  ));
+}
+
+/// A connected tablet with nobody named as free: one big, calm button to call her grown-up. No time, no count, no state.
+class _CallGrownUpCard extends StatelessWidget {
+  const _CallGrownUpCard({required this.name, required this.onCall});
+  final String name;
+  final void Function(BuildContext context, [String? toUserId]) onCall;
+  @override
+  Widget build(BuildContext context) => Card(child: Padding(
+    padding: const EdgeInsets.all(16),
+    child: SizedBox(width: double.infinity, height: kChildTarget,
+      child: FilledButton.icon(
+        key: const Key('callGrownUpButton'),
+        onPressed: () => onCall(context),
+        icon: const Icon(Icons.call),
+        label: Text('Call $name'))),
   ));
 }
 

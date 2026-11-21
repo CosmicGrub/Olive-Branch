@@ -59,6 +59,7 @@ class ServerCallSignaling implements CallSignaling {
     this.waitSeconds = 8,
     this.lostAfter = const Duration(seconds: 90),
     this.retryEvery = const Duration(milliseconds: 800),
+    this.minPollGap = const Duration(milliseconds: 250),
   }) {
     unawaited(_loop());
   }
@@ -74,10 +75,27 @@ class ServerCallSignaling implements CallSignaling {
   final Duration lostAfter;
   final Duration retryEvery;
 
+  /// A poll that comes back empty faster than this (a server that does not hold the request open) waits out the
+  /// rest of it, so a quick empty answer can never turn the loop into a busy one.
+  final Duration minPollGap;
+
   final StreamController<CallSignal> _ctl = StreamController<CallSignal>.broadcast();
   final Completer<CallSignalingEnd> _end = Completer<CallSignalingEnd>();
   int _after = 0;
   bool _closed = false;
+  Timer? _sleepTimer;
+  Completer<void>? _sleeper;
+
+  /// A wait that [close] cuts short, so ending a call never leaves a timer behind.
+  Future<void> _sleep(Duration d) {
+    if (_closed) return Future<void>.value();
+    final Completer<void> c = Completer<void>();
+    _sleeper = c;
+    _sleepTimer = Timer(d, () {
+      if (!c.isCompleted) c.complete();
+    });
+    return c.future;
+  }
 
   @override
   Stream<CallSignal> get signals => _ctl.stream;
@@ -92,6 +110,8 @@ class ServerCallSignaling implements CallSignaling {
     DateTime? failingSince;
     while (!_closed) {
       OliveApi? api;
+      final DateTime began = DateTime.now();
+      var gotAny = false;
       try {
         api = await apiProvider();
         final Map<String, dynamic> body = await api.fetchCallSignals(childId, sessionId, after: _after, waitSeconds: waitSeconds);
@@ -103,6 +123,7 @@ class ServerCallSignaling implements CallSignaling {
             final Object? seq = m['seq'], kind = m['kind'], payload = m['payload'];
             if (seq is! int || kind is! String || payload is! Map) continue;
             if (seq > _after) _after = seq;
+            gotAny = true;
             if (!_ctl.isClosed) _ctl.add(CallSignal(kind, Map<String, dynamic>.from(payload), seq: seq));
           }
         }
@@ -129,7 +150,10 @@ class ServerCallSignaling implements CallSignaling {
           _finish(CallSignalingEnd.lost);
           return;
         }
-        await Future<void>.delayed(retryEvery);
+        await _sleep(retryEvery);
+      } else if (!gotAny) {
+        final Duration took = DateTime.now().difference(began);
+        if (took < minPollGap) await _sleep(minPollGap - took);
       }
     }
   }
@@ -156,13 +180,17 @@ class ServerCallSignaling implements CallSignaling {
       } finally {
         api?.close();
       }
-      await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+      await _sleep(Duration(milliseconds: 300 * (attempt + 1)));
+      if (_closed) return;
     }
   }
 
   @override
   Future<void> close() async {
     _closed = true;
+    _sleepTimer?.cancel();
+    final Completer<void>? s = _sleeper;
+    if (s != null && !s.isCompleted) s.complete();
     _finish(CallSignalingEnd.closed);
   }
 }

@@ -441,11 +441,13 @@ class LanCallEngine {
     _answerTimer?.cancel();
     await _rtcSub?.cancel();
     await _sigSub?.cancel();
-    try {
-      await rtc.close();
-    } catch (_) {/* closing twice is fine */}
+    // The channel first: it must stop polling whatever the media stack does. The media stack gets a bounded time to
+    // let go, so a hang-up is never stuck behind a platform call that does not come back.
     try {
       await signaling.close();
+    } catch (_) {/* closing twice is fine */}
+    try {
+      await rtc.close().timeout(const Duration(seconds: 3));
     } catch (_) {/* likewise */}
   }
 

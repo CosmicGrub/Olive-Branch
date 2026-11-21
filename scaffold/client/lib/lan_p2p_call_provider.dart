@@ -92,6 +92,10 @@ class LanP2pCallProvider implements CallProvider {
     _disposed = true;
     await _sub?.cancel();
     await _engine?.dispose();
+    // Whatever happened to the engine (it may never have been built), the handshake channel stops polling.
+    try {
+      await signaling.close();
+    } catch (_) {/* closing twice is fine */}
     if (!_ctl.isClosed) await _ctl.close();
   }
 }

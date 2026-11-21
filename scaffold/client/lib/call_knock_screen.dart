@@ -57,6 +57,7 @@ import 'auth_session.dart';
 import 'call_knock.dart';
 import 'call_modes.dart' show CallMode;
 import 'call_provider.dart' show CallGrant;
+import 'call_dev_sim.dart' show SimulatedCallProvider, kSimulatedGrant;
 import 'call_screen.dart';
 import 'call_signaling.dart' show ServerCallSignaling;
 import 'push_channel.dart' show PushPointer;
@@ -85,6 +86,7 @@ class CallKnockScreen extends StatefulWidget {
     this.apiProvider,
     this.onEnded,
     this.onCallEnded,
+    this.simulated = false,
   });
 
   /// Who's knocking, shown and spoken verbatim. See this file's own header
@@ -156,6 +158,10 @@ class CallKnockScreen extends StatefulWidget {
   /// Passed to the call this knock turns into, so the call log gets its end. Best-effort, record-keeping only.
   final Future<void> Function()? onCallEnded;
 
+  /// DEVELOPER-ONLY (call_dev_sim.dart): "Answer" opens a simulated call instead of joining a real one. Only ever
+  /// true behind the dev define; a normal build never sets it.
+  final bool simulated;
+
   @override
   State<CallKnockScreen> createState() => _CallKnockScreenState();
 }
@@ -216,6 +222,17 @@ class _CallKnockScreenState extends State<CallKnockScreen> {
   /// which one she tapped.
   Future<void> _handleAnswer(CallMode mode) async {
     _timeoutTimer?.cancel();
+
+    if (widget.simulated) {
+      if (!mounted) return;
+      _report(KnockEnd.answered);
+      unawaited(Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => CallScreen(
+          who: widget.who, displayName: widget.displayName, initialMode: mode, remoteLabel: widget.from,
+          knownGrant: kSimulatedGrant,
+          providerFactory: (_) => SimulatedCallProvider(who: widget.from)))));
+      return;
+    }
 
     // Already resolved — no real join call to make at all. See
     // [CallKnockScreen.knownToken]'s own doc comment for the one real case

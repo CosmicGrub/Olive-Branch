@@ -79,6 +79,7 @@ import 'api_client.dart';
 import 'auth_session.dart';
 import 'call_knock.dart' show KnockEnd;
 import 'call_knock_screen.dart' show CallKnockScreen;
+import 'call_dev_sim.dart' show DevCallSimBar, DevCallSimSide;
 import 'call_poller.dart';
 import 'calendar_day_logic.dart' show DayPartLite;
 import 'call_screen.dart';
@@ -688,6 +689,7 @@ class _LiveChildHomeScreenState extends State<LiveChildHomeScreen> {
             growth: _growth,
             clock: widget.clock,
           ))),
+          DevCallSimBar(side: DevCallSimSide.tablet, otherName: _presence?.name ?? 'Dad'),
         ])));
     }
   }
