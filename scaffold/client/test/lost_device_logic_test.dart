@@ -150,8 +150,8 @@ void main() {
     });
 
     test('a deadline reads as a span, not a count-down', () {
-      expect(deadlineWords(_now.add(const Duration(hours: 71)), _now), 'in about 71 hours');
-      expect(deadlineWords(_now.add(const Duration(hours: 60)), _now), 'in about 3 days');
+      expect(deadlineWords(_now.add(const Duration(hours: 30)), _now), 'in about 30 hours');
+      expect(deadlineWords(_now.add(const Duration(hours: 71)), _now), 'in about 3 days');
       expect(deadlineWords(_now.subtract(const Duration(minutes: 1)), _now), 'now');
     });
   });

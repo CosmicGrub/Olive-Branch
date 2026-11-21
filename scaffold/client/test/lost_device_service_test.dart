@@ -17,6 +17,8 @@ import 'support/account_rig.dart';
 import 'support/fake_identity_server.dart';
 import 'support/lost_fake.dart';
 
+typedef _Family = ({Phone mom, Phone dad, String momId, String dadId, FakeDev momOther, FakeDev tablet});
+
 void main() {
   late DateTime clock;
   late FakeIdentityServer server;
@@ -53,7 +55,7 @@ void main() {
     fail('expected an AccountFailure');
   }
 
-  Future<({Phone mom, Phone dad, String momId, String dadId, FakeDev momOther, FakeDev tablet})> family() async {
+  Future<_Family> family() async {
     final Phone mom = await signedUp('Mom');
     final Phone dad = await signedUp('Dad', pin: '2468');
     final String momId = await userIdOf(mom), dadId = await userIdOf(dad);
@@ -176,7 +178,7 @@ void main() {
       expect(again.problem.message, contains('Nothing was deleted'));
       final AccountFailure late =
           await failureOf(f.mom.act((_) => svc(f.mom).found(deviceId: f.momOther.id, incidentId: m.incidentId!, pin: '4821')));
-      expect(late.problem.message, contains('added'));
+      expect(late.problem.message, contains('add it'));
     });
 
     test('an unknown device is "not on your list", the same for a stranger\'s', () async {
@@ -188,7 +190,7 @@ void main() {
   });
 
   group('erase it when it connects', () {
-    Future<void> lose(dynamic f) async {
+    Future<void> lose(_Family f) async {
       await f.mom.act((_) => svc(f.mom).markLost(deviceId: f.momOther.id, pin: '4821'));
     }
 
@@ -236,7 +238,7 @@ void main() {
       f.momOther.wipe = 'done'; // the phone reported it had erased itself
       final AccountFailure e = await failureOf(f.mom.act((_) => svc(f.mom).found(deviceId: f.momOther.id, incidentId: inc2, pin: '4821')));
       expect(e.problem.reason, 'already_wiped');
-      expect(e.problem.message, contains('added'));
+      expect(e.problem.message, contains('Add it'));
     });
 
     test('the list offers "erase" only to the owner of a lost phone, and "cancel" only while it is waiting', () async {

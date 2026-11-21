@@ -116,7 +116,8 @@ void main() {
     test('a device id is put in the path escaped, never raw', () async {
       seen.clear();
       await markDeviceLostCall(_base, 't', deviceId: '../x?y', pin: '4821', client: rec);
-      expect(seen.single.path, isNot(contains('..')));
+      expect(seen.single.path, contains('%2F'), reason: 'a slash in an id is encoded, so it can never add a path segment');
+      expect(seen.single.path, isNot(contains('?')));
       expect(seen.single.path.split('/').length, OliveApi.meDeviceMarkLost.split('/').length);
     });
   });

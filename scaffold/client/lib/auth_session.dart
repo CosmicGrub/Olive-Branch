@@ -199,7 +199,7 @@ class AuthSession {
         .post(
           Uri.parse('$baseUrl${OliveApi.sessionRefreshPath}'),
           headers: {'content-type': 'application/json'},
-          body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred, if (pin != null) 'pin': pin}),
+          body: jsonEncode({'deviceId': id.deviceId, 'deviceCredential': cred, 'pin': ?pin}),
         )
         .timeout(const Duration(seconds: 10));
     final body = _decodeBody(res);

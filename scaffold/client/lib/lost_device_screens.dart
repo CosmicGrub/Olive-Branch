@@ -89,9 +89,8 @@ class _Problem extends StatelessWidget {
 }
 
 class _PinBox extends StatelessWidget {
-  const _PinBox({super.key, required this.controller, this.label = 'Your PIN'});
+  const _PinBox({super.key, required this.controller});
   final TextEditingController controller;
-  final String label;
 
   @override
   Widget build(BuildContext context) => TextField(
@@ -102,7 +101,7 @@ class _PinBox extends StatelessWidget {
         keyboardType: TextInputType.number,
         maxLength: 8,
         inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), counterText: ''),
+        decoration: const InputDecoration(labelText: 'Your PIN', border: OutlineInputBorder(), counterText: ''),
       );
 }
 
@@ -121,21 +120,21 @@ Future<String?> _confirmWithPin(
   return showDialog<String>(
     context: context,
     builder: (BuildContext ctx) => SensitiveScreen(
+      // scrollable: the title, the words and the buttons scroll together, so big text on a small phone never cuts any off.
       child: AlertDialog(
+        scrollable: true,
         title: Text(title),
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            Text(does, key: const Key('confirmDoes')),
-            if (limits != null) ...<Widget>[
-              const SizedBox(height: 10),
-              Text('What this cannot do', style: Theme.of(ctx).textTheme.titleSmall),
-              const SizedBox(height: 4),
-              Text(limits, key: const Key('confirmLimits')),
-            ],
-            const SizedBox(height: 14),
-            _PinBox(key: const Key('confirmPinField'), controller: c),
-          ]),
-        ),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text(does, key: const Key('confirmDoes')),
+          if (limits != null) ...<Widget>[
+            const SizedBox(height: 10),
+            Text('What this cannot do', style: Theme.of(ctx).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(limits, key: const Key('confirmLimits')),
+          ],
+          const SizedBox(height: 14),
+          _PinBox(key: const Key('confirmPinField'), controller: c),
+        ]),
         actions: <Widget>[
           TextButton(key: const Key('confirmCancel'), onPressed: () => Navigator.pop(ctx), child: const Text('Not now')),
           FilledButton(key: const Key('confirmYes'), onPressed: () => Navigator.pop(ctx, c.text), child: Text(yes)),
@@ -175,7 +174,9 @@ class _YourDevicesScreenState extends State<YourDevicesScreen> {
     unawaited(_load());
   }
 
-  Future<void> _load() async {
+  /// Reads the list. [keepProblem]: after an action that failed, the sentence about that failure stays on screen
+  /// while the list is read again (only a failure to read the list is cleared by reading it successfully).
+  Future<void> _load({bool keepProblem = false}) async {
     try {
       final List<FamilyDevice> d = await widget.service.devices();
       if (!mounted) return;
@@ -183,7 +184,7 @@ class _YourDevicesScreenState extends State<YourDevicesScreen> {
         _devices = d;
         _loading = false;
         _thisPhonePaused = false;
-        _problem = null;
+        if (!keepProblem) _problem = null;
       });
     } on AccountFailure catch (e) {
       if (!mounted) return;
@@ -228,7 +229,7 @@ class _YourDevicesScreenState extends State<YourDevicesScreen> {
         _problem = lostProblemFor(e, LostAction.load);
       });
     }
-    if (mounted) await _load();
+    if (mounted) await _load(keepProblem: true);
   }
 
   Future<void> _mark(FamilyDevice d) async {
@@ -400,6 +401,59 @@ class _DeviceCard extends StatelessWidget {
             ]),
           ],
         ]),
+      ),
+    );
+  }
+}
+
+/// A calm card on the account page while a phone or tablet is marked as lost, so every grown-up is told in the app and
+/// not only by a line in a history. It never shows a failure: a phone that cannot ask simply shows nothing here.
+class LostDeviceNoticeBanner extends StatefulWidget {
+  const LostDeviceNoticeBanner({super.key, required this.service, required this.onOpen, this.now});
+  final LostDeviceService service;
+  final VoidCallback onOpen;
+  final DateTime Function()? now;
+
+  @override
+  State<LostDeviceNoticeBanner> createState() => _LostDeviceNoticeBannerState();
+}
+
+class _LostDeviceNoticeBannerState extends State<LostDeviceNoticeBanner> {
+  List<FamilyDevice> _paused = const <FamilyDevice>[];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final List<FamilyDevice> all = await widget.service.devices();
+      if (mounted) setState(() => _paused = <FamilyDevice>[for (final FamilyDevice d in all) if (d.standing == DeviceStanding.paused) d]);
+    } catch (_) {
+      // Silent on purpose: this is a notice, not a place for errors.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_paused.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final Color on = theme.colorScheme.onTertiaryContainer;
+    final int more = _paused.length - 1;
+    return Card(
+      key: const Key('lostDeviceBanner'),
+      color: theme.colorScheme.tertiaryContainer,
+      child: ListTile(
+        leading: Icon(Icons.notifications_active_outlined, color: on),
+        title: Text(_paused.length == 1 ? 'A phone or tablet is marked as lost' : 'Phones or tablets are marked as lost',
+            style: TextStyle(color: on)),
+        subtitle: Text(
+            lostNoticeSentence(_paused.first, (widget.now ?? DateTime.now)()) + (more > 0 ? ' And $more more.' : ''),
+            style: TextStyle(color: on)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpen,
       ),
     );
   }

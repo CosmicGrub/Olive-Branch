@@ -94,8 +94,7 @@ ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
 /// optional "connect this device" action.
 class GuardianLocalController extends ChangeNotifier {
   // ignore: prefer_initializing_formals
-  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount, this.onLostPhone})
-      : _family = family;
+  GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount, this.onLostPhone}) : _family = family;
 
   final GuardianLocalServices services;
 

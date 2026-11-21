@@ -218,6 +218,8 @@ void main() {
         'guardian_boot.dart',
         // the lost-phone paths sit beside the account flow and use its service (MASTERFILE 7.22)
         'recovery_paths_screens.dart', 'recovery_paths_entry.dart', 'recovery_paths_service.dart',
+        // the lost or stolen phone or tablet half (0057) is another service beside the account flow (MASTERFILE 7.23)
+        'lost_device_service.dart',
       }), isEmpty);
       for (final String n in importers) {
         expect(n, isNot(startsWith('child_')));
