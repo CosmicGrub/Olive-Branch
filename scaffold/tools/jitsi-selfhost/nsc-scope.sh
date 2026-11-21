@@ -2,11 +2,12 @@
 # Library (sourced by generate-dev-cert.sh and its test): rewrite the Android
 # network-security-config trust scope for the self-hosted Jitsi.
 #
-# The ONLY extra trust the app ever grants is the one pinned public cert in
-# res/raw/jitsi_dev_cert.pem, for the LAN address(es) between the
-# OLIVE-LAN-JITSI-BEGIN/END markers of the main and debug configs. The base
-# config (system CAs only, no cleartext) is never touched. No LAN IP argument
-# means the block is emptied: NO extra trust at all.
+# The ONLY extra trust a DEBUG build ever grants is the one pinned public cert in
+# the gitignored overlay's res/raw/jitsi_dev_cert.pem, for the LAN address(es)
+# between the OLIVE-LAN-JITSI-BEGIN/END markers of the overlay config rendered
+# from network_security_config.debug.template.xml. The release (main) config has
+# no such block at all. The base config (system CAs only, no cleartext) is never
+# touched. No LAN IP argument means the block is emptied: NO extra trust.
 #
 #   nsc_rewrite <xml-file> [lan-ip ...]
 nsc_rewrite() {

@@ -7,7 +7,7 @@
  * .github/workflows/verify.yml; these assertions are what stops the text
  * regressing between CI runs.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const SCAFFOLD = fileURLToPath(new URL('../../', import.meta.url));
@@ -154,15 +154,17 @@ const serviceBlock = (text, name) => {
   check('C2 android', 'main config has NO domain-config that re-enables cleartext', /cleartextTrafficPermitted="true"/.test(xml(mainCfg)), false);
   check('C2 android', 'the debug override allows cleartext for localhost and 10.0.2.2 only',
     [...(xml(debugCfg).match(/<domain-config cleartextTrafficPermitted="true">[\s\S]*?<\/domain-config>/g) ?? []).join('').matchAll(/<domain [^>]*>([^<]+)</g)].map((m) => m[1]).sort().join(','), '10.0.2.2,127.0.0.1,localhost');
-  // MASTERFILE 16.2 #6 (third reversal): the self-hosted Jitsi's pinned LAN certificate is the ONLY extra trust,
-  // scoped to one LAN address, cleartext off, in both configs; never in the base config.
+  // MASTERFILE 16.2 #6: the self-hosted Jitsi's pinned LAN certificate is a DEBUG-only, gitignored overlay.
+  // Release (main) carries no per-host trust, no raw certificate and no address; the tracked debug config has none either.
   for (const [name, cfg] of [['main', mainCfg], ['debug', debugCfg]]) {
     const x = xml(cfg);
-    const base = x.slice(x.indexOf('<base-config'), x.indexOf('</base-config>'));
-    check('C2 android', `${name} config: the pinned Jitsi certificate is not in the base config`, /jitsi_dev_cert/.test(base), false);
-    check('C2 android', `${name} config: the pinned certificate is scoped to one LAN address with cleartext off`,
-      /<domain-config cleartextTrafficPermitted="false">\s*<domain includeSubdomains="false">\d+\.\d+\.\d+\.\d+<\/domain>\s*<trust-anchors>\s*<certificates src="@raw\/jitsi_dev_cert"/.test(x), 'true');
+    check('C2 android', `${name} config: no raw certificate and no pinned Jitsi block is committed`, /@raw|jitsi_dev_cert|OLIVE-LAN-JITSI/.test(cfg), false);
+    check('C2 android', `${name} config: no IPv4 address other than the loopback / emulator aliases`,
+      [...x.matchAll(/\d+\.\d+\.\d+\.\d+/g)].map((m) => m[0]).filter((ip) => !['127.0.0.1', '10.0.2.2'].includes(ip)).join(','), '');
   }
+  check('C2 android', 'main config has no domain-config at all', /<domain-config/.test(xml(mainCfg)), false);
+  check('C2 android', 'the pinned dev certificate is not committed under main or debug res/raw',
+    ['main', 'debug'].some((v) => existsSync(A + v + '/res/raw/jitsi_dev_cert.pem')), false);
   check('C2 android', 'the debug override still trusts only system CAs', !/src="user"/.test(xml(debugCfg)), 'true');
   check('C2 android', 'no manifest anywhere re-enables usesCleartextTraffic',
     ['main', 'debug', 'profile'].some((v) => /usesCleartextTraffic="true"/.test(rd(A + v + '/AndroidManifest.xml'))), false);
@@ -193,6 +195,10 @@ const serviceBlock = (text, name) => {
   check('D CI hygiene', 'the pub cache is enabled for Flutter', /cache:\s*true/.test(w), 'true');
   check('D CI hygiene', 'the workflow installs with a strict `npm ci` (no `|| npm install` fallback masking lockfile drift)',
     /run:\s*npm ci\s*$/m.test(w) && !/npm ci \|\| npm install/.test(w), 'true');
+  check('D CI hygiene', 'no 64-hex secret literal is committed in any workflow (SESSION_SECRET / MEDIA_SIGNING_SECRET are generated per run)',
+    /[0-9a-f]{64}/.test(w) || /[0-9a-f]{64}/.test(PUBLISH), false);
+  check('D CI hygiene', 'the image job generates both secrets per run with openssl rand -hex 32',
+    /SESSION_SECRET MEDIA_SIGNING_SECRET/.test(w) && /openssl rand -hex 32/.test(w), 'true');
   check('D CI hygiene', 'an `image` job builds the Dockerfile on every PR', /^\s{2}image:/m.test(w) && /docker build/.test(w), 'true');
   check('D CI hygiene', 'push is still scoped to main and PRs still trigger (the existing on: block is intact)',
     /push:\s*\n\s+branches:\s*\[main\]/.test(w) && /pull_request:/.test(w), 'true');

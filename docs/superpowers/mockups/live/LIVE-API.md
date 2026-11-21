@@ -34,7 +34,7 @@ Load order: kit.js, live-core.js, mod-shell.js, mod-onboarding.js, mod-messages.
 - Events: `L.emit(type, payload)` and `L.on(type, fn)`, also appended to `S.server.events`. Standard events: `time:tick`, `net:change`, `device:paired`, `family:changed`, `msg:delivered`, `msg:opened`, `msg:watched`, `call:knock`, `age:band`.
 
 ## Behaviour that must be TRUE to the real app
-Read `Z:\olive branch files\MASTERFILE.md` and the Round 3 mockups under `..\overhaul3` for detail.
+Read `MASTERFILE.md` (repository root) and the Round 3 mockups under `../overhaul3` for detail.
 - **Role-first onboarding (CORE).** The first screen on each device asks 'Who is using this device?' with Kid, Mom, Dad and a smaller 'Someone else'.
   - Kid path: name, age (5 to 15 picker; the age locks), colour, birthday, 'what do you call your grown-ups?' (renaming like contacts), and LAST 'Connect this device' (a 6-digit code made on the guardian device; needs the network; draft answers are saved locally first and uploaded after pairing; offline shows a friendly picture-only retry).
   - Guardian path: your name and label, the child's name and age (locks it), home time zone, PIN, then Connect this device where it honestly can be last.

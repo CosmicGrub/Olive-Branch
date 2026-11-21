@@ -8,11 +8,13 @@
 #      meet's own /etc/s6-overlay/scripts/config: a cert already present
 #      there is reused as-is, never regenerated, so this only needs to run
 #      once unless you deliberately want a new cert).
-#   2. client/android/app/src/main/res/raw/jitsi_dev_cert.pem — the public
-#      cert only, committed to the repo (a self-signed cert's public half
-#      is not a secret; the private key is NOT committed anywhere and lives
-#      only in the gitignored/untracked CONFIG storage dir on the dev
-#      machine that generated it).
+#   2. client/android/app/src/debugLan/res/ — a GITIGNORED, debug-only overlay:
+#      raw/jitsi_dev_cert.pem (the public cert only) and a
+#      network-security-config rendered from network_security_config.debug.template.xml
+#      for the LAN address(es) passed. Nothing LAN-specific is committed and a
+#      release build never includes it. The private key is NOT written anywhere
+#      in the repo and lives only in the CONFIG storage dir on the dev machine
+#      that generated it.
 #
 # WHY a SAN is required, not optional: docker-jitsi-meet's own self-signed
 # cert generation (`openssl req -new -x509 ... -subj "/CN=*"`) produces a
@@ -36,7 +38,7 @@
 #
 # Deliberately NOT auto-detecting or hardcoding a LAN IP by default — that
 # is exactly the class of bug CHANGELOG [0.46.0] already fixed once
-# (devRoomServerBase's old 192.168.1.78). Pass it explicitly, on purpose,
+# (devRoomServerBase's old 192.0.2.78). Pass it explicitly, on purpose,
 # when you actually need it, and regenerate when it changes.
 #
 # Re-running this after the app has already been built means the Android
@@ -48,11 +50,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 CONFIG_DIR="${CONFIG:-$HOME/.jitsi-meet-cfg}"
 KEYS_DIR="$CONFIG_DIR/storage/web/keys"
-ANDROID_RAW_DIR="../../client/android/app/src/main/res/raw"
+OVERLAY_DIR="${OLIVE_OVERLAY_DIR:-../../client/android/app/src/debugLan/res}"
+ANDROID_RAW_DIR="$OVERLAY_DIR/raw"
+ANDROID_XML_DIR="$OVERLAY_DIR/xml"
 ANDROID_CERT_NAME="jitsi_dev_cert.pem"
+TEMPLATE="./network_security_config.debug.template.xml"
 
 mkdir -p "$KEYS_DIR"
-mkdir -p "$ANDROID_RAW_DIR"
+mkdir -p "$ANDROID_RAW_DIR" "$ANDROID_XML_DIR"
 
 SAN="IP:127.0.0.1,DNS:localhost"
 for extra in "$@"; do
@@ -61,13 +66,13 @@ done
 echo "Generating dev cert with SAN: $SAN"
 
 # Git Bash/MSYS otherwise mangles the -subj value below (it starts with
-# "/C=", which its path-conversion heuristic reads as a C: drive path) —
+# "/O=", which its path-conversion heuristic reads as a C: drive path) —
 # scope the exclusion to just that value so -out/-keyout's genuine paths
 # still convert normally.
-MSYS2_ARG_CONV_EXCL="/C=" openssl req -new -x509 -days 3650 -nodes \
+MSYS2_ARG_CONV_EXCL="/O=" openssl req -new -x509 -days 3650 -nodes \
   -out "$KEYS_DIR/cert.crt" \
   -keyout "$KEYS_DIR/cert.key" \
-  -subj "/C=US/ST=TX/L=Austin/O=Olive Branch Dev/OU=Jitsi self-host (local, not production)/CN=Olive Branch dev Jitsi" \
+  -subj "/O=Olive Branch Dev/OU=Jitsi self-host (local, not production)/CN=Olive Branch dev Jitsi" \
   -addext "subjectAltName=$SAN" \
   -addext "basicConstraints=critical,CA:FALSE" \
   -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
@@ -76,23 +81,21 @@ MSYS2_ARG_CONV_EXCL="/C=" openssl req -new -x509 -days 3650 -nodes \
 chmod 600 "$KEYS_DIR/cert.key"
 cp "$KEYS_DIR/cert.crt" "$ANDROID_RAW_DIR/$ANDROID_CERT_NAME"
 
-# Keep the Android network-security-config trust scope in lockstep with the SAN
-# list just written (cert SAN and trust scope must never drift). See
-# nsc-scope.sh for exactly what is rewritten (only the marked block) and why.
+# Render the debug-only network-security-config overlay from the tracked template,
+# with the trust scope in lockstep with the SAN list just written (cert SAN and
+# trust scope must never drift). See nsc-scope.sh for exactly what is rewritten.
 . ./nsc-scope.sh
-for f in "../../client/android/app/src/main/res/xml/network_security_config.xml"          "../../client/android/app/src/debug/res/xml/network_security_config.xml"; do
-  nsc_rewrite "$f" "$@"
-done
+cp "$TEMPLATE" "$ANDROID_XML_DIR/network_security_config.xml"
+nsc_rewrite "$ANDROID_XML_DIR/network_security_config.xml" "$@"
 
 echo ""
 echo "Wrote:"
 echo "  $KEYS_DIR/cert.crt + cert.key  (private key stays local, never committed)"
-echo "  $ANDROID_RAW_DIR/$ANDROID_CERT_NAME  (public cert, safe + expected to be committed)"
+echo "  $ANDROID_RAW_DIR/$ANDROID_CERT_NAME  (public cert; gitignored debug overlay, never committed)"
+echo "  $ANDROID_XML_DIR/network_security_config.xml  (gitignored debug overlay)"
 echo ""
 echo "Next:"
 echo "  1. Restart the web container so nginx picks up the new cert:"
 echo "       docker compose -f .jitsi-docker/docker-compose.yml restart web"
-echo "  2. network_security_config.xml (main + debug) now trusts the pinned cert for"
-echo "     the LAN IP argument(s) above only (checked in; review the git diff)."
-echo "  3. Rebuild the Android app — a cert baked into an already-installed"
-echo "     APK does not update itself."
+echo "  2. Rebuild the DEBUG Android app; the overlay trusts the pinned cert for the LAN"
+echo "     address(es) above only. Release builds never include it."

@@ -73,25 +73,43 @@ void main() {
   // MASTERFILE 16.2 #6, third reversal (2026-11-09): Jitsi is the default call provider again, so the
   // old "leftovers are gone" guard became a guard on what the comeback is allowed to bring back.
   group('the Jitsi comeback brings back only what it is allowed to', () {
-    test('network-security config: no cleartext, system CAs only, one pinned cert for one LAN address', () {
+    test('RELEASE network-security config: system CAs only, no domain-config, no @raw, no address', () {
       final File cfg = File('android/app/src/main/res/xml/network_security_config.xml');
       final String xml = cfg.readAsStringSync().replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
       expect(xml, contains('<base-config cleartextTrafficPermitted="false">'));
+      expect(xml, contains('<certificates src="system" />'));
       expect(xml, isNot(contains('cleartextTrafficPermitted="true"')));
       expect(xml, isNot(contains('src="user"')));
-      // The ONLY @raw trust anchor is the pinned Jitsi certificate, once, inside a
-      // cleartext-off domain-config for a single IPv4 address; never in the base config.
-      expect('@raw/jitsi_dev_cert'.allMatches(xml).length, 1);
-      expect(RegExp(r'@raw/(?!jitsi_dev_cert)').hasMatch(xml), isFalse);
-      expect(
-        RegExp(r'<domain-config cleartextTrafficPermitted="false">\s*<domain includeSubdomains="false">\d+\.\d+\.\d+\.\d+</domain>\s*<trust-anchors>\s*<certificates src="@raw/jitsi_dev_cert"')
-            .hasMatch(xml),
-        isTrue);
-      final String base = xml.substring(xml.indexOf('<base-config'), xml.indexOf('</base-config>'));
-      expect(base, isNot(contains('@raw')));
-      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').readAsStringSync(), contains('BEGIN CERTIFICATE'));
-      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').readAsStringSync(), isNot(contains('PRIVATE KEY')));
+      expect(xml, isNot(contains('<domain-config')), reason: 'release must not carry any per-host trust');
+      expect(xml, isNot(contains('<domain ')));
+      expect(xml, isNot(contains('@raw')), reason: 'release must not reference a bundled certificate');
+      expect(RegExp(r'\d+\.\d+\.\d+\.\d+').hasMatch(xml), isFalse, reason: 'no IP address in the release config');
+      // The whole raw comment-stripped file also carries no pinned-dev-cert marker, and the pem is gone from main.
+      expect(cfg.readAsStringSync(), isNot(contains('OLIVE-LAN-JITSI')));
+      expect(File('android/app/src/main/res/raw/jitsi_dev_cert.pem').existsSync(), isFalse);
       expect(read('android/app/src/main/AndroidManifest.xml'), contains('networkSecurityConfig'));
+    });
+
+    test('DEBUG network-security config still exists: loopback cleartext only, system CAs, no committed LAN trust', () {
+      final String xml = File('android/app/src/debug/res/xml/network_security_config.xml')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+      expect(xml, contains('<base-config cleartextTrafficPermitted="false">'));
+      expect(xml, contains('<domain includeSubdomains="false">localhost</domain>'));
+      expect(xml, contains('<domain includeSubdomains="false">10.0.2.2</domain>'));
+      expect(xml, isNot(contains('src="user"')));
+      expect(xml, isNot(contains('@raw')), reason: 'the LAN dev cert is a gitignored overlay, not committed');
+    });
+
+    test('the gitignored debug LAN overlay is wired for debug only and its template uses a documentation address', () {
+      expect(read('android/app/build.gradle.kts'), contains('src/debugLan/res'));
+      // a half-written overlay (no config file) must not replace the debug loopback config
+      expect(read('android/app/build.gradle.kts'), contains('src/debugLan/res/xml/network_security_config.xml'));
+      final String root = read('../../.gitignore');
+      expect(root, contains('scaffold/client/android/app/src/debugLan/'));
+      final String tpl = read('../tools/jitsi-selfhost/network_security_config.debug.template.xml');
+      expect(tpl, contains('192.0.2.10'));
+      expect(tpl, contains('@raw/jitsi_dev_cert'));
     });
 
     test('the vendored jitsi_meet_flutter_sdk copy is wired, trimmed to Android, and nothing else overrides', () {

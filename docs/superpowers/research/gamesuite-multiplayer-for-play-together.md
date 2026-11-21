@@ -5,13 +5,13 @@ Owner request (verbatim): "lets use some of the multiplayer process, protocols a
 
 ## 0. Provenance, method and caveats
 
-- **GameSuite** (`Z:\GameSuite`, GitHub CosmicGrub). `main` (533e636) is 48 commits behind `session/wave-3`
+- **GameSuite** (a separate local checkout, GitHub). `main` (533e636) is 48 commits behind `session/wave-3`
   (18d9b53, "Data safety, Nearby admission, relay URL check ...", 2026-11-07), which is checked out in
-  `Z:\GameSuite-wt-game-kit` with other sessions' uncommitted edits. I did not read that dirty tree. I extracted
+  a separate GameSuite worktree with other sessions' uncommitted edits. I did not read that dirty tree. I extracted
   the committed tree of 18d9b53 with `git archive` into a scratch directory and read that, so **every GameSuite
   citation below is `path:line` at `session/wave-3 @ 18d9b53`** (the multiplayer hardening, spectators, session health,
   seat grid and relay wave-5 work are only on that branch, not on `main`). `session/tests-audit` was not needed.
-  Nothing under `Z:\GameSuite` was modified; no build, no git write there.
+  Nothing under the GameSuite checkout was modified; no build, no git write there.
 - **Olive Branch** citations are `path:line` at `origin/main @ c09ecd5` (this worktree).
 - Verification legend used for every GameSuite and Olive Branch capability:
   **D** = exercised on real hardware; **E** = automated end to end over real sockets/processes (no device);

@@ -1,5 +1,5 @@
 // OLIVE BRANCH — the calm message player: what a delivered message looks and sounds like on the child's Messages
-// screen. MASTERFILE section 7.19 (the receive path) and 8.2 (messages). Covered by flutter test only
+// screen. MASTERFILE section 7.21 (the message player; the receive path it plays from is 7.19) and 8.2 (messages). Covered by flutter test only
 // (client/test/message_player_test.dart); UNVERIFIED on a real device: the picture, the sound and the video are not
 // yet checked on hardware, and the video_player plugin has not been built into an APK by this change.
 //

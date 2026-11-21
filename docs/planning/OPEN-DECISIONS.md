@@ -1,6 +1,6 @@
 # Open decisions
 
-Each item has a recommendation. Under the owner's standing instruction "go with your recommendations", the recommendation is what gets built unless the owner says otherwise. Snapshot 2026-11-14 (main at 8440203). Decided items move to [DECISIONS.md](DECISIONS.md). Rows marked "done" were resolved by merged work and are kept one more snapshot so the history is traceable.
+Each item has a recommendation. Under the owner's standing instruction "go with your recommendations", the recommendation is what gets built unless the owner says otherwise. Snapshot 2026-11-21 (main at 58c25ff, merged through PR #234). Decided items move to [DECISIONS.md](DECISIONS.md). Rows marked "done" were resolved by merged work and are kept one more snapshot so the history is traceable.
 
 ## Product and age
 

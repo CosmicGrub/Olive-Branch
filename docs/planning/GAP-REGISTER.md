@@ -1,8 +1,8 @@
 # Gap register: planned family features versus shipped code and spec
 
-Written 2026-11-14 against `origin/main` at 8440203 (merged through PR #199). Scope: the planned features (persistent QR, village welcome, About Mia profile, care guides, family sync) set against what is shipped and what the spec says. Nothing in this file is built unless a row says "shipped".
+Written 2026-11-14 against `origin/main` at 8440203 (merged through PR #199); re-snapshotted 2026-11-21 at 58c25ff (merged through PR #234), see "Status at 58c25ff" below. Scope: the planned features (persistent QR, village welcome, About Mia profile, care guides, family sync) set against what is shipped and what the spec says. Nothing in this file is built unless a row says "shipped".
 
-Sources read for this register: `FAMILY-IDENTITY-DESIGN.md`, `VILLAGE-WELCOME-DESIGN.md`, `PERSISTENT-QR-PAIRING.md`, `QR-VETTING-BRAINSTORM.md` (the reshaped version on open PR #198, which carries the About Mia profile and the care guides section), `EXTERNAL-CRYPTO-REVIEW-BRIEF.md`, `TWO-DEVICE-PAIRING-TEST-PLAN.md`, the care-guide clinician packet (merged, PR #200), MASTERFILE sections 2, 7.12 to 7.14, 8.5, 8.19, 8.22, 12.5, 15 and 22, and the pairing code headers.
+Sources read for this register: `FAMILY-IDENTITY-DESIGN.md`, `VILLAGE-WELCOME-DESIGN.md`, `PERSISTENT-QR-PAIRING.md`, `QR-VETTING-BRAINSTORM.md` (the reshaped version, which carries the About Mia profile and the care guides section), `EXTERNAL-CRYPTO-REVIEW-BRIEF.md`, `TWO-DEVICE-PAIRING-TEST-PLAN.md`, the care-guide clinician packet (merged, PR #200), MASTERFILE sections 2, 7.12 to 7.14, 8.5, 8.19, 8.22, 12.5, 15 and 22, and the pairing code headers.
 
 ## How to read this
 
@@ -13,6 +13,23 @@ Evidence tag: **[code]** I read the file named on `origin/main` in this lane. **
 Owner column: **Owner** = the project owner decides; **Lead** = the coordinating session; a lane name = the agent lane that would build it; **External** = someone outside the project.
 
 Standing note: the owner has said "go with the recommendations". Decisions below are written so that is one answer; none changes a shipped behaviour until built.
+
+---
+
+## Status at 58c25ff (re-snapshot 2026-11-21)
+
+The rows below were written at 8440203 and their evidence text is that snapshot's. Builds merged since then moved these rows; where a row below says "planned", "not built" or "pending review and merge" and this table says otherwise, this table is newer. MASTERFILE and the code are the sources of truth.
+
+| Row | What moved |
+|---|---|
+| G-01, G-20, G-21 | The signed family ledger, the two keys and the local-family migration are built and tested but **not wired into pairing** (PR #205, merged through #215; MASTERFILE 8.5.12). A second grown-up's phone still makes a different family. |
+| G-02 | Further closed on the server by account recovery and claim without email (migration 0053, #234; MASTERFILE 7.21), on top of migration 0050 to 0052 (#225). Still no family tenant. |
+| G-13, G-15 | The care-note exception is stated in MASTERFILE 12.5, and MASTERFILE now has sections for the village welcome (8.28) and care guides (8.29, 8.30). |
+| G-22, G-23, G-25, G-26 | Merged: pairing hardening (#214). |
+| G-28 | The request, approval and profile screens exist, **headless and not reachable from the running app** (#216 through #223; MASTERFILE 8.28). Wiring them is in flight in another lane. |
+| G-29 | The About Mia profile is **built on one phone** as "About her" (#208 through #215; MASTERFILE 8.24.8). Sharing it between two grown-ups' phones is not built. |
+| G-30 | The care-guide engine is built and **gated**: no guide is bundled and none is reviewed (#215; MASTERFILE 8.30). The "For Mia" strip is not shown until a source reads the profile. |
+| G-41 | Still open as written: the P-table in MASTERFILE 2.1 is a different list from the child-never-sees rules. `DECISIONS.md` now states that list as its own numbered rule. |
 
 ---
 

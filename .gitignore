@@ -25,6 +25,10 @@ scaffold/client/ios/Pods/
 # not Olive source. See scaffold/tools/jitsi-selfhost/README.md.
 scaffold/tools/jitsi-selfhost/.jitsi-docker/
 
+# Debug-only LAN trust overlay for the self-hosted Jitsi, written by
+# scaffold/tools/jitsi-selfhost/generate-dev-cert.sh (carries a LAN address and the dev cert).
+scaffold/client/android/app/src/debugLan/
+
 # Local docker-compose.dev.yml overrides (SESSION_SECRET, DEV_LOGIN) — see
 # scaffold/.env.example, the tracked template this is copied from. Never
 # commit the real file.

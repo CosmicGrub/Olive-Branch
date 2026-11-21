@@ -96,8 +96,8 @@ fresh room the way it does on meet.jit.si.
    `olive.env`.
 3. **Prosody can't write its own TLS cert on a Windows bind mount.**
    `docker-jitsi-meet`'s default `${CONFIG}/storage/prosody:/var/lib/prosody`
-   bind mount, when `CONFIG` is a Windows host path (`/c/Users/...` or
-   `C:\Users\...`), loses POSIX ownership through Docker Desktop's
+   bind mount, when `CONFIG` is a Windows host path (`/<drive>/<path>/...` or
+   `<drive>:\<path>\...`), loses POSIX ownership through Docker Desktop's
    file-sharing translation layer — Prosody's container (uid 1000) can
    never write into it, so cert generation silently fails
    (`The directory /var/lib/prosody is not owned by the current user`),
@@ -122,7 +122,7 @@ Two ways to get real UDP media reachability from a physical device to this
 dev-machine stack, neither implemented here yet:
 1. Put the phone on the same WiFi network as the dev machine and set
    `JVB_ADVERTISE_IPS` to the dev machine's LAN IP (same class of hardcoded-IP
-   fragility the old `192.168.1.78` bug already burned this project once —
+   fragility the old `192.0.2.78` bug already burned this project once —
    see CHANGELOG `[0.46.0]`, "Fixed"). Whatever replaces it should not
    hardcode an IP the same way.
 2. `adb reverse` the TCP signaling/web ports only, and rely on JVB's TCP
@@ -158,12 +158,17 @@ loopback address `call_screen.dart` already uses — see its own header),
 writes it to docker-jitsi-meet's own operator-override path
 (`${CONFIG}/storage/web/keys/`, which its `s6-overlay` config script
 already supports and prefers over generating its own — confirmed by
-reading that script directly rather than assumed), and copies the
-*public* half to `client/android/app/src/main/res/raw/jitsi_dev_cert.pem`
-— committed, since a cert's public half isn't a secret; the private key
-stays on the dev machine that generated it, in the gitignored `CONFIG`
-storage dir, and is never committed. `network_security_config.xml` now has
-a `<trust-anchors>` block scoped to `127.0.0.1` referencing that resource.
+reading that script directly rather than assumed), and writes the
+*public* half, with a network-security-config that trusts it for the LAN
+address(es) you pass, to a **gitignored debug-only overlay**,
+`client/android/app/src/debugLan/res/` (rendered from the tracked template
+`network_security_config.debug.template.xml`, whose stand-in address is in the
+documentation range). Nothing is committed and nothing reaches a release build:
+the release network config trusts the system CAs only, with no per-host entry,
+no bundled certificate and no address. The private key stays on the dev machine
+that generated it, in the gitignored `CONFIG` storage dir. (Until the release-hygiene
+change the public half was committed under `main/res/raw` and trusted in the
+release config; that is gone, and re-running the generator is the rotation.)
 
 **Verified:** after restarting the `web` container, `openssl s_client
 -connect 127.0.0.1:8443` confirms nginx serves the new cert, with the
@@ -239,4 +244,4 @@ JITSI_SERVER_URL=https://127.0.0.1:8443 node tools/local-call-room-server.mjs
 | `HTTP_PORT` / `HTTPS_PORT` | `8000` / `8443` | Upstream defaults. No collision with this project's `server/index.mjs` (`:8080`) or `local-call-room-server.mjs` (`:8787`). |
 | `JVB_COLIBRI_PORT` | `8181` | Upstream default (`8080`) collides with `server/index.mjs`'s own `PORT` default — found by actually bringing the stack up, see "Three real bugs" above, not assumed from reading the compose file. |
 | `PUBLIC_URL` | commented out | Defaults to `https://localhost:8443`, correct for the dev-only scope here. |
-| `JVB_ADVERTISE_IPS` | commented out, with instructions | Must be set to the dev machine's real LAN IP before a physical device can exchange media — see the UDP constraint above. Deliberately not hardcoded to a specific IP in this checked-in file, for the exact reason CHANGELOG `[0.46.0]` documents about the old `192.168.1.78` bug. |
+| `JVB_ADVERTISE_IPS` | commented out, with instructions | Must be set to the dev machine's real LAN IP before a physical device can exchange media — see the UDP constraint above. Deliberately not hardcoded to a specific IP in this checked-in file, for the exact reason CHANGELOG `[0.46.0]` documents about the old `192.0.2.78` bug. |
