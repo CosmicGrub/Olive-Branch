@@ -331,8 +331,8 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
   // as LESS than the longer one it's a prefix of, so a two-row split at
   // exact boundaries would have made this section's result depend on which
   // minute it happened to run in. That mismatch is now fixed at the source
-  // — childCtxFor() (packages/db/src/pool.ts) truncates the `::text` cast
-  // to 'HH:mm' width before gate() ever sees it, and
+  // — childCtxFor() (packages/db/src/pool.ts) trims a zero-seconds bound to
+  // 'HH:mm', keeps non-zero seconds (the engine normalises both: hms()), and
   // packages/delivery-engine/test/delivery.test.mjs's "G4b boundary minute"
   // section locks down gate()'s own comparison operators at exact boundary
   // minutes — so the overlap below is no longer load-bearing, just left in

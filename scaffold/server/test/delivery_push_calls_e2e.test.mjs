@@ -133,6 +133,15 @@ check('A boot', 'the real server boots with no DEV_LOGIN', up, 'up');
 check('A boot', 'it logs the push state as booleans only', /push: \{"androidRing":"ready","fcm":\{"configured":true,"source":"file"\}/.test(out), true);
 if (up !== 'up') { console.error(err); }
 
+// This suite moves day-part windows relative to the child's local "now", so a run must not
+// straddle her local midnight (a bedtime window started at 23:50 does not exist after 00:00).
+// Wait out the last 90 seconds of the day instead of flaking.
+{
+  const secsToMidnight = () => { const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+    return 86400 - (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()); };
+  if (secsToMidnight() <= 90) await new Promise((r) => setTimeout(r, (secsToMidnight() + 2) * 1000));
+}
+
 const req = async (method, path, { body, token } = {}) => {
   const r = await fetch(`http://127.0.0.1:${port}${path}`, { method,
     headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -167,11 +176,15 @@ const dayPartsOf = async (childId) => (await admin.query(
 // (quiet hours, a push that must wake). Replaces the day-parts enrolment seeded for this
 // child: the default kinds would otherwise overlap the new one and the test would be at
 // the mercy of the hour it runs at.
+// The window ends at '24:00' (end of the local day, inclusive of 23:59:59). It used to end at
+// '23:59:59', an exclusive bound, so the last second of the local day was uncovered (and, before
+// the engine kept seconds, the whole last minute: CI ran at 23:59 Chicago and the quiet-hours
+// call rang). The unit suite injects the clock around local midnight (delivery.test.mjs G4b).
 const allDay = async (childId, kind, reachable) => {
   await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [childId]);
   await admin.query(
     `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
-     VALUES ($1, $2, '00:00', '23:59:59', '{0,1,2,3,4,5,6}', $3, '[2020-01-01,2099-01-01)')`,
+     VALUES ($1, $2, '00:00', '24:00', '{0,1,2,3,4,5,6}', $3, '[2020-01-01,2099-01-01)')`,
     [childId, kind, reachable]);
 };
 // Moves the bedtime window that enrolment SEEDED so it started 30 minutes ago in the child's zone
@@ -184,7 +197,7 @@ const windowsFor = async (childId) => {
     `UPDATE day_part SET
        starts_local = CASE WHEN (now() AT TIME ZONE 'America/Chicago')::time < time '00:30' THEN time '00:00'
                            ELSE (now() AT TIME ZONE 'America/Chicago')::time - interval '30 minutes' END,
-       ends_local = '23:59:59'
+       ends_local = '24:00'
      WHERE child_id = $1 AND kind = 'bedtime'`, [childId]);
   await admin.query(`DELETE FROM day_part WHERE child_id = $1 AND kind = 'asleep'`, [childId]);
   return moved.rowCount;
