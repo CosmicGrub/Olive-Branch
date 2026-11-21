@@ -200,30 +200,30 @@ void main() {
 
       CallViewState s = fake.state.copyWith(phase: CallPhase.connected);
       fake.emit(s);
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 10)); // a pump with a duration delivers the stream event first, then draws
       expect((t.widget(find.byKey(const Key('callRosterCount'))) as Text).data, 'Just you here');
 
       s = s.copyWith(participants: <CallParticipant>[dad]);
       fake.emit(s);
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 10)); // a pump with a duration delivers the stream event first, then draws
       expect(find.text('Dad joined'), findsOneWidget);
       expect((t.widget(find.byKey(const Key('callRosterCount'))) as Text).data, '2 people here');
 
       s = s.copyWith(participants: <CallParticipant>[dad, mum]);
       fake.emit(s);
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 10)); // a pump with a duration delivers the stream event first, then draws
       expect(find.text('Mum joined'), findsOneWidget, reason: 'a third person is announced, not swallowed');
       expect((t.widget(find.byKey(const Key('callRosterCount'))) as Text).data, '3 people here');
 
       s = s.copyWith(participants: <CallParticipant>[dad, mum, gran]);
       fake.emit(s);
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 10)); // a pump with a duration delivers the stream event first, then draws
       expect(find.text('Gran is watching'), findsOneWidget, reason: 'an observer is announced as soon as they are present');
       expect((t.widget(find.byKey(const Key('callRosterCount'))) as Text).data, '4 people here, 1 watching');
 
       s = s.copyWith(participants: <CallParticipant>[dad, gran]);
       fake.emit(s);
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 10)); // a pump with a duration delivers the stream event first, then draws
       expect(find.text('Mum left'), findsOneWidget);
       expect((t.widget(find.byKey(const Key('callRosterCount'))) as Text).data, '3 people here, 1 watching');
 

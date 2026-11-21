@@ -363,10 +363,9 @@ class LocalServices {
     this.guardianId = 'local-guardian',
     this.isLive = false,
     // A private field behind a debug-only getter, so a named parameter cannot initialise it directly.
-    // ignore: prefer_initializing_formals
     bool demoSeeds = false,
     this.keyring,
-  }) : _demoSeeds = demoSeeds {
+  }) : _demoSeeds = demoSeeds { // ignore: prefer_initializing_formals
     scopeChild(childId); // fails fast on an illegal live scope
   }
 
