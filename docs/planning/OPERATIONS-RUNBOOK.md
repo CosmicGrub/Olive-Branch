@@ -163,6 +163,67 @@ It also runs inside `tools/verify.sh` (the "Privacy gate" block, branch against 
 
 See `docs/RELEASING.md`. Versions are spec versions; the app version is `X.Y.Z+(major*10000+minor*100+patch)`. The release tool dry-runs by default. Preview cuts are debug-signed with no server address; the repository is public, so a published release is public.
 
+## Hosting app updates (self-hosters; optional, off by default)
+
+The app can find and download its own updates (MASTERFILE 8.31). The update files can come from GitHub Releases or from YOUR server, so a family that runs its own server does not depend on anyone else. This section is the server half. Nothing here is needed to run the app, and a server that never sets `UPDATES_DIR` behaves exactly as before: `/updates/*` is an ordinary 404 and no route is registered.
+
+**What the server does.** It hands out three kinds of file from one directory, read-only, to anyone who asks, with no login, no session, no cookie and no database access:
+
+| Request | What it returns |
+|---|---|
+| `GET` or `HEAD /updates/manifest.json` | the signed update manifest |
+| `GET` or `HEAD /updates/manifest.json.sig` | the detached signature, only if your release step made one (404 otherwise; a manifest that carries its signature inside needs no such file) |
+| `GET` or `HEAD /updates/apk/<file>.apk` | an APK, with `Range` support so a download on a weak link resumes |
+
+It never signs, never verifies and never changes a byte. The app checks the manifest signature against the public key built into it, then the APK's size, its sha256, that the version is newer and that the APK is signed by the same certificate as the installed app. A server that is hostile or broken can therefore at worst withhold an update; it cannot make an app install one. That is why these routes are public by design. Put nothing private in the directory: no key, no secret, no family data.
+
+**Turning it on.**
+
+1. Make a directory on the host and decide who may write to it (only you). The server only ever reads it.
+2. Use the override file: `UPDATES_HOST_DIR=/srv/olive-updates docker compose -f docker-compose.prod.yml -f docker-compose.updates.yml up -d server`. It mounts the directory read-only at `/app/data/updates` and sets `UPDATES_DIR`. Without Compose, set `UPDATES_DIR` to an absolute path.
+3. The boot log says `updates: self-hosted from UPDATES_DIR`. A relative path, a filesystem root, a path that is or contains or sits inside `MEDIA_STORAGE_ROOT` (private family data) or a bad number refuses to boot (exit 2) and names the problem. A directory that does not exist yet is only a warning: `/updates/*` answers 404 until it does.
+4. Tell the app where to look: the manifest URL is `https://<your PUBLIC_BASE_URL host>/updates/manifest.json`. It is a build-time define of the app (`OLIVE_UPDATE_MANIFEST_URL`) and a grown-up can also set it in the app's update settings. The reverse proxy in front needs nothing special (see `docs/operators/proxy-and-tls.md`, "App updates").
+
+**Settings (all optional).**
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `UPDATES_DIR` | unset = off | absolute directory holding the files |
+| `UPDATES_MAX_APK_MIB` | 512 | largest APK served; a bigger file is a 404 (the app itself refuses anything over 500 MiB) |
+| `UPDATES_RATE_CAPACITY`, `UPDATES_RATE_PER_MIN` | 60, 60 | per-caller budget for the manifest, signature and any unknown path |
+| `UPDATES_APK_RATE_CAPACITY`, `UPDATES_APK_RATE_PER_MIN` | 600, 300 | per-caller budget for `/updates/apk/*`; large on purpose, because a resumable download on a weak link is many small range requests |
+| `UPDATES_MAX_STREAMS_PER_CALLER`, `UPDATES_MAX_STREAMS` | 3, 16 | simultaneous APK downloads per caller and in total |
+
+The caller is the server's daily-salted pseudonym of the address (the same one every other limiter uses), never the address. A refusal is `429` with `Retry-After`.
+
+**Uploading a release that was signed offline.** The private signing key never goes on the server, on a build machine or in CI: signing happens on the owner's own offline machine (`docs/RELEASING.md`, "Signing an update", from the release-tooling change). What you upload is only the result.
+
+1. On the release machine you now have, in one folder: the APK(s) and the signed `manifest.json` (and `manifest.json.sig` if your step makes one). Check by eye that the manifest's APK file names are the names of the files in the folder.
+2. Upload the APKs FIRST, under the exact names the manifest uses. The server serves an APK only if the CURRENT manifest names it, so an APK that arrives before its manifest is simply not reachable yet: `scp olive-*.apk server:/srv/olive-updates/` (or `rsync -t`).
+3. Upload the signature (if any) and then the manifest LAST, and make the swap atomic so a client never reads half of it: `scp manifest.json server:/srv/olive-updates/manifest.json.new && ssh server 'mv /srv/olive-updates/manifest.json.new /srv/olive-updates/manifest.json'`. The `.new` file is not a name the server ever serves.
+4. Check from outside, through your real proxy:
+   - `curl -sI https://<host>/updates/manifest.json` shows `200`, an `ETag` and `Cache-Control: public, no-cache`.
+   - `curl -sI https://<host>/updates/apk/<file>.apk` shows `200`, `Accept-Ranges: bytes`, `Content-Type: application/vnd.android.package-archive` and the size from the manifest.
+   - `curl -s -H 'Range: bytes=0-99' https://<host>/updates/apk/<file>.apk | wc -c` prints `100`.
+   - `curl -s https://<host>/updates/apk/<file>.apk | sha256sum` equals the manifest's sha256.
+5. To retire an old release, upload the new manifest first, wait until the families you care about have checked in (a day is enough; the app checks at most daily), then delete the old APK. An APK the manifest no longer names is already unreachable; deleting just frees the disk.
+
+**Why a request is refused.** All of these look the same from outside, a plain 404, so the server leaks nothing about what is on disk.
+
+- The URL is not one of the three shapes above, or contains `..`, `%`, a backslash, a doubled or trailing slash, or an upper-case `.APK`.
+- The file is not named by the current manifest (a leftover or a stray file in the directory is never served).
+- The entry is a symbolic link, or any directory on its path is. Do not symlink APKs into the directory: copy them. A link swapped in after the check is also refused.
+- The file is over its cap (manifest 256 KiB, signature 8 KiB, APK `UPDATES_MAX_APK_MIB`).
+- The directory is missing or empty.
+
+`503 update_manifest_unavailable` means `manifest.json` exists but is not a JSON object; fix the file (the server will not serve broken bytes). `400` means a GET or HEAD carried a body. `405` is any other method. `416` is a `Range` that starts beyond the end of the file. `429` is the rate limit.
+
+**Behaviour a client can rely on.** One byte range per request (suffix and open-ended forms included; an end beyond the file is trimmed; several ranges or a malformed header are ignored and the whole file is sent, so a request can never be made to send more than the file); strong `ETag` and `Last-Modified` with `If-None-Match`, `If-Modified-Since` (304) and `If-Range`; `HEAD` with exact lengths and no body; `Cache-Control: public, no-cache` on the manifest (always revalidated) and `public, max-age=300` on APKs. A reader that stops reading for a minute, or a single download that runs over thirty minutes, is cut and its slot freed.
+
+**What the log and the metrics show.** The access log uses the fixed labels `/updates/manifest.json`, `/updates/manifest.json.sig`, `/updates/apk/:file` and `/updates/unmatched`, never a concrete file name or a query. Refusals count in `rate_limited_total`. No family data is read or written by these routes.
+
+**Turning it off.** Drop `docker-compose.updates.yml` from the command (or unset `UPDATES_DIR`) and recreate the server. Nothing else changes.
+
 ## Server lane: delivery, push and calls (operator steps)
 
 Everything here is opt-in and degrades honestly: the app is offline-first and the server enables the live experience, it never gates the local one. Nothing in this section is needed to run the app on a device.
