@@ -67,6 +67,8 @@ import 'game_picker.dart';
 import 'games_hub.dart';
 import 'guardian_local_scope.dart';
 import 'guardian_setup.dart';
+import 'guardian_send_screens.dart';
+import 'guardian_send_service.dart';
 import 'guardian_settings_hub.dart';
 import 'her_colour_guardian.dart';
 import 'play_window_screen.dart';
@@ -764,6 +766,13 @@ class GuardianMoreScreen extends StatelessWidget {
         SettingsRow(id: 'access', icon: Icons.accessibility_new_outlined, title: 'Accessibility for her device',
           subtitle: 'Text size, read aloud, motion, spacing, bigger targets, captions',
           onTap: () => _open(context, AccessScreen(childName: childName, childAge: childAge))),
+        SettingsRow(id: 'dayparts', icon: Icons.schedule_outlined, title: '$childName’s day',
+          subtitle: live ? 'The parts of her day, in her time. Messages arrive when one starts' : 'Needs a live session',
+          onTap: () => live
+            ? _open(context, DayPartsScreen(childName: childName,
+                service: GuardianSendService.live(baseUrl: baseUrl!, guardianId: guardianId!, childId: childId,
+                  httpClient: availabilityHttpClient)))
+            : _needsLive(context, 'Her day')),
         SettingsRow(id: 'window', icon: Icons.bedtime_outlined, title: 'Play window and daily time',
           subtitle: 'When games are open, the wind-down and the daily total',
           onTap: () => _open(context, PlayWindowScreen(childName: childName))),

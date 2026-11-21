@@ -52,6 +52,8 @@ import 'expenses_screen.dart';
 import 'form_factors.dart' as ff;
 import 'guardian_local_scope.dart';
 import 'guardian_more.dart';
+import 'guardian_send_screens.dart';
+import 'guardian_send_service.dart';
 import 'guardian_state_line.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
@@ -80,6 +82,32 @@ void _openAvailability(BuildContext context, {
   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
     content: Text("Availability needs a live session — not connected in this preview build."),
     duration: Duration(seconds: 3)));
+}
+
+/// Opens messaging. With a real session this is the REAL composer (a video saved on this phone
+/// first, then sent through the server's routes, with an honest status). Without any session (the
+/// preview build) it is the original in-memory preview, which sends nothing. A session that is
+/// missing the guardian or child id is half-wired: it says so rather than opening the preview, so
+/// the preview's invented sample messages can never appear in a live build.
+void _openMessages(BuildContext context, {
+  required String childName,
+  required String? baseUrl, required String? guardianId, required String? childId,
+  http.Client? httpClient,
+}) {
+  if (baseUrl == null) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MessageBankingScreen()));
+    return;
+  }
+  if (guardianId == null || childId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('This needs your signed-in family — not connected yet.'),
+      duration: Duration(seconds: 3)));
+    return;
+  }
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => GuardianComposeScreen(
+    childName: childName,
+    service: GuardianSendService.live(
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId, httpClient: httpClient))));
 }
 
 /// G-08: the five coordination tiles below used to pass no live identity at
@@ -364,8 +392,9 @@ class GuardianHome extends StatelessWidget {
             ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               key: const Key('guardianHomeHero'),
               icon: Icons.schedule_send, label: 'Message banking',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const MessageBankingScreen())))),
+              onTap: (context) => _openMessages(context, childName: childName,
+                baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                httpClient: availabilityHttpClient))),
             const SizedBox(height: 10),
             ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               icon: Icons.more_horiz, label: 'More',
@@ -433,8 +462,9 @@ List<_TileSpec> _kGuardianTiles({
   required http.Client? availabilityHttpClient,
 }) => <_TileSpec>[
   _TileSpec(icon: Icons.schedule_send, label: 'Message banking', tier: _Tier.hero,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const MessageBankingScreen()))),
+    onTap: (context) => _openMessages(context, childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+      httpClient: availabilityHttpClient)),
   _TileSpec(icon: Icons.event_available, label: 'Availability', tier: _Tier.featured,
     onTap: (context) => _openAvailability(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
@@ -443,7 +473,13 @@ List<_TileSpec> _kGuardianTiles({
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => SendTimeGuardScreen(childName: childName,
         childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
-        dayPart: dayPart, reachable: reachable)))),
+        dayPart: dayPart, reachable: reachable,
+        // Only with a full live session: the guard then opens the real composer.
+        onCompose: (baseUrl != null && guardianId != null && childId != null)
+          ? (BuildContext ctx) => _openMessages(ctx, childName: childName,
+              baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+              httpClient: availabilityHttpClient)
+          : null)))),
   _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,

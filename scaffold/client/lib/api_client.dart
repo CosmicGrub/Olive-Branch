@@ -1582,6 +1582,23 @@ class OliveApi {
         'preserve': ?preserve,
       }, childId: childId);
 
+  /// `{messages: [{id, kind, state, sentAt, deliversAt, deliveredAt, openedAt, receipt}, ...]}` — GET
+  /// [sentMessages], the sender's own view of what she sent (guardian only; the last 50, newest first).
+  /// `state` is waiting / delivered / opened / expired / revoked; `receipt` (only once opened) is
+  /// `{localTime, zone, phrase}` in HER frame. A child session is refused with 403.
+  Future<Map<String, dynamic>> fetchSentMessages(String childId) => _get(sentMessages, childId: childId);
+
+  /// `{dayParts: [{kind, startsLocal, endsLocal, daysOfWeek, reachable}, ...], hasBedtime}` — GET [dayParts],
+  /// the child's whole schedule as wall-clock "HH:MM" in her zone. Guardian only.
+  Future<Map<String, dynamic>> fetchDayParts(String childId) => _get(dayParts, childId: childId);
+
+  /// PUT [dayParts] — REPLACES the child's whole schedule in one transaction under a per-child
+  /// writer lock, then re-times every queued message. [parts] are the same shape [fetchDayParts]
+  /// returns (without `hasBedtime`). An empty list is refused (400 `day_parts_required`); two parts of
+  /// the same kind that overlap are refused (409 `day_parts_overlap`). Needs the `settings` grant.
+  Future<Map<String, dynamic>> putDayParts(String childId, List<Map<String, Object?>> parts) =>
+      _put(dayParts, childId: childId, body: <String, Object?>{'dayParts': parts});
+
   /// POST .../media — server/routes.mjs's real upload route, the other real
   /// half of [sendMessage]'s own header comment ("the real backend for
   /// receipt_screen.dart's 'Send one back'"). Uploads [bytes] as base64 in a
