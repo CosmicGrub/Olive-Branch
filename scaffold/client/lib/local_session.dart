@@ -217,7 +217,7 @@ class LocalSessionClient {
       request.add(s == null ? plain : await s.sealTurn(plain));
       final response = await request.close().timeout(const Duration(seconds: 5));
       if (response.statusCode != HttpStatus.ok) {
-        throw LocalSessionException('Peer refused the turn (${response.statusCode}).');
+        throw LocalSessionException('Peer refused the turn.');
       }
       await response.drain<void>();
     } on LocalSessionException {

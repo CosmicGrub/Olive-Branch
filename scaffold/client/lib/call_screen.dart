@@ -153,9 +153,10 @@ class _CallScreenState extends State<CallScreen> {
       final response = await request.close().timeout(const Duration(seconds: 6));
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode != 200) {
+        debugPrint('[olive.call] room request status ${response.statusCode}');
         throw CallUnavailableException(
           response.statusCode == 503 ? CallUnavailableReason.providerOff : CallUnavailableReason.refused,
-          'room server answered ${response.statusCode}');
+          'room request refused');
       }
       return CallGrant.fromJson(jsonDecode(body) as Map<String, dynamic>);
     } finally {

@@ -30,7 +30,7 @@ void _nothingToTypeOrRead(WidgetTester t) {
   final String all = _everythingShown(t);
   expect(all, isNot(matches(RegExp(r'[0-9]'))), reason: 'no digit anywhere: $all');
   for (final String bad in <String>[
-    'code', 'Code', 'Pairing', 'Connect', 'expired', 'already', 'Too many', 'wrong', 'rror', 'server', 'connection',
+    'code', 'Code', 'Pairing', 'Connecting', 'Connect to', 'expired', 'already', 'Too many', 'wrong', 'rror', 'server', 'connection',
     'Exception', "Couldn't", 'Check your',
   ]) {
     expect(all, isNot(contains(bad)), reason: '"$bad" is shown to a child: $all');

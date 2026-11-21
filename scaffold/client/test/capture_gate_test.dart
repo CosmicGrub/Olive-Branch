@@ -195,7 +195,7 @@ void main() {
       expect(find.text('Hold still and try again.'), findsOneWidget);
     });
 
-    testWidgets('the real path is honestly disclosed, not labelled as the simulated demo', (t) async {
+    testWidgets('the real path is not labelled as the simulated demo, and says nothing about a server', (t) async {
       final mock = MockClient((req) async =>
           http.Response(jsonEncode({'ok': false, 'reason': 'too_blurred', 'advice': 'x'}), 422));
       await t.pumpWidget(harness(CaptureGateScreen(
@@ -205,11 +205,12 @@ void main() {
       )));
       await t.tap(find.text('open'));
       await t.pumpAndSettle();
-      expect(find.textContaining('sent to the server for real'), findsOneWidget);
+      // A child reads this screen: no sentence about servers (the real path says nothing at all).
+      expect(find.textContaining('server'), findsNothing);
       expect(find.textContaining('simulates the photo'), findsNothing);
     });
 
-    testWidgets('a network failure surfaces a plain error, never a fabricated verdict', (t) async {
+    testWidgets('a network failure shows the one calm card, never a fabricated verdict or a server sentence', (t) async {
       final mock = MockClient((req) async => throw Exception('connection refused'));
       await t.pumpWidget(harness(CaptureGateScreen(
         baseUrl: 'http://test.local', childId: 'child-1', sessionToken: 'tok-1',
@@ -222,11 +223,16 @@ void main() {
       await t.tap(find.byKey(const Key('shutterButton')));
       await t.pumpAndSettle();
 
-      // Neither a fake pass nor a fake gate-failure screen — a real network
-      // error, said plainly, still on the capture screen so she can retry.
+      // Neither a fake pass nor a fake gate-failure screen: the calm try-again card, still inside the capture
+      // screen, and OK takes her back to the camera to retry. No sentence about a server or a connection.
       expect(find.byType(RetakeScreen), findsNothing);
       expect(find.byType(CaptureGateScreen), findsOneWidget);
-      expect(find.textContaining("Couldn't reach the server"), findsOneWidget);
+      expect(find.byKey(const Key('childConnectTryAgain')), findsOneWidget);
+      expect(find.textContaining("Couldn't reach"), findsNothing);
+      expect(find.textContaining('server'), findsNothing);
+      await t.tap(find.byKey(const Key('childConnectBack')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('shutterButton')), findsOneWidget);
     });
 
     testWidgets('with no baseUrl/childId/sessionToken configured, falls back to the simulated demo',

@@ -147,7 +147,8 @@ MediaFetcher httpMediaFetcher(
         await client.send(http.Request('GET', uri)).timeout(stallTimeout);
     if (res.statusCode != 200) {
       await res.stream.drain<void>().timeout(const Duration(seconds: 5), onTimeout: () {});
-      throw HttpException('media answered ${res.statusCode}');
+      debugPrint('[olive.message] media status ${res.statusCode}');
+      throw const HttpException('media refused');
     }
     final int? declared = res.contentLength;
     if (declared != null && declared > maxBytes) throw const HttpException('media too large');
