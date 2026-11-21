@@ -1,6 +1,7 @@
 // OLIVE BRANCH — the "Her tablet" umbrella on the grown-up's phone: every state and every button, the disconnect with its PIN,
 // the home banner, the connect screen's methods, a11y labels, large text and the Fold's cover width. Verified by CI, headless.
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -243,12 +244,12 @@ void main() {
       expect(find.textContaining('no camera to use here'), findsOneWidget, reason: 'the camera way says plainly why it cannot be chosen');
       // The default is the numbers way: it is the selected card (said to a screen reader too).
       final SemanticsHandle h = t.ensureSemantics();
-      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r"^Type her tablet's numbers"))).hasFlag(SemanticsFlag.isSelected), isTrue);
-      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r'^Use your PIN'))).hasFlag(SemanticsFlag.isSelected), isFalse);
+      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r"^Type her tablet's numbers"))).flagsCollection.isSelected == ui.Tristate.isTrue, isTrue);
+      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r'^Use your PIN'))).flagsCollection.isSelected == ui.Tristate.isTrue, isFalse);
       await t.tap(find.byKey(const Key('connectMethod_pin')));
       await t.pump();
-      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r'^Use your PIN'))).hasFlag(SemanticsFlag.isSelected), isTrue);
-      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r"^Type her tablet's numbers"))).hasFlag(SemanticsFlag.isSelected), isFalse);
+      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r'^Use your PIN'))).flagsCollection.isSelected == ui.Tristate.isTrue, isTrue);
+      expect(t.getSemantics(find.bySemanticsLabel(RegExp(r"^Type her tablet's numbers"))).flagsCollection.isSelected == ui.Tristate.isTrue, isFalse);
       h.dispose();
     });
   });

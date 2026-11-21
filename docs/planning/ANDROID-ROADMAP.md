@@ -14,7 +14,7 @@ Offline product waves: family structure and age bands (#139), colour of the day,
 
 Design parity: tokens (#151), component library (#156), JetBrains Mono (#163), parity harness (#161).
 
-Adult gate and pairing: adult gate and PIN-primary pairing (#167), phone unlock and Forget this tablet (#170), play admission (#171), pairing leak fixes (nameless discovery, no child error screen, per-source attempt budget, #196), the persistent pairing picture with Match, Settle in and Keep watch (#197).
+Adult gate and pairing: adult gate and PIN-primary pairing (#167), phone unlock and Forget this tablet (#170), play admission (#171), pairing leak fixes (nameless discovery, no child error screen, per-source attempt budget, #196), the persistent pairing picture with Match, Settle in and Keep watch (#197), Her tablet (one banner and one tile, one screen whose buttons adapt to the tablet's state; the six-number way to connect; disconnect from both sides and connect again; the root cause of the Wi-Fi half silently never connecting, a scoped link-local address; a dev-only simulate seam; see MASTERFILE 8.5.11).
 
 Play together: play envelope, shared game contract, calm session end and resume (#173), play wiring into every game (#182).
 
@@ -69,7 +69,7 @@ Parked online items (need credentials or hosting): calls over the internet, push
 ## Gates before real families rely on any of this
 
 1. External cryptographic review of the custom key exchange, the Match derivation and (when built) the ledger.
-2. A real two-device run of pairing, the picture in both directions, Match, unlock and a forgotten tablet.
+2. A real two-device run of pairing, the picture in both directions, Match, unlock and a forgotten tablet, and of every Her tablet way (six numbers, scan, PIN), disconnect from each side and connecting again: this is the run that confirms the scoped-address fix on the Fold and the tablet.
 3. Clinician review of each care guide (and a first-aid instructor for choking and CPR), guide by guide.
 4. Counsel on the care-note exception and the limits agreement.
 5. The ten-family simulation with zero isolation misses.

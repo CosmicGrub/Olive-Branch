@@ -5555,8 +5555,8 @@ adult-only keypad only after a deliberate "I'm the grown-up" tap, and `askAdultP
 uses it for the post-defeat surface, break-glass and guardian escalation. Existing paired devices keep their
 server PIN check (`/kiosk-pin/verify`) unchanged behind the gate.
 
-**Her tablet: one group, named by outcome (ISS-061, ISS-063).** More opens with Settings, then one group, "Her tablet", holding the
-three screens that used to be spread over two sections with near-identical names: **Pair <Ivy>'s tablet** (was "Connect a child's
+**Her tablet: one group, named by outcome (ISS-061, ISS-063; superseded below by ONE tile and one screen).** More opens with Settings, then one group, "Her tablet", holding the
+three screens that used to be spread over two sections with near-identical names (they are now buttons on the one Her tablet screen): **Pair <Ivy>'s tablet** (was "Connect a child's
 device": same wifi, no account, below), **Unlock <Ivy>'s tablet** (was "Unlock a child's device with my phone") and **<Ivy>'s
 tablets** (was "Connected child devices": see them, forget one, let only your phone unlock it). The optional account code screen
 is "Join your family account" and is not in this group. What this phone keeps about a tablet it paired is never silently lost
@@ -5570,8 +5570,66 @@ devices, then try again." (neutral on purpose: any device on the wifi can knock)
 shows its one calm card as for every other failure (`PairingFailure.versionMismatch` exists for the grown-up side only; the
 child surface never branches on it).
 
+**Her tablet: ONE button, every way to connect and disconnect (owner request 2026-11-21; built, headless-tested, not run on two real
+devices).** The grown-up's phone has one entry: a **"Her tablet" banner on the home** (it says where her tablet stands and is one
+tap) and **one tile in More** that replaced the three above. Both open `client/lib/her_tablet_screen.dart`, which says in plain words
+where her tablet stands, read from this phone's own list (`her_tablet.dart`: connected with its name and when it was last seen;
+**not connected yet** only when the list was read in full and is empty; **"Can't tell right now"** with only "Try again" when the
+list cannot be read, so a damaged store is never read as "no tablet"), and offers only what fits that state as big plain buttons:
+not connected: **Connect her tablet**; connected: **Unlock her tablet**, **Disconnect her tablet**, **See what changed**. No sentence
+on it carries a code, a status number or a certificate id. The home's one sentence ("her tablet isn't connected yet") and the banner read the same list.
+
+*Connect her tablet* (`connect_child_screen.dart`) offers every way, the easiest preselected, one sentence each, then live steps with a
+"waiting for her tablet" state ("her tablet found this phone" the moment it asks), a calm retry and a plain next step on every failure
+(a window that closed, a mistyped code, a tablet that never picked its connection up, no Wi-Fi: never a dead end, never a code):
+- **Type her tablet's numbers (the easiest, the default).** Her tablet shows **six numbers** (and its own picture); the grown-up types
+  them on the phone. No camera, nothing typed on the tablet. The numbers are chosen by the tablet from the platform's random source,
+  are never sent, are the key-exchange password of this one window (the same key exchange as the PIN way: `AdultWindow.provideCode`,
+  `ChildPairingClient.pair(waitForCode: true)`), and are good for that window only (10 minutes, five tries in all, two from any one
+  address). A mistyped code is spent: the phone says so plainly, asks for it again, and the tablet asks again by itself. The Match
+  pictures and the grown-up's Yes are unchanged, so a stranger on the Wi-Fi gains nothing a stranger gains against the PIN way. The
+  reasoning is in the private security documents, not here.
+- **Scan her tablet's picture.** The grown-up scans the tablet's picture with the camera (it only says which window is meant); the PIN is
+  then typed on the tablet. With no camera the card says so in plain words and the numbers way is one tap away.
+- **Use your PIN.** The grown-up taps the matching picture on the tablet and types their PIN there (the original way, unchanged).
+- Behind "More ways": the older one-time picture for the tablet to scan, and "Only my phone unlocks it".
+
+**On the tablet** the only visible entry is the existing "A grown-up does this" card (no PIN on it, nothing for a child to do). "I'm the
+grown-up" reveals big plain buttons that adapt: **not connected: "Connect to a phone"** (the tablet shows the six numbers and its picture
+and waits; it finds the grown-up's window itself when exactly one is nearby, and shows nameless picture tiles when there are several;
+the PIN way is below it); **connected: "Type my code", "Use my phone", "Disconnect this tablet"**. The child never sees a PIN or an
+error word (a source guard pins it); a child tapping any of it alone changes nothing, because every step is completed on the grown-up's phone.
+
+**Disconnecting, from both sides, with no stuck state.** From the phone: **Disconnect her tablet**, behind the grown-up's PIN, ends this
+phone's side at once and says plainly that the tablet is told the next time it meets this phone (the signed notice of `unlock_challenge.dart`),
+or when a grown-up taps "Disconnect this tablet" on it; if the tablet is nowhere near, the phone's side still ends and the screen says the tablet
+has not been told yet. From the tablet: **Disconnect this tablet** shows a picture the phone scans (the phone signs the answer); the phone now also
+**ends its own side when it answers**, so it never keeps a tablet that has left (before this, the phone listed a ghost). A tablet with no typed-code
+check (the default) cannot be disconnected by typing a code on it, by design (it holds nothing to check a code against). **Connecting again** after
+either kind of disconnect works cleanly: an old record of the same tablet is superseded (one tablet is one row), and its "disconnected" mark ends.
+
+**ROOT CAUSE of "the Fold can scan and disconnect but not connect" (proven by `test/lan_scoped_host_test.dart`; the fix is in `lan_pairing_transport.dart`).** Every
+flow that needs only a camera worked on the real devices; every flow that needs the two devices to talk over the Wi-Fi did not. Android's resolver hands
+the tablet the window's address the way Java prints it, and a link-local IPv6 address carries its interface ("fe80::...%wlan0"). Dart turned that into
+"...%25wlan0", the address lookup failed, the transport swallowed the exception and answered nothing, and the tablet ended on its calm card every time,
+with nothing wrong on either screen. The transport now places such an address on its interface (by name or number), dials only LAN addresses (so a hostile
+advertisement or scanned picture cannot send the tablet's handshake to a public address), refuses a host name that is not an address, and never uses a
+cellular or tunnel interface. Two further defects found on the way are fixed: a tablet the phone **stopped** was refused for ever, silently, although the
+same tablet (it keeps its own key) could never come back; a deliberate connect now ends the refusal, and says on the approval step "You stopped this tablet
+before. Only connect it again if it really is hers"; and the phone recorded a tablet when the grown-up tapped Yes, not when the tablet was handed its credential,
+so a tablet that never came back was listed as connected: the record is now made when the credential leaves the phone. (Hardware logs that would confirm the
+scoped-address cause on the Fold and the tablet were not available to this change; the fix is proven against Dart's behaviour, not yet on the devices.)
+
+**Dev-only device-test seam.** A build made with the dev-only simulate define (`tools/device-sync.sh` with `SIMULATE_CONNECT=1`; exactly `true`; CI guard
+`tools/check-simulate-connect.mjs`) adds "Simulate her tablet" on the phone and "Simulate a phone" on the tablet, so one device shows the whole flow with a
+simulated other end. The real key exchange runs in process; everything the simulated side draws says "simulated"; it does not prove mDNS, the Wi-Fi hop or a
+second camera. A normal build has no button and no code path for it.
+
+**Reusable for other flows.** `connectHerTabletRoute(services, childName:, onConnected:)` in `her_tablet_screen.dart` is the stable entry point the guided first
+run calls (with an `onConnected` callback); the grown-up's PIN is asked in one function (`askPhonePin`) so a different keypad is a one-function change.
+
 **Connecting (built, headless-tested, not yet run on two real devices).**
-1. The grown-up opens More > Her tablet > "Pair <Ivy>'s tablet" and types **their own PIN** (checked by the local PIN
+1. The grown-up opens More > Her tablet > Connect her tablet and types **their own PIN** (checked by the local PIN
    service). That opens a **window**: 10 minutes, five failed tries, one use, in memory on the adult device only.
 2. On the child's device the grown-up taps "A grown-up does this" > "I'm the grown-up", picks the open window
    nearby (mDNS `_pw._tcp`, advertised as "Player one" or "Player two" with TXT `v`, a random per-window handle `h`
@@ -5634,8 +5692,8 @@ picture is optional and works only for devices in the same place). Layers:
 5. **Keep watch.** The device's public key is pinned. A changed key pauses the connection ("Paused: this device
    changed. Is this still her tablet?"); it is never silently trusted again. "Is this device still yours?" appears
    after 60 days without contact (the grown-up's phone's own clock; a child's clock is never trusted). **Contact is a
-   real event now:** every time the grown-up's phone scans a tablet's signed unlock picture (More > Her tablet > "Unlock
-   <Ivy>'s tablet"), the tablet has proved it holds the key pinned for its certificate, so the phone records the
+   real event now:** every time the grown-up's phone scans a tablet's signed unlock picture (More > Her tablet >
+   Unlock her tablet), the tablet has proved it holds the key pinned for its certificate, so the phone records the
    meeting (which restarts the 60-day count) or, if the key is different, unlocks nothing for that scan. A different
    key under a known certificate id writes nothing to the book (the id is printed in the clear on the real tablet's own
    picture, so a stranger's picture must not be able to pause the real tablet); a pause that is already in the book
@@ -5676,12 +5734,12 @@ object exists).
 
 **Use my phone to unlock, phone-only, and forgetting a tablet (built, headless-tested).** On the tablet the gate
 offers "Type my code" and "Use my phone". Phone: the tablet shows a one-time challenge (random nonce, its own key
-fingerprint, the purpose, a 2 minute expiry); the grown-up's phone (More > Her tablet > "Unlock <Ivy>'s tablet")
+fingerprint, the purpose, a 2 minute expiry); the grown-up's phone (More > Her tablet > Unlock her tablet)
 checks it names a tablet that phone connected and has not forgotten, asks for the grown-up's PIN, and signs exactly
 those fields; the tablet verifies the signature against the grown-up key it pinned at pairing, that the nonce is the
 single outstanding one and unexpired, and consumes it. A photographed picture is useless afterwards
 (`unlock_challenge.dart`). **Phone-only is the default** for a newly connected tablet (a switch when connecting, on
-unless the grown-up turns it off, or later in More > Her tablet > "<Ivy>'s tablets"): the tablet is never given a PIN check
+unless the grown-up turns it off, or later in More > Her tablet > See what changed): the tablet is never given a PIN check
 at all, or deletes it when the next signed answer carries the flag; the keypad is not offered. It only ever turns on;
 turning it off needs the tablet connected afresh. **Forget this tablet** removes it from the phone's list so the phone
 stops unlocking it or playing with it, **and marks its key as forgotten**: the next time that tablet is brought to the
@@ -6133,8 +6191,8 @@ acts today is the single one on the Age bands screen and a reminder waits for
 notifications, and the screen says so. **The guardian home** shows one sentence under the
 hero: the caller's own when it has one, else (`guardian_state_line.dart`) one honest line about her tablet and
 her day, never an invented mood or place. **"Not connected yet" is a claim about a list, so it is made only when the list was read in
-full and is empty** (ISS-059): the home reads this phone's paired-tablet list itself (the same list More > Her tablet >
-"<Ivy>'s tablets" shows, `pairing_records.dart`), and again whenever it changes, and combines it with the server's
+full and is empty** (ISS-059): the home reads this phone's paired-tablet list itself (the same list More > Her tablet > See
+what changed shows, `pairing_records.dart`), and again whenever it changes, and combines it with the server's
 paired-devices answer when it has a live family. Three answers: a tablet is on the list ("<Ivy>'s tablet is paired with this
 phone"), the list was read and is empty (without a live family: "<Ivy>'s tablet isn't connected yet. What you set up here
 stays on this phone."; with one, only when the server also lists no tablet), or the list cannot be read (the store is down, an
