@@ -1,5 +1,5 @@
 // OLIVE BRANCH -- encrypted family backup: the SERVER half. MASTERFILE 7.22.
-// db/migrations/0054_family_backup.sql has the tables, the row level security
+// db/migrations/0057_family_backup.sql has the tables, the row level security
 // and the append-only triggers; server/backup_chain.mjs has the pure hashing and
 // the reference client-side history check. This file is the logic between them.
 //

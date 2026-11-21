@@ -464,7 +464,7 @@ class OliveApi {
   // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
   // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
   static const authRecover = '/v1/auth/recover';
-  // Encrypted family backup (db/migrations/0054_family_backup.sql, MASTERFILE 7.22). Server half only: a
+  // Encrypted family backup (db/migrations/0057_family_backup.sql, MASTERFILE 7.22). Server half only: a
   // grown-up's phone seals the backup before it leaves, the server stores opaque bytes. No screen calls
   // these yet; the constants keep the route-drift test honest.
   static const backupLimits = '/v1/backup/limits';

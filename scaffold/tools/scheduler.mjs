@@ -555,7 +555,7 @@ export async function runPurgeChallengesJob(pool, opts = {}) {
 
 // --------------------------------------------------------- sweep-backups ---
 /**
- * Encrypted family backup housekeeping (migration 0054, MASTERFILE 7.22): unfinished uploads that ran out
+ * Encrypted family backup housekeeping (migration 0057, MASTERFILE 7.22): unfinished uploads that ran out
  * of time give their bytes back, restore requests nobody finished lapse (with a notice), and a set-aside
  * version whose recovery window has ended finally has its bytes purged. It never touches a live version or
  * one still inside its window (the database triggers would refuse anyway).
