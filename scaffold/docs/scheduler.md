@@ -72,7 +72,7 @@ turn both off: with `DELIVERY_IN_SERVER=0` and no `delivery` service nothing
 delivers (a contract test fails a Compose file that does this).
 
 **Is it alive?** An idle tick logs nothing, so a quiet log proves nothing.
-Instead (migration 0054, `tools/worker_heartbeat.mjs`):
+Instead (migration 0056, `tools/worker_heartbeat.mjs`):
 
 - the worker rewrites a heartbeat file every tick and the `delivery` container's
   healthcheck (`tools/delivery-healthcheck.mjs`) is `unhealthy` when it has not

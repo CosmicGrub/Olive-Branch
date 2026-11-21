@@ -6089,7 +6089,7 @@ export async function houseRulesFor(
  * `oldestPendingAgeSec` is the age of the oldest `pending` row (a row can legitimately stay
  * pending: no bedtime yet), `oldestUnsweptSec` is how long the rematerialize sweep has gone
  * without looking at the row it has neglected longest, which is the sweeper's own health
- * (0054: round-robin, so under a working sweep it stays within a few ticks).
+ * (0056: round-robin, so under a working sweep it stays within a few ticks).
  */
 export async function deliveryBacklog(pool: pg.Pool): Promise<{
   pending: number; ready: number; oldestReadyAgeSec: number | null;
@@ -6109,7 +6109,7 @@ export async function deliveryBacklog(pool: pg.Pool): Promise<{
 }
 
 /**
- * Upserts one worker's heartbeat row (0054). `ok` says the tick succeeded; a failed tick still
+ * Upserts one worker's heartbeat row (0056). `ok` says the tick succeeded; a failed tick still
  * records that the worker is alive (beat_at) but leaves last_ok_at where it was.
  */
 export async function recordWorkerHeartbeat(pool: pg.Pool, o: {
@@ -6129,7 +6129,7 @@ export type DeliveryHealth = {
   oldestReadyAgeSec: number | null; oldestPendingAgeSec: number | null; oldestUnsweptAgeSec: number | null;
   workerBeatAgeSec: number | null; workerOkAgeSec: number | null; workerTickMs: number | null };
 
-/** The aggregate-only reader (0054 delivery_health()): ages in seconds, never a row. */
+/** The aggregate-only reader (0056 delivery_health()): ages in seconds, never a row. */
 export async function deliveryHealth(pool: pg.Pool): Promise<DeliveryHealth> {
   const n = (v: any) => (v === null || v === undefined ? null : Number(v));
   const { rows } = await pool.query('SELECT * FROM delivery_health()');

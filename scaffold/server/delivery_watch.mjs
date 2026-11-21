@@ -6,7 +6,7 @@
 // ready and the only trace was a pending row getting older. This watch is the loud half of the fix:
 //
 //   - one minute after boot (the worker ticks every 30 s by default, so a healthy worker has beaten by
-//     then) it reads the worker heartbeat through delivery_health() (migration 0054, aggregate-only)
+//     then) it reads the worker heartbeat through delivery_health() (migration 0056, aggregate-only)
 //     and, if there is none or it is stale, logs a WARNING line that names the cause and the two fixes;
 //   - it keeps checking every few minutes, so a worker that dies later is also called out and a worker
 //     that appears is acknowledged once.

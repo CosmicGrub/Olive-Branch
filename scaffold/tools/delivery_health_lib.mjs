@@ -1,7 +1,7 @@
 // OLIVE BRANCH — delivery-worker alarms for tools/health-alert.mjs (ISS-069).
 //
 // health_check (the SQL view) already counts "stalled" and "unmaterialized" rows, but it cannot see
-// WHETHER A WORKER IS RUNNING and it reports counts, not ages. delivery_health() (migration 0054)
+// WHETHER A WORKER IS RUNNING and it reports counts, not ages. delivery_health() (migration 0056)
 // returns ages in seconds and the worker heartbeat; this turns that into the same
 // {checkName, severity, observed, threshold, meaning} breaches health-alert already prints.
 // Pure: no database, no clock, so every threshold is unit-tested.

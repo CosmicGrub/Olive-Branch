@@ -1,6 +1,6 @@
 /**
  * packages/db/test/delivery_ops_db.test.mjs — the delivery worker's operational health, against a
- * REAL Postgres (migration 0054). ISS-069 (a dead or missing worker is visible) and ISS-070 (the
+ * REAL Postgres (migration 0056). ISS-069 (a dead or missing worker is visible) and ISS-070 (the
  * rematerialize scan can no longer be crowded out by rows that stay pending).
  *
  *   A  ROUND-ROBIN SWEEP. 600 stuck pending rows plus one fresh row: the fresh one is materialised

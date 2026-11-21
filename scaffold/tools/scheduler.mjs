@@ -243,7 +243,7 @@ export async function runRematerializeSweep(pool, opts = {}) {
       LIMIT $1`,
     [batchLimit],
   ));
-  // ISS-070 (0054). Rows this pass looked at and left `pending` are stamped at the end, so they go to
+  // ISS-070 (0056). Rows this pass looked at and left `pending` are stamped at the end, so they go to
   // the back of the next scan. Before this the scan was `ORDER BY created_at LIMIT 500`: rows that
   // can stay pending for a legitimate reason (no bedtime yet, an event that has not happened) sat
   // at the front for ever and, at 500 of them, no newer message was ever looked at again.

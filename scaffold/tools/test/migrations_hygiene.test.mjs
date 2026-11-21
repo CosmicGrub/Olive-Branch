@@ -67,12 +67,18 @@ const testFixtures = new Set(readdirSync(join(SCAFFOLD, 'db', 'test')).filter(f 
   // "reserved for a parallel branch"; that branch merged, the files exist, and an allowance
   // that is no longer needed only hides a deleted migration (ISS-075), so it is gone.
   const ALLOWED_GAPS = [19];
+  // Numbers held by open work that has not reached main (0054 encrypted family backup, 0055
+  // account recovery paths). A number here is allowed to be missing ONLY while its file is absent:
+  // the moment it lands the check below fails and the entry must be deleted, so this cannot go
+  // stale and hide a deleted migration. It is empty once those branches merge.
+  const HELD_FOR_OPEN_WORK = [54, 55];
   const gapsIn = (list) => {
     const out = [];
     for (let n = 1; n <= list[list.length - 1]; n++) if (!list.includes(n)) out.push(n);
-    return out.filter(n => !ALLOWED_GAPS.includes(n)).join(',') || 'none';
+    return out.filter(n => !ALLOWED_GAPS.includes(n) && !HELD_FOR_OPEN_WORK.includes(n)).join(',') || 'none';
   };
   check(g, 'the only gap is 0019, which never existed', gapsIn(nums), 'none');
+  check(g, 'a number held for open work has no file yet (once it lands, delete it from HELD_FOR_OPEN_WORK)', HELD_FOR_OPEN_WORK.filter(n => nums.includes(n)).join(',') || 'none', 'none');
   check(g, 'the allow-list is exactly [19] (39, 40 and 41 are NOT allowed to be missing)', JSON.stringify(ALLOWED_GAPS), '[19]');
   for (const n of [39, 40, 41]) {
     check(g, `0${n} exists on disk`, nums.includes(n), true);

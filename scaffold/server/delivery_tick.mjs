@@ -33,7 +33,7 @@ import { deliveryBacklog, recordWorkerHeartbeat } from '../packages/db/src/pool.
 import { errorLine } from './safe_log.mjs';
 
 export const DELIVERY_LOCK_NAME = 'deliver';
-// The heartbeat row this host writes (migration 0054). The dedicated worker writes 'delivery'; either
+// The heartbeat row this host writes (migration 0056). The dedicated worker writes 'delivery'; either
 // one alive is enough for delivery_health(), so a one-container deployment is not reported as worker-less.
 export const IN_SERVER_WORKER_NAME = 'delivery-in-server';
 // A burst of POSTs (a batch of 30 messages) should cost one extra tick, not 30.
