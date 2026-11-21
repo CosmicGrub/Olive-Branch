@@ -582,6 +582,10 @@ class FamilyAccountService {
   /// invite was already opened FROM THIS PHONE, opening is skipped.
   Future<void> joinAsNew({required String inviteCode, required String displayName}) =>
       _run<void>('join', AccountAction.joinInvite, () async {
+        // Signed in AND holding this very invite means an earlier try made the account and only the note that it is
+        // waiting was lost: carry on from there rather than refusing the person for being signed in.
+        final String? early = cleanInviteCode(inviteCode);
+        if (early != null && await _resumeWaiting(early)) return;
         await _assertNotSignedIn();
         final String? id = cleanInviteCode(inviteCode);
         if (id == null) throw _fix('That does not look like an invite code.', 'invalid_invite');
@@ -602,9 +606,20 @@ class FamilyAccountService {
         }
         final Map<String, dynamic> r = await bootstrapGuardianInvite(baseUrl, id, name, enrol: true, client: _client);
         await _afterAccountMade(r, userKey: 'userId');
-        await _pending.save(PendingJoin(inviteId: id, stage: JoinStage.waiting));
+        // The account exists now. A note that cannot be saved must not turn this into a failure: the retry resumes.
+        await _safe(() => _pending.save(PendingJoin(inviteId: id, stage: JoinStage.waiting)));
         await _safe(() => _record.save(AccountRecord(stage: AccountStage.signedUp, at: _now())));
       });
+
+  /// True (and the waiting step is noted) when this phone is signed in and holds an opened invite with this code.
+  Future<bool> _resumeWaiting(String inviteId) async {
+    if (_unsaved == null && !await _hasStoredSignIn()) return false;
+    final PendingJoin? held = await _safe(_pending.load);
+    if (held == null || held.inviteId != inviteId) return false;
+    await _safe(() => _pending.save(PendingJoin(inviteId: inviteId, stage: JoinStage.waiting)));
+    await _safe(() => _record.save(AccountRecord(stage: AccountStage.signedUp, at: _now())));
+    return true;
+  }
 
   /// An existing account (signed in on this phone) presents an invite addressed to its own email.
   Future<void> useInviteWithAccount(String inviteCode) =>
@@ -621,7 +636,9 @@ class FamilyAccountService {
           }
         }
         await _authed((String t) => claimGuardianInvite(baseUrl, id, t, client: _client));
-        await _pending.save(PendingJoin(inviteId: id, stage: JoinStage.waiting));
+        // The claim went through; a note that cannot be saved must not report it as failed (a retry would be told
+        // "already claimed").
+        await _safe(() => _pending.save(PendingJoin(inviteId: id, stage: JoinStage.waiting)));
       });
 
   /// Has the inviter answered? Asking again is safe: it changes nothing while they have not.
@@ -698,6 +715,11 @@ class FamilyAccountService {
   /// Signs this phone out of the account. Returns whether the server confirmed it; false means the sign-in key
   /// may still be valid on the server until a grown-up removes this phone from another device. Local data stays.
   Future<bool> signOut() => _run<bool>('signOut', AccountAction.signOut, () async {
+        // What this phone remembers about the account is forgotten FIRST: ending the session fires [onSignedOut],
+        // which restarts the shell, and a restart that got there first would read the old account's record.
+        _unsaved = null;
+        await _safe(_record.clear);
+        await _safe(_pending.clear);
         bool confirmed = false;
         final AuthSession? cur = AuthSession.current;
         if (cur != null && !cur.hasEnded) {
@@ -706,10 +728,9 @@ class FamilyAccountService {
           try {
             await _identityStore.clear();
           } catch (_) {}
+          // No live session to end, so nothing else will send the shell back to pairing.
+          if (cur == null) onSignedOut?.call();
         }
-        _unsaved = null;
-        await _safe(_record.clear);
-        await _pending.clear();
         return confirmed;
       });
 

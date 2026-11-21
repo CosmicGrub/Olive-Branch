@@ -209,11 +209,17 @@ class _GuardianHandoverState extends State<GuardianHandoverScreen> {
   Future<void> _want(Channel c, bool on) async {
     final Set<Channel> w = <Channel>{...(_touch.wanted[widget.guardianId] ?? const <Channel>{})};
     on ? w.add(c) : w.remove(c);
-    final StayInTouch t = _touch.want(widget.guardianId, w);
+    final StayInTouch before = _touch;
+    final StayInTouch t = before.want(widget.guardianId, w);
     setState(() => _touch = t);
     try {
       await _repo.saveTouch(t);
-    } catch (_) {}
+    } catch (_) {
+      // A choice that was not kept must not look kept: put the switch back and say so.
+      if (!mounted) return;
+      setState(() => _touch = before);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("That couldn't be kept just now.")));
+    }
   }
 
   @override

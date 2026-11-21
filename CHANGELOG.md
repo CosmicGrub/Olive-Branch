@@ -16,6 +16,15 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Account and pairing robustness: a reply that is not the server's, sign-out order, a lost join note, a teen's unsaved choice, an unsaved family key (client only)
+Five small ways the optional account and pairing could say "done" when it was not, or crash or strand someone, each closed. Nothing here adds a screen.
+- **A reply that is not the server's is unconfirmed (ISS-054).** `_decode` and the nine other sites that decoded by hand now read through one guarded path: a 2xx with a non-empty body that is not a JSON object is `unexpected_reply` (never a FormatException, never success), an error status keeps its status whatever the body, and a sign-in reply without a token is not a sign-in. `setGuardianPin` remembers (in memory, 15 minutes) that a first-PIN attempt came back unconfirmed; if the retry is told a PIN exists, it asks `GET /v1/me` and treats the PIN as set when `hasPin` is true.
+- **Sign-out forgets first (ISS-055).** The grown-up's Sign out and `FamilyAccountService.signOut` now clear the account note and any invite being joined, awaited, BEFORE the session ends and the shell restarts; it also runs with no live session (and sends the shell back). A pending-join store that cannot be cleared no longer stops a sign-out.
+- **A lost "waiting" note no longer traps a joined person (ISS-056).** Both pending-join saves after the account is made or the invite claimed are ignored on failure; "Join" on a phone that is signed in and holds that same invite resumes at waiting.
+- **Teen "stay in touch" (ISS-052).** A choice that was not saved is put back and the existing snack bar says so.
+- **Family key (ISS-053).** `ensureFamilyKey` reads the key back after saving, retries three times, and otherwise throws; the pairing screen then stops before opening anything and shows the calm try-again line.
+- Tests: `account_pairing_robustness_test.dart` (new), a Sign-out ordering test in `guardian_more_test.dart`. Not run on a device. Totals are CI's.
+
 ### Dev-only cleartext for release device builds (client + tooling; no server change)
 The device lane installs RELEASE builds and reaches the dev server over `adb reverse`, which is plain http on the phone's own loopback; release builds refuse cleartext by design, so the lane had no way to talk to the server. This adds a narrow, developer-only escape hatch and keeps the rule for every normal build.
 - **The define.** `--dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true` (read as `kAllowDevCleartext`, like `OLIVE_ALLOW_SCREENSHOTS`; `bool.fromEnvironment` accepts exactly `true`, so `1` or `trueish` do nothing). With it, `OliveTransportPolicy` lets a release build use `http://` to the literal hosts `127.0.0.1` and `::1` and to nothing else: not `localhost`, not `127.0.0.2` or other spellings, not `10.0.2.2`, a LAN address, a `.local` name or a public host; a query, fragment or credentials on the URL are still refused. Without it nothing changes, and debug builds are unchanged either way. The default constructor argument is the build-time value, so only tests pass it explicitly.

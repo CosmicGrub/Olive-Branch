@@ -10,7 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:olive_client/auth_session.dart';
 import 'package:olive_client/availability_screen.dart';
+import 'package:olive_client/device_identity.dart';
 import 'package:olive_client/call_screen.dart';
 import 'package:olive_client/emergency_card.dart';
 import 'package:olive_client/exchange_screen.dart';
@@ -636,6 +638,39 @@ void main() {
       expect(t.takeException(), isNull);
     });
 
+    testWidgets('the account note is already gone when the session ends and the shell would restart', (t) async {
+      LocalServices.resetForTest();
+      AuthSession.use(null);
+      addTearDown(() {
+        LocalServices.resetForTest();
+        AuthSession.use(null);
+      });
+      final AccountRecordStore rec = accountRecordStoreFor(LocalServices.current);
+      await rec.save(AccountRecord(
+          stage: AccountStage.childAdded, childId: '3f2a9c1e-4b7d-4c1a-9e3f-0a1b2c3d4e5f', at: DateTime.utc(2026)));
+      Future<AccountRecord?>? seenAtRestart;
+      final payload = base64Url.encode(utf8.encode(jsonEncode({'exp': DateTime.utc(2100).millisecondsSinceEpoch})));
+      final session = AuthSession.device(
+        baseUrl: 'http://api.test',
+        identity: DeviceIdentity(
+            sessionToken: '${payload.replaceAll('=', '')}.mac',
+            deviceId: 'dev-1', role: 'guardian', targetId: 'g-1', deviceCredential: 'cred-1'),
+        store: DeviceIdentityStore(storage: _MemSecure()),
+        client: MockClient((req) async => http.Response(jsonEncode({'ok': true, 'revoked': true}), 200)),
+        onSignedOut: () => seenAtRestart = rec.load(),
+      );
+      AuthSession.use(session);
+      await pumpPushed(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      final signOutTile = find.text('Sign out');
+      await t.ensureVisible(signOutTile);
+      await t.pumpAndSettle();
+      await t.tap(signOutTile);
+      await t.pumpAndSettle();
+      expect(seenAtRestart, isNotNull, reason: 'ending the session fires the restart hook');
+      expect(await seenAtRestart!, isNull, reason: 'the restart must not find the old account note');
+      expect(find.text('root screen'), findsOneWidget);
+    });
+
     testWidgets('the tile itself reads honestly -- explains what it does, '
         'not just "Sign out"', (t) async {
       await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
@@ -666,4 +701,14 @@ void main() {
       });
     }
   });
+}
+
+class _MemSecure implements SecureKeyValueStore {
+  final Map<String, String> data = <String, String>{};
+  @override
+  Future<String?> read(String key) async => data[key];
+  @override
+  Future<void> write(String key, String value) async => data[key] = value;
+  @override
+  Future<void> delete(String key) async => data.remove(key);
 }

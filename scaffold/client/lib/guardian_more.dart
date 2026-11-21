@@ -9,7 +9,6 @@
 // guardian side, family setup) that don't have their own top-level tile, so
 // "every new screen must be reachable" holds without crowding that home
 // screen the way child_more.dart does for the child side.
-import 'dart:async' show unawaited;
 import 'guardian_pin_recovery_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -684,10 +683,11 @@ class GuardianMoreScreen extends StatelessWidget {
     // hook, which the live shell uses to return to pairing. With no session
     // installed (the offline demo build, a dev-login run) there is nothing
     // stored to clear and this stays the pop it always was.
+    // The optional account's note about this phone (its child, a half-finished join) ends with the sign-in. It is
+    // forgotten BEFORE the session ends and WITH it awaited: the session's end restarts the shell, and a restart that
+    // got there first would read the old account's child from the record. Never throws, and also runs with no session.
+    await forgetAccountOnThisPhone();
     await AuthSession.current?.signOut();
-    // The optional account's note about this phone (its child, a half-finished join) ends with the sign-in.
-    // Not awaited: leaving the screen never waits on the phone's secure storage.
-    unawaited(forgetAccountOnThisPhone());
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }

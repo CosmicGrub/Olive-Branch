@@ -245,6 +245,16 @@ class LocalStorePairingPictureRepository implements PairingPictureRepository {
       });
 }
 
+/// How many times [PairingPictureService.ensureFamilyKey] tries to keep a new family key before it gives up.
+const int kFamilyKeySaveTries = 3;
+
+/// The family key could not be kept on this device. Nothing was handed out.
+class FamilyKeyNotSaved implements Exception {
+  const FamilyKeyNotSaved();
+  @override
+  String toString() => 'FamilyKeyNotSaved';
+}
+
 /// Builds this device's picture and rotates it. The DEVICE KEY is never rotated here: refreshing only changes the
 /// salt and the epoch, so old copies stop finding windows while connected devices stay connected.
 class PairingPictureService {
@@ -287,10 +297,25 @@ class PairingPictureService {
     final PairingPictureState s = await state();
     if (s.familyKey != null) return s.familyKey!;
     final Uint8List fk = Uint8List.fromList(List<int>.generate(kFamilyKeyBytes, (_) => _random.nextInt(256)));
-    try {
-      await repo.save(s.copyWith(familyKey: fk));
-    } catch (_) {}
-    return fk;
+    // A key that is handed out but not kept is replaced by a different one next run, and everything sealed with the
+    // first is then unreadable. So it must be read back from the store before it is returned; a store that will not
+    // keep it after a few tries is an error, and the caller stops before sealing anything.
+    for (int attempt = 0; attempt < kFamilyKeySaveTries; attempt++) {
+      try {
+        await repo.save(s.copyWith(familyKey: fk));
+        final PairingPictureState? back = await repo.load();
+        if (back?.familyKey != null && _sameBytes(back!.familyKey!, fk)) return fk;
+      } catch (_) {}
+    }
+    throw const FamilyKeyNotSaved();
+  }
+
+  static bool _sameBytes(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// A child device keeps the family key that arrived inside its sealed credential.

@@ -200,7 +200,16 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
     if (picRepo != null) {
       try {
         familyKey = await PairingPictureService(picRepo).ensureFamilyKey();
-      } catch (_) {}
+      } catch (_) {
+        // The family key could not be kept on this phone. Nothing has been sealed or shared, and going on would hand
+        // out a key the next run replaces. Stop here, calmly; the PIN is asked for again.
+        if (!mounted) return;
+        setState(() {
+          _working = false;
+          _message = 'Nothing was shared. This phone could not keep what it needs just now. Try again in a moment.';
+        });
+        return;
+      }
     }
     unawaited(widget.trust?.note(HistoryKind.opened));
     final AdultWindow w = await AdultWindow.open(

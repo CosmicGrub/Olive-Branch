@@ -29,10 +29,12 @@ class MemSecure implements SecureKeyValueStore {
 
 /// One grown-up's phone: its own storage and its own service. The process-wide session is swapped in by [act].
 class Phone {
-  Phone(this.server)
+  /// [pendingStore] swaps the invite-being-joined store (to make it fail); [whenSignedOut] runs, synchronously, at the
+  /// moment the shell would be restarted.
+  Phone(this.server, {PendingJoinStore? pendingStore, void Function()? whenSignedOut})
       : secure = MemSecure(),
         record = MemoryAccountRecordStore(),
-        pending = MemoryPendingJoinStore() {
+        pending = pendingStore ?? MemoryPendingJoinStore() {
     identities = DeviceIdentityStore(storage: secure);
     service = FamilyAccountService(
       baseUrl: kBase,
@@ -41,14 +43,17 @@ class Phone {
       record: record,
       pending: pending,
       now: server.now,
-      onSignedOut: () => signedOutCalls++,
+      onSignedOut: () {
+        signedOutCalls++;
+        whenSignedOut?.call();
+      },
     );
   }
 
   final FakeIdentityServer server;
   final MemSecure secure;
   final MemoryAccountRecordStore record;
-  final MemoryPendingJoinStore pending;
+  final PendingJoinStore pending;
   late final DeviceIdentityStore identities;
   late final FamilyAccountService service;
   AuthSession? session;

@@ -598,8 +598,7 @@ class OliveApi {
   }
 
   Map<String, dynamic> _decode(http.Response res) {
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    final body = _bodyMap(res);
     if (res.statusCode >= 400) {
       // device_revoked -- see [DeviceRevokedException]'s own doc comment.
       // Checked by error STRING, not merely status code: 401 is also the
@@ -609,9 +608,13 @@ class OliveApi {
       if (res.statusCode == 401 && body['error'] == 'device_revoked') {
         throw DeviceRevokedException();
       }
-      throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error',
-          message: body['message'] as String?, faults: body['faults'] as List<dynamic>?);
+      final Object? e = body['error'];
+      final Object? m = body['message'];
+      final Object? f = body['faults'];
+      throw ApiException.fromStatus(res.statusCode, e is String ? e : 'error',
+          message: m is String ? m : null, faults: f is List ? f : null);
     }
+    _requireObjectBody(res);
     return body;
   }
 
@@ -840,10 +843,7 @@ class OliveApi {
         'given_at': ?givenAt?.toUtc().toIso8601String(),
       }),
     ));
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 201 || res.statusCode == 409) return body;
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    return _decodeAccepting(res, const {201, 409});
   }
 
   /// `{bloodType, allergies, conditions, pediatricianName,
@@ -987,10 +987,7 @@ class OliveApi {
       headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode(const {}),
     ));
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 201 || res.statusCode == 409) return body;
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    return _decodeAccepting(res, const {201, 409});
   }
 
   /// `{entries: [{id, fromUserId, fromUserName, items: [{kind, note}, ...],
@@ -1022,10 +1019,7 @@ class OliveApi {
         ],
       }),
     ));
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 201 || res.statusCode == 400) return body;
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    return _decodeAccepting(res, const {201, 400});
   }
 
   /// `{letters: [{id, writtenAtAge, openAtAge, writtenAt, openedAt,
@@ -1069,10 +1063,7 @@ class OliveApi {
       headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode(const {}),
     ));
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200 || res.statusCode == 409) return body;
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    return _decodeAccepting(res, const {200, 409});
   }
 
   /// Deletes ONE real letter, read or not -- DELETE [letterDelete],
@@ -1127,12 +1118,60 @@ class OliveApi {
   /// caller can say so plainly. An account with no passkey yet is unchanged: no proof, no prompt.
   Future<void> setGuardianPin(String pin) async {
     try {
-      await _post(guardianPinPath, {'pin': pin});
+      await _setGuardianPinOnce(pin);
+    } on ApiException catch (e) {
+      // A first attempt that came back unconfirmed (a 2xx that was not the server's own reply) may well have run.
+      // If the retry is now told a PIN exists, ask the server whether it is ours before sending the grown-up to
+      // "enter your current PIN" for a PIN they never knew they had.
+      if (e.error == 'current_pin_required' && _hadUnconfirmedPin()) {
+        bool? has;
+        try {
+          has = (await fetchMe())['hasPin'] == true;
+        } catch (_) {
+          has = null;
+        }
+        if (has == true) {
+          _pinUnconfirmed.remove(baseUrl);
+          return;
+        }
+        if (has == false) _pinUnconfirmed.remove(baseUrl);
+      }
+      rethrow;
+    }
+  }
+
+  /// Servers (by base URL, with when) on which a first-PIN attempt ended unconfirmed: the call answered 2xx with
+  /// something that was not the server's own reply, so the PIN may or may not have been set. In memory only, and only
+  /// remembered for [_kUnconfirmedPinWindow]; see [setGuardianPin].
+  static final Map<String, DateTime> _pinUnconfirmed = <String, DateTime>{};
+  static const Duration _kUnconfirmedPinWindow = Duration(minutes: 15);
+
+  bool _hadUnconfirmedPin() {
+    final DateTime? at = _pinUnconfirmed[baseUrl];
+    return at != null && DateTime.now().difference(at) < _kUnconfirmedPinWindow;
+  }
+
+  /// Forgets every remembered unconfirmed first-PIN attempt. For tests, which share one process.
+  static void forgetUnconfirmedPinAttempts() => _pinUnconfirmed.clear();
+
+  Future<void> _setGuardianPinOnce(String pin) async {
+    try {
+      await _postPin({'pin': pin});
     } on ApiException catch (e) {
       final provider = passkeyAssertion;
       if (e.error != 'passkey_assertion_required' || provider == null) rethrow;
       final assertion = await provider(this);
-      await _post(guardianPinPath, {'pin': pin, 'assertion': assertion});
+      await _postPin({'pin': pin, 'assertion': assertion});
+    }
+    _pinUnconfirmed.remove(baseUrl);
+  }
+
+  Future<void> _postPin(Map<String, dynamic> body) async {
+    try {
+      await _post(guardianPinPath, body);
+    } on ApiException catch (e) {
+      if (e.error == 'unexpected_reply') _pinUnconfirmed[baseUrl] = DateTime.now();
+      rethrow;
     }
   }
 
@@ -1486,10 +1525,7 @@ class OliveApi {
       headers: {'authorization': 'Bearer $t', 'content-type': 'application/json'},
       body: jsonEncode({'image': base64Encode(imageBytes)}),
     ));
-    final body =
-        res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200 || res.statusCode == 422) return body;
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    return _decodeAccepting(res, const {200, 422});
   }
 
   /// `{ order: {...} }` for a real custody order, or `{ order: null }` when
@@ -1763,11 +1799,7 @@ Future<Map<String, dynamic>> webauthnLoginChallenge(
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'userId': userId}),
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body;
+  return _decodeOrThrow(res);
 }
 
 /// Verifies a real WebAuthn LOGIN ceremony -- POST webauthnLoginVerify,
@@ -1797,11 +1829,7 @@ Future<String> webauthnLoginVerify(
       'signature': signature,
     }),
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body['token'] as String;
+  return _tokenOf(res, _decodeOrThrow(res));
 }
 
 /// Reads a pending guardian invitation by its own id -- GET guardianInvite,
@@ -1924,12 +1952,41 @@ Map<String, dynamic> _bodyMap(http.Response res) {
   }
 }
 
+/// A 2xx whose body is not empty and not a JSON object (a captive portal's or proxy's HTML page, a truncated reply)
+/// did NOT come from the server's handler: whether the step ran is unknown. It is thrown as `unexpected_reply`, never
+/// treated as success and never allowed to crash as a FormatException.
+void _requireObjectBody(http.Response res) {
+  if (res.body.isEmpty) return;
+  try {
+    if (jsonDecode(res.body) is Map<String, dynamic>) return;
+  } catch (_) {}
+  throw ApiException(res.statusCode, 'unexpected_reply');
+}
+
+/// For a call that treats certain non-2xx statuses as an answer (a 409 "already", a 422 "unreadable"): statuses in
+/// [accepted] return the body (which must then be a JSON object); everything else is thrown as an error.
+Map<String, dynamic> _decodeAccepting(http.Response res, Set<int> accepted) {
+  if (accepted.contains(res.statusCode)) {
+    _requireObjectBody(res);
+    return _bodyMap(res);
+  }
+  return _decodeOrThrow(res);
+}
+
+/// The `token` a sign-in style reply carries; a reply without one is not a sign-in.
+String _tokenOf(http.Response res, Map<String, dynamic> body) {
+  final Object? t = body['token'];
+  if (t is String && t.isNotEmpty) return t;
+  throw ApiException(res.statusCode, 'unexpected_reply');
+}
+
 Map<String, dynamic> _decodeOrThrow(http.Response res) {
   final body = _bodyMap(res);
   if (res.statusCode >= 400) {
     final Object? e = body['error'];
     throw ApiException.fromStatus(res.statusCode, e is String ? e : 'error');
   }
+  _requireObjectBody(res);
   return body;
 }
 
@@ -2155,11 +2212,7 @@ Future<Map<String, dynamic>> redeemDevicePairingCode(
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'code': code, 'role': role}),
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body;
+  return _decodeOrThrow(res);
 }
 
 /// Dev-only login helper wrapping [OliveApi.devLoginPath] — see
@@ -2185,9 +2238,5 @@ Future<String> devLoginFor(
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'userId': ?userId, 'childId': ?childId}),
   ).timeout(const Duration(seconds: 6));
-  final body = jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body['token'] as String;
+  return _tokenOf(res, _decodeOrThrow(res));
 }
