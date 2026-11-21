@@ -1,4 +1,4 @@
-// OLIVE BRANCH — auth_session.dart and a phone that was marked as lost (migration 0057). MASTERFILE section 7.23.
+// OLIVE BRANCH — auth_session.dart and a phone that was marked as lost (migration 0056). MASTERFILE section 7.23.
 //
 // A paused phone is NOT signed out: its sign-in is kept so it can come back when "I have it" is said and its owner types
 // their own PIN once. An erase order (the owner's, for their own lost phone) rides on the refusal, is carried out here, is

@@ -3,7 +3,6 @@
 // Covers: "Forgot your PIN?" and the account page reaching it, one question per screen, the sheet shown once and typed back,
 // the waiting period said plainly, the notice and the one thing to do about it, the helper's one power, big text and narrow
 // screens, and that nothing on a screen is a code, a status or a stack of jargon.
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -74,6 +73,9 @@ void main() {
   Future<void> pumpIn(WidgetTester t, Phone p, Widget screen) async {
     // The screens are driven as the phone's own: its session is the process-wide one while the screen runs.
     AuthSession.use(p.session);
+    // Opened afresh each time, as a person opening the page again would: pumping the same page twice keeps its State
+    // and would never ask the server again.
+    await t.pumpWidget(const SizedBox());
     await t.pumpWidget(MaterialApp(home: screen));
     await t.pumpAndSettle();
   }
@@ -235,7 +237,7 @@ void main() {
       expect(find.byKey(const Key('recoveryProblem')), findsOneWidget);
       expect(find.textContaining('Nobody else is locked out'), findsOneWidget);
       // the PIN box is emptied once sent
-      expect(t.widget<TextField>(find.byKey(const Key('proofPinField'))).controller!.text, isEmpty);
+      expect(t.widget<TextField>(find.descendant(of: find.byKey(const Key('proofPinField')), matching: find.byType(TextField))).controller!.text, isEmpty);
       await type(t, 'proofPinField', '4821');
       await tapKey(t, 'finishRecovery');
       expect(find.byKey(const Key('recoveredDone')), findsOneWidget);
@@ -331,7 +333,7 @@ void main() {
       await type(t, 'sheetPinField', '4821');
       await tapKey(t, 'sheetMake');
       await tapKey(t, 'sheetPrint');
-      expect(find.textContaining('write the key down by hand'), findsOneWidget);
+      expect(find.textContaining('Write the key down by hand'), findsOneWidget);
       // leaving without checking: asked first, "Stay" keeps the key on screen
       await t.pageBack();
       await t.pumpAndSettle();

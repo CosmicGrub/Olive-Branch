@@ -3,7 +3,7 @@
 //
 // UNVERIFIED on a real device: covered by flutter test only (MASTERFILE 7.23).
 //
-// WHAT THIS IS. The guardian-client half of server migration 0057 (words: lost_device_logic.dart). A grown-up, from a
+// WHAT THIS IS. The guardian-client half of server migration 0056 (words: lost_device_logic.dart). A grown-up, from a
 // phone that works and with their own PIN, can:
 //   * see every phone and tablet of the family and what each may be asked,
 //   * mark one as lost (it is paused at once; nothing is deleted; reversible for 3 days),

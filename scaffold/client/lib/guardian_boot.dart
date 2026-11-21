@@ -66,7 +66,7 @@ import 'theme_data.dart';
 AuthSession _deviceSession(DeviceIdentity identity) =>
     AuthSession.device(baseUrl: kLiveBaseUrl, identity: identity, onSignedOut: _returnToPairing);
 
-/// "Erase it when it connects", carried out on THIS phone (migration 0057, lost-phone order from its owner). It erases
+/// "Erase it when it connects", carried out on THIS phone (migration 0056, lost-phone order from its owner). It erases
 /// Olive's own copy here: every on-device document and the key (the same wipe as "Data on this device"), and what the
 /// secure storage holds for an unfinished join, recovery or helper role. Nothing is deleted on the server or on any other
 /// phone: the family's records are safe. Throws when it could not finish, so the phone never reports an erase it did not do.

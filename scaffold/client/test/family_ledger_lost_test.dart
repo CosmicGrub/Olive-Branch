@@ -312,6 +312,7 @@ void main() {
     Future<Fam> three() async {
       final Fam f = await Fam.found(mom);
       await f.welcomeParent(mom, dad, others: <P>[]);
+      f.clock += 4 * day; // a new phone settles before it may be asked; without this carol's welcome is not valid
       await f.welcomeParent(mom, carol, others: <P>[dad]);
       f.clock += 4 * day;
       return f;

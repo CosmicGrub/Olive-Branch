@@ -473,7 +473,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
             "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs" \
             "recovery paths: sheet, helper, second grown-up, 48/72 hour waits, races, cancel, replay, wrong family, over-reach (0055, real DB, strict ids)|server/test/recovery_paths_route.test.mjs" \
-            "lost or stolen device: mark, pause, found, confirm, wipe on next contact, rate limit, wrong family (0057, real DB, strict ids)|server/test/lost_device_route.test.mjs" \
+            "lost or stolen device: mark, pause, found, confirm, wipe on next contact, rate limit, wrong family (0056, real DB, strict ids)|server/test/lost_device_route.test.mjs" \
             "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \

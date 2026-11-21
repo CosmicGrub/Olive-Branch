@@ -166,8 +166,9 @@ void main() {
       expect(await pend.load(), isNull);
       expect(AuthSession.current, isNotNull);
 
-      // replay of the used code
-      final AccountFailure replay = await momNew.act((_) => failureOf(s.useGrownUpCode(h.code)));
+      // replay of the used code, from a phone that is not signed in (a signed-in phone is refused before it asks)
+      final Phone stranger = Phone(server);
+      final AccountFailure replay = await stranger.act((_) => failureOf(svc(stranger).useGrownUpCode(h.code)));
       expect(replay.problem.reason, 'invalid_recovery');
     });
 

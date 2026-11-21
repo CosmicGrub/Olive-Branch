@@ -131,11 +131,10 @@ class _PinBox extends StatelessWidget {
 
 /// A box for a key or code typed from paper: capitals, no suggestions, no autocorrect.
 class _CodeBox extends StatelessWidget {
-  const _CodeBox({super.key, required this.controller, required this.label, this.enabled = true, this.hint});
+  const _CodeBox({super.key, required this.controller, required this.label, this.enabled = true});
   final TextEditingController controller;
   final String label;
   final bool enabled;
-  final String? hint;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -148,7 +147,7 @@ class _CodeBox extends StatelessWidget {
           textCapitalization: TextCapitalization.characters,
           keyboardType: TextInputType.visiblePassword,
           maxLength: 40,
-          decoration: InputDecoration(labelText: label, hintText: hint, border: const OutlineInputBorder(), counterText: ''),
+          decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), counterText: ''),
         ),
       );
 }
@@ -541,7 +540,7 @@ class _RecoveryWaitScreenState extends State<RecoveryWaitScreen> {
     switch (s.phase) {
       case RecoveryPhase.waiting:
         return <Widget>[
-          _Note('You are waiting.', strong: true, key: const Key('phaseWaiting')),
+          const _Note('You are waiting.', strong: true, key: Key('phaseWaiting')),
           _Note('You can finish ${whenWords(s.readyAt, now)} (${waitWords(s.readyAt.difference(now))} from now).'),
           const _Note('Until then nothing changes. Every phone on the account has been told, and anyone can stop it. '
               'You do not need to keep Olive open. Come back then.'),
@@ -551,7 +550,7 @@ class _RecoveryWaitScreenState extends State<RecoveryWaitScreen> {
         ];
       case RecoveryPhase.waitingForHelper:
         return <Widget>[
-          _Note('One more yes is needed.', strong: true, key: const Key('phaseWaitingHelper')),
+          const _Note('One more yes is needed.', strong: true, key: Key('phaseWaitingHelper')),
           const _Note('The waiting time is over. Your trusted helper has to say yes before you can finish. Ask them to '
               'open Olive and say yes. They can only do that if it really is you.'),
           _Problem(_problem),
@@ -560,7 +559,7 @@ class _RecoveryWaitScreenState extends State<RecoveryWaitScreen> {
         ];
       case RecoveryPhase.ready:
         return <Widget>[
-          _Note('You can finish now.', strong: true, key: const Key('phaseReady')),
+          const _Note('You can finish now.', strong: true, key: Key('phaseReady')),
           if (s.soleParent) ...<Widget>[
             _Note('This phone will be signed in to $who. If you forgot your PIN, choose a new one here. If you '
                 'remember it, leave this empty and keep your old one.'),
@@ -600,7 +599,7 @@ class _RecoveryWaitScreenState extends State<RecoveryWaitScreen> {
           _ => s.phase == RecoveryPhase.done ? 'It already finished.' : 'It was stopped.',
         };
         return <Widget>[
-          _Note('This recovery is over.', strong: true, key: const Key('phaseOver')),
+          const _Note('This recovery is over.', strong: true, key: Key('phaseOver')),
           _Note('$how Nothing was changed. If it was you, you can start again.'),
           _Problem(_problem),
           FilledButton(key: const Key('startAgain'), onPressed: _startAgain, child: const Text('Start again')),
@@ -738,7 +737,6 @@ class RecoverySafetyScreen extends StatefulWidget {
 class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
   RecoverySummary? _s;
   bool _loading = true;
-  bool _busy = false;
   AccountProblem? _problem;
 
   DateTime _now() => (widget.now ?? DateTime.now)();
@@ -751,7 +749,7 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
 
   Future<void> _load() async {
     final RecoverySummary? s = await _guarded<RecoverySummary>(widget.service.summary,
-        setBusy: (bool b) => setState(() => _busy = b), setProblem: (AccountProblem? p) => setState(() => _problem = p));
+        setBusy: (bool _) {}, setProblem: (AccountProblem? p) => setState(() => _problem = p));
     if (!mounted) return;
     setState(() {
       _s = s ?? _s;
@@ -773,7 +771,7 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
     final bool? ok = await _guarded<bool>(() async {
       await widget.service.stop(requestId: n.requestId, pin: pin);
       return true;
-    }, setBusy: (bool b) => setState(() => _busy = b), setProblem: (AccountProblem? p) => setState(() => _problem = p));
+    }, setBusy: (bool _) {}, setProblem: (AccountProblem? p) => setState(() => _problem = p));
     if (ok == true && mounted) unawaited(_load());
   }
 
@@ -872,7 +870,7 @@ class _RecoverySafetyScreenState extends State<RecoverySafetyScreen> {
                         await widget.service.removeHelper(pin: pin);
                         return true;
                       },
-                          setBusy: (bool b) => setState(() => _busy = b),
+                          setBusy: (bool _) {},
                           setProblem: (AccountProblem? p) => setState(() => _problem = p));
                       if (ok == true && mounted) unawaited(_load());
                     },

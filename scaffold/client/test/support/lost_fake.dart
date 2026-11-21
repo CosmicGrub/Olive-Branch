@@ -1,4 +1,4 @@
-// An in-memory stand-in for the lost-device routes of server/routes.mjs (migration 0057), for the client tests. It plugs
+// An in-memory stand-in for the lost-device routes of server/routes.mjs (migration 0056), for the client tests. It plugs
 // into [FakeIdentityServer.interceptor], so every request is still checked against the REAL route table (method, path,
 // session rule, body keys) before it gets here; this class only supplies the answers, with the same status codes,
 // reasons and rules as the real handlers: own-PIN step-up, a report the owner made cannot be undone by another

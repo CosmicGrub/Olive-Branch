@@ -171,7 +171,7 @@ void main() {
 
     test('a child\'s tablet can never be erased: the server refuses it and the table says no too', () {
       expect(_read('../packages/db/src/pool.ts'), contains("if (d.role !== 'guardian') return { ok: false, reason: 'not_a_grown_up_phone' };"));
-      expect(_read('../db/migrations/0057_lost_device.sql'), contains("(wipe_ordered_at IS NULL OR role = 'guardian')"));
+      expect(_read('../db/migrations/0056_lost_device.sql'), contains("(wipe_ordered_at IS NULL OR role = 'guardian')"));
     });
   });
 

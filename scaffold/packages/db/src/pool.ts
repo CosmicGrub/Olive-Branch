@@ -4674,7 +4674,7 @@ export interface PairedDevice {
   pairedAt: string;
   revokedAt: string | null;
   lastSeenAt: string | null;
-  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0057. */
+  /** 'active' | 'paused' (marked as lost, reversible) | 'revoked' (cut off for good). Migration 0056. */
   state: DeviceStanding;
   pausedAt: string | null;
   /** When a paused device becomes revoked by itself (the notice ends). Null unless paused. */
@@ -5035,7 +5035,7 @@ export async function refreshPairedDeviceSession(
     const credentialOk = Boolean(row) && typeof row.credential_hash === 'string' &&
       presented.length === stored.length && timingSafeEqual(presented, stored);
     if (!credentialOk) return { ok: false, reason: 'invalid_device_credential' };
-    // Migration 0057: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
+    // Migration 0056: a paused device (marked as lost) and one whose notice has run out are refused here exactly as
     // they are on every other request, and only after the credential is proved (nobody learns a device's standing
     // without holding its credential).
     await settleDueLostDevice(q, row.id, now);
@@ -5124,7 +5124,7 @@ export async function isPairedDeviceRevoked(pool: pg.Pool, deviceId: string): Pr
 }
 
 // ===========================================================================
-// LOST OR STOLEN DEVICE -- db/migrations/0057_lost_device.sql.
+// LOST OR STOLEN DEVICE -- db/migrations/0056_lost_device.sql.
 //
 // "Mark as lost" pauses a device at once (its session and its refresh are
 // refused, so it receives nothing new), tells every grown-up, and starts a 72

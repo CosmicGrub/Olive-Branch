@@ -115,7 +115,7 @@ CREATE TRIGGER device_lost_event_no_change
 
 COMMENT ON TABLE device_lost_event IS
   'Append-only, content-free history of "marked as lost" / "I have it" / '
-  '"It is lost" / cut off after the notice (0057). No names, no places.';
+  '"It is lost" / cut off after the notice (0056). No names, no places.';
 
 -- ---------------------------------------------------- security_event -------
 -- Merged into whatever the constraint holds now (0053 and 0055 each add kinds), never swapped in as a fixed list.

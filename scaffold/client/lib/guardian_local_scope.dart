@@ -93,8 +93,8 @@ ScreenShareService _screenShares(LocalServices s) => ScreenShareService(
 /// Holds the loaded local family (so a changed age shows everywhere at once) and the
 /// optional "connect this device" action.
 class GuardianLocalController extends ChangeNotifier {
-  // ignore: prefer_initializing_formals
   GuardianLocalController(this.services, {LocalFamily? family, this.onConnect, this.onAccount, this.onLostPhone})
+      // ignore: prefer_initializing_formals
       : _family = family;
 
   final GuardianLocalServices services;

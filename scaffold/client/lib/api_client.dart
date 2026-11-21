@@ -94,7 +94,7 @@ class DeviceRevokedException extends UnauthorizedException {
   DeviceRevokedException() : super('device_revoked');
 }
 
-/// This phone was marked as lost by a grown-up of the family (migration 0057). It is NOT signed out: its sign-in is
+/// This phone was marked as lost by a grown-up of the family (migration 0056). It is NOT signed out: its sign-in is
 /// kept so it can come back when "I have it" is said and its owner types their own PIN. A subclass of
 /// [UnauthorizedException] so every existing `on UnauthorizedException` still catches it; a caller that wants the
 /// reason reads [error] (`device_paused`).
@@ -472,7 +472,7 @@ class OliveApi {
   // Account recovery without email (db/migrations/0053_account_recovery.sql): an operator-issued, single-use
   // recovery code plus the account's own PIN. No session: the grown-up has lost every signed-in phone.
   static const authRecover = '/v1/auth/recover';
-  // Lost or stolen phone or tablet (db/migrations/0057_lost_device.sql): mark it from another phone, bring it back,
+  // Lost or stolen phone or tablet (db/migrations/0056_lost_device.sql): mark it from another phone, bring it back,
   // make the cut-off final, or have the lost phone erase its own copy the next time it connects. Own-PIN step-up on
   // every action; the one call a lost phone makes for itself carries its own device credential, not a session.
   static const meDevices = '/v1/me/devices';
@@ -2142,9 +2142,9 @@ Future<Map<String, dynamic>> finishRecoveryCall(String baseUrl,
         OliveApi.authRecoveryFinish,
         {
           'code': code,
-          if (pin != null) 'pin': pin,
-          if (sheetKey != null) 'sheetKey': sheetKey,
-          if (newPin != null) 'newPin': newPin,
+          'pin': ?pin,
+          'sheetKey': ?sheetKey,
+          'newPin': ?newPin,
           if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
         },
         client: client);
@@ -2166,7 +2166,7 @@ Future<Map<String, dynamic>> helperAnswerCall(String baseUrl,
     _identityPost(baseUrl, OliveApi.authHelperAnswer,
         {'helperKey': helperKey, 'requestId': requestId, 'answer': yes ? 'yes' : 'no'}, client: client);
 
-// ---- lost or stolen phone or tablet (migration 0057) ----------------------------------------------------------------
+// ---- lost or stolen phone or tablet (migration 0056) ----------------------------------------------------------------
 // Free functions in the same shape as the recovery ones above. A reply is a map or an [ApiException]; the plain-words
 // layer is lost_device_logic.dart, and nothing here is ever shown to a person as it is.
 
