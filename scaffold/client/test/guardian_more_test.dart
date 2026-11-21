@@ -550,7 +550,10 @@ void main() {
   });
 
   group('Sign out — guardian_more.dart\'s own _signOut/"Sign out" HubTile, '
-      'added directly to the Preferences section', () {
+      'added directly to the Preferences section', () {
+    // Sign-out now awaits forgetting the account note; the phone's real secure storage cannot answer in a widget test.
+    setUp(() => pendingJoinStoreForTest = MemoryPendingJoinStore());
+    tearDown(() => pendingJoinStoreForTest = null);
     /// Pushes GuardianMoreScreen on top of a real, distinct root route --
     /// unlike this file's own pump()/wrap() helpers (which seat
     /// GuardianMoreScreen AS MaterialApp.home, i.e. already isFirst, a

@@ -19,6 +19,8 @@
 // stored by this app on this path at all.
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'device_identity.dart';
 import 'family_account_logic.dart' show isServerId;
 import 'local_services.dart' show LocalServices;
@@ -175,13 +177,21 @@ Future<String> resolveLiveChildId({
 /// open on a child that belonged to the previous account, and the account page never offers to "finish joining" with
 /// no one signed in. Never throws: a store that cannot be cleared must not stop a sign-out.
 Future<void> forgetAccountOnThisPhone({AccountRecordStore? record, PendingJoinStore? pending}) async {
+  // Bounded: sign-out awaits this, and a phone store that never answers must not trap a grown-up on the screen.
   try {
-    await (record ?? accountRecordStoreFor(LocalServices.current)).clear();
+    await (record ?? accountRecordStoreFor(LocalServices.current)).clear().timeout(_kForgetWait);
   } catch (_) {}
   try {
-    await (pending ?? SecurePendingJoinStore()).clear();
+    await (pending ?? pendingJoinStoreForTest ?? SecurePendingJoinStore()).clear().timeout(_kForgetWait);
   } catch (_) {}
 }
+
+const Duration _kForgetWait = Duration(seconds: 4);
+
+/// Tests only: the store [forgetAccountOnThisPhone] clears when none is passed (the real one needs the phone's secure
+/// storage, which a widget test cannot reach).
+@visibleForTesting
+PendingJoinStore? pendingJoinStoreForTest;
 
 /// Compact, ASCII-safe form of an [AccountRecord] for logs and tests. Never includes an id.
 String describeRecord(AccountRecord? r) =>
