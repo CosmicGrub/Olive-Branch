@@ -32,7 +32,7 @@ import 'package:olive_client/guardian_state_line.dart';
 import 'package:olive_client/local_family.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/local_services.dart';
-import 'package:olive_client/local_store.dart' show LocalNamespace;
+import 'package:olive_client/local_store.dart' show LocalNamespace, LocalStore, MemoryStoreBackend, NamespaceSpec, RecoveryKind;
 import 'package:olive_client/pairing_protocol.dart';
 import 'package:olive_client/pairing_qr.dart';
 import 'package:olive_client/pairing_records.dart';
@@ -94,6 +94,12 @@ void main() {
           contains('isn’t connected yet'));
       expect(guardianStateLine(childName: 'Ivy', connected: true, tabletPaired: false, serverTabletPresent: true, dayPart: 'wake'),
           contains('It is'));
+    });
+
+    test('a live family says only that the tablet is not connected, not that setup "stays on this phone"', () {
+      final String line = guardianStateLine(childName: 'Ivy', connected: true, tabletPaired: false, serverTabletPresent: false)!;
+      expect(line, isNot(contains('stays on this phone')));
+      expect(guardianStateLine(childName: 'Ivy', connected: false, tabletPaired: false), contains('stays on this phone'));
     });
 
     test('a real sentence still wins over everything', () {
@@ -187,6 +193,20 @@ void main() {
       await expectLater(r.add(_kid('a')), throwsA(isA<PairedKidsUnreadable>()));
       await expectLater(r.forget('a'), throwsA(isA<PairedKidsUnreadable>()));
       expect(await ns.get('kids'), 'not a list', reason: 'untouched');
+    });
+
+    test('a damaged, set-aside file is "unreadable", never verifiably empty; a later add reads normally', () async {
+      final MemoryStoreBackend backend = MemoryStoreBackend()..plant('pairedkids', Uint8List.fromList('{not json'.codeUnits));
+      final LocalNamespace ns = LocalStore(backend: backend).open(const NamespaceSpec(name: 'pairedkids'));
+      final LocalStorePairedKidsRepository r = LocalStorePairedKidsRepository(ns);
+      final PairedKidsLoad l = await r.loadChecked();
+      expect(ns.recovery, RecoveryKind.corrupt);
+      expect(l.unreadable, isTrue);
+      expect(l.verifiablyEmpty, isFalse, reason: 'the home must not say "not connected yet" over a list that was set aside');
+      await r.add(_kid('a'));
+      final PairedKidsLoad after = await r.loadChecked();
+      expect(after.kids.map((PairedKid k) => k.certId), <String>['a']);
+      expect(after.unreadable, isFalse);
     });
 
     testWidgets('the connected-tablets screen says so, never "no device", when entries could not be read', (t) async {
@@ -319,7 +339,8 @@ void main() {
       await t.pumpAndSettle();
       expect(seen, hasLength(1));
       expect(find.textContaining("Couldn't reach the server"), findsNothing);
-      expect(find.textContaining("Couldn't complete that"), findsOneWidget);
+      expect(find.textContaining("answer wasn't what we expected"), findsOneWidget,
+          reason: 'a captive-portal page is a connection problem to check, not "check the code"');
     });
 
     testWidgets('the child build: a local picture gets the one calm card, no words and no network call', (t) async {

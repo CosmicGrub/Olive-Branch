@@ -35,7 +35,9 @@ String? guardianStateLine({
   // says so too. A live family whose server has not answered is NOT verifiably empty.
   final bool verifiablyNone = tabletPaired == false && (!connected || serverTabletPresent == false);
   if (verifiablyNone) {
-    return '$childName’s tablet isn’t connected yet. What you set up here stays on this phone.';
+    return connected
+        ? '$childName’s tablet isn’t connected yet.'
+        : '$childName’s tablet isn’t connected yet. What you set up here stays on this phone.';
   }
   if (connected) {
     if (dayPart == null || dayPart.isEmpty) {

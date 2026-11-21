@@ -236,6 +236,11 @@ class LocalStorePairedKidsRepository implements PairedKidsRepository {
   Future<PairedKidsLoad> loadChecked() async {
     final List<({PairedKid? kid, Object? raw})>? slots = await _slots();
     if (slots == null) return const PairedKidsLoad(<PairedKid>[], unreadable: true);
+    // A file that was damaged (or from a newer or unknown version) is set aside and the area starts empty, so "nothing
+    // stored" after such a recovery is NOT "no tablet": the list could not be read. Writing stays allowed (the set-aside
+    // copy is kept on disk, and refusing would stop any tablet ever being recorded again); once a list is written the
+    // area is no longer empty and reads normally.
+    if (slots.isEmpty && _ns.recovery != RecoveryKind.none) return const PairedKidsLoad(<PairedKid>[], unreadable: true);
     return PairedKidsLoad(
       <PairedKid>[for (final s in slots) if (s.kid != null) s.kid!],
       skipped: slots.where((s) => s.kid == null).length,

@@ -196,7 +196,11 @@ class _PairingRedeemScreenState extends State<PairingRedeemScreen> {
               : "Couldn't reach the server. Check your connection and try again.";
         } else {
           if (widget.closingStep) _closing = _ClosingStage.tryAgain;
-          _errorMessage = widget.closingStep ? null : "Couldn't complete that. Check the code and try again.";
+          _errorMessage = widget.closingStep
+              ? null
+              : (e is FormatException
+                  ? "The server's answer wasn't what we expected. Check your connection and try again."
+                  : "Couldn't complete that. Check the code and try again.");
         }
       });
     }

@@ -64,7 +64,7 @@ enum _Stage { intro, waiting, scanning, approve, sending, done }
 /// Shown on the grown-up's phone when a tablet of another pairing version tried this window (ISS-065). The tablet
 /// itself shows only its one calm card.
 const String kVersionMismatchMessage =
-    'A tablet tried to connect, but it runs a different version of Olive. Update Olive on both devices, then try again.';
+    'A device tried to connect, but it runs a different version of Olive. If it is your tablet, update Olive on both devices, then try again.';
 
 /// The tablet was given its credential but this phone could not add it to its list (the stored list could not be read).
 /// Nothing stored is overwritten; the grown-up is told.
@@ -613,6 +613,11 @@ class _ConnectChildScreenState extends State<ConnectChildScreen> {
         const SizedBox(height: 12),
         Text('${widget.childName}\'s device is connected', key: const Key('connectDone'), style: Theme.of(context).textTheme.titleLarge),
         if (_newNote != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Added. $_newNote', key: const Key('connectNewNote'))),
+        if (_message != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_message!, key: const Key('connectMessage'), textAlign: TextAlign.center),
+          ),
         const SizedBox(height: 20),
         FilledButton(onPressed: () => Navigator.of(context).maybePop(), child: const Text('Done')),
       ]);

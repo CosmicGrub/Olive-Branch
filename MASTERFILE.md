@@ -5492,8 +5492,8 @@ all; **adding, forgetting or switching a tablet writes any entry it could not re
 at all over a list it could not read at all, so one damaged record can never erase the others; the tablets screen says "N
 entries on this list could not be read" instead of "no device is connected". **A tablet on another pairing version** (ISS-065):
 when a device of a different pairing version knocks on the open window (a hello or key exchange that states another `pv`), the
-grown-up's phone says, in words, "A tablet tried to connect, but it runs a different version of Olive. Update Olive on both
-devices, then try again." It carries no name or key of the other device and does not use up the window's tries. The tablet
+grown-up's phone says, in words, "A device tried to connect, but it runs a different version of Olive. If it is your tablet, update Olive on both
+devices, then try again." (neutral on purpose: any device on the wifi can knock) It carries no name or key of the other device and does not use up the window's tries. The tablet
 shows its one calm card as for every other failure (`PairingFailure.versionMismatch` exists for the grown-up side only; the
 child surface never branches on it).
 
