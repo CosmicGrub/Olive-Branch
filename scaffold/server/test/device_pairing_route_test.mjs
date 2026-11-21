@@ -195,6 +195,11 @@ function fakeQuery(sql, params = []) {
   // "id," column list), used by the DbPort.isDeviceRevoked() check
   // packages/api/src/api.ts's handle() runs on every deviceId-bearing
   // session.
+  // The standing read of a device (revoked, paused, notice end, erase order): these fakes never pause or erase.
+  if (/^\s*SELECT revoked_at, paused_at, lost_revoke_due_at(, wipe_ordered_at, wiped_at)? FROM paired_device WHERE id = \$1\s*$/i.test(sql)) {
+    const d = devices.get(params[0]);
+    return d ? [{ revoked_at: d.revoked_at, paused_at: null, lost_revoke_due_at: null, wipe_ordered_at: null, wiped_at: null }] : [];
+  }
   if (/^\s*SELECT revoked_at FROM paired_device WHERE id = \$1\s*$/i.test(sql)) {
     const [id] = params;
     const d = devices.get(id);

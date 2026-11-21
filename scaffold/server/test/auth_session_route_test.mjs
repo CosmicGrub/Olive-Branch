@@ -124,10 +124,10 @@ function fakeQuery(sql, params = []) {
       paired_at: new Date(), revoked_at: null, last_seen_at: null, credential_hash: credentialHash });
     return [{ id }];
   }
-  if (/SELECT id, role, target_id, revoked_at, credential_hash\s+FROM paired_device WHERE id::text = \$1/i.test(sql)) {
+  if (/SELECT id, role, target_id, revoked_at, credential_hash,\s+paused_at, lost_revoke_due_at, reproof_required\s+FROM paired_device WHERE id::text = \$1/i.test(sql)) {
     const d = [...devices.values()].find((x) => x.id === params[0]);
     return d ? [{ id: d.id, role: d.role, target_id: d.target_id, revoked_at: d.revoked_at,
-                  credential_hash: d.credential_hash }] : [];
+                  credential_hash: d.credential_hash, paused_at: null, lost_revoke_due_at: null, reproof_required: false }] : [];
   }
   if (/UPDATE paired_device SET last_seen_at = \$2 WHERE id = \$1/i.test(sql)) {
     const d = devices.get(params[0]); if (d) d.last_seen_at = new Date(params[1]); return [];
@@ -137,6 +137,13 @@ function fakeQuery(sql, params = []) {
     if (!d) return [];
     d.revoked_at = d.revoked_at ?? new Date(params[1]);
     return [{ id: d.id }];
+  }
+  // The notice sweep on refresh (a paused phone whose 72 hours ran out is cut off): these fakes never pause one.
+  if (/UPDATE paired_device SET revoked_at = lost_revoke_due_at/i.test(sql)) return [];
+  // The standing read of a device (revoked, paused, notice end, erase order): these fakes never pause or erase.
+  if (/^\s*SELECT revoked_at, paused_at, lost_revoke_due_at(, wipe_ordered_at, wiped_at)? FROM paired_device WHERE id = \$1\s*$/i.test(sql)) {
+    const d = devices.get(params[0]);
+    return d ? [{ revoked_at: d.revoked_at, paused_at: null, lost_revoke_due_at: null, wipe_ordered_at: null, wiped_at: null }] : [];
   }
   if (/^\s*SELECT revoked_at FROM paired_device WHERE id = \$1\s*$/i.test(sql)) {
     const d = devices.get(params[0]);
