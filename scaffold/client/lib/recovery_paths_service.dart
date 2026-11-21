@@ -248,7 +248,9 @@ class RecoveryPathsService {
     HelperKeyStore? helper,
     DateTime Function()? now,
     this.deviceLabel = 'This phone',
-  })  : _account = account,
+  })  :
+        // ignore: prefer_initializing_formals
+        _account = account,
         _client = client ?? OliveTransport.clientFor(baseUrl),
         _ownsClient = client == null,
         _pending = pending ?? MemoryPendingRecoveryStore(),
@@ -600,10 +602,12 @@ class RecoveryPathsService {
           }
           return out;
         } on ApiException catch (e) {
-          if (e.error == 'invalid_helper') await _safe(() async {
-            await _helper.clear();
-            return null;
-          });
+          if (e.error == 'invalid_helper') {
+            await _safe(() async {
+              await _helper.clear();
+              return null;
+            });
+          }
           rethrow;
         }
       });

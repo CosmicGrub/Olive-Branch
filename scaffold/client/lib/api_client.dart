@@ -2124,9 +2124,9 @@ Future<Map<String, dynamic>> finishRecoveryCall(String baseUrl,
         OliveApi.authRecoveryFinish,
         {
           'code': code,
-          if (pin != null) 'pin': pin,
-          if (sheetKey != null) 'sheetKey': sheetKey,
-          if (newPin != null) 'newPin': newPin,
+          'pin': ?pin,
+          'sheetKey': ?sheetKey,
+          'newPin': ?newPin,
           if (deviceLabel.isNotEmpty) 'deviceLabel': deviceLabel,
         },
         client: client);

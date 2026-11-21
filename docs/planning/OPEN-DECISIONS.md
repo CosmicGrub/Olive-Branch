@@ -86,6 +86,9 @@ Built in the recovery-paths PR (MASTERFILE 7.22). The owner's rules are in DECIS
 | 60 | Notice on every device | **Built as a card in the app on every phone and a line in each child's history.** No push yet. Add push when the Firebase project exists. |
 | 61 | On-device-only data (the family ledger and keys) after a recovery | **Not built.** Needs the encrypted backup. Until then a new phone gets what the server holds. |
 | 62 | Ship the recovery screens before the external review has reported? | **Open.** The tests are real but the flows have not been reviewed by an outside cryptographer. Recommend carrying them as a preview in release builds until the review reports. |
+| 63 | A grown-up named a helper, then lost the phone, forgot the PIN and cannot reach the helper | **Built: stranded on purpose.** The helper's yes is the second proof against a stolen printed sheet, so it is never skipped. The grown-up can remove or replace the helper only while signed in. Candidate: let the other grown-up (if any) end a helper's requirement after a longer wait with notices. Owner's call. |
+| 64 | Marking a phone as lost: where does the app show it? | **Not built.** Server and ledger rules are in (7.23); the screens are next. Recommend one row per phone in Settings, Paired devices: "Mark as lost", then "I have it" for 72 hours, in the same plain words. |
+| 65 | Erase a lost phone's copy from afar | **Not built, on purpose.** Nothing may be lost, and a mistaken erase cannot be undone. A lost phone is cut off from new updates only. Revisit with the encrypted backup. |
 
 ## Hosting, calls and credentials (parked)
 
