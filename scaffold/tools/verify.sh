@@ -647,6 +647,15 @@ else
   echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
+# The dev-only "simulate the other end of a call" define (see tools/check-dev-call-sim.mjs): only tools/device-sync.sh may pass it,
+# and only behind its opt-in; only client/lib/call_dev_sim.dart may read it.
+if node tools/test/dev_call_sim_guard.test.mjs >/tmp/dcs.out 2>&1 && node tools/check-dev-call-sim.mjs >>/tmp/dcs.out 2>&1; then
+  echo "  dev call-sim define        $(grep -c 'PASS' /tmp/dcs.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/dcs.out
+  echo "  DEV CALL-SIM GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
 echo ""
 echo "── MARKUP ↔ CHANGELOG ↔ DEMO correspondence ──────────────────"
 # Standing rule: the visual MARKUP amends in step with the CHANGELOG. The total
