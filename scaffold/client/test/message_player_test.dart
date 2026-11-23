@@ -270,6 +270,45 @@ void main() {
       await expectLater(fetcher(c, stall: const Duration(milliseconds: 50))(Uri.parse('$_base/media/x')), throwsA(anything));
       expect(dir.listSync(), isEmpty);
     });
+
+    test('a redirect is never followed, and a 3xx fails with no file', () async {
+      bool? follow;
+      final MockClient c = MockClient.streaming((http.BaseRequest r, http.ByteStream b) async {
+        follow = r.followRedirects;
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 302,
+            headers: <String, String>{'location': 'https://elsewhere.example/x'});
+      });
+      await expectLater(fetcher(c)(Uri.parse('$_base/media/x')), throwsA(anything));
+      expect(follow, isFalse);
+      expect(dir.listSync(), isEmpty);
+    });
+
+    test('a trickle that never stalls still ends at the overall limit and leaves no file', () async {
+      final MockClient c = MockClient.streaming((http.BaseRequest r, http.ByteStream b) async {
+        final Stream<List<int>> slow = Stream<List<int>>.periodic(const Duration(milliseconds: 20), (_) => <int>[1]);
+        return http.StreamedResponse(slow, 200);
+      });
+      final MediaFetcher f = httpMediaFetcher(c,
+          maxBytes: 1 << 20,
+          stallTimeout: const Duration(seconds: 5),
+          totalTimeout: const Duration(milliseconds: 100),
+          tempDir: () async => dir);
+      await expectLater(f(Uri.parse('$_base/media/x')), throwsA(anything));
+      expect(dir.listSync(), isEmpty);
+    });
+
+    test('old message files from an earlier run are swept, other files are kept', () async {
+      final File old = File('${dir.path}${Platform.pathSeparator}olive_msg_1')..writeAsBytesSync(<int>[1]);
+      old.setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 3)));
+      final File fresh = File('${dir.path}${Platform.pathSeparator}olive_msg_2')..writeAsBytesSync(<int>[1]);
+      final File other = File('${dir.path}${Platform.pathSeparator}keep.txt')..writeAsBytesSync(<int>[1]);
+      other.setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 3)));
+      final MockClient c = MockClient((_) async => http.Response.bytes(<int>[1], 200));
+      await (await fetcher(c)(Uri.parse('$_base/media/x'))).dispose();
+      expect(old.existsSync(), isFalse);
+      expect(fresh.existsSync(), isTrue);
+      expect(other.existsSync(), isTrue);
+    });
   });
 
   group('MessagePlayerScreen', () {

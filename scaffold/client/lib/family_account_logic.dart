@@ -377,6 +377,14 @@ AccountProblem problemFor(Object error, AccountAction action) {
   if (error is ApiException) return _problemForApi(error, action);
   if (error is TimeoutException || error is SocketException || error is http.ClientException ||
       error is HandshakeException || error is TlsException) {
+    if (action == AccountAction.recover) {
+      return const AccountProblem(
+          "Olive couldn't hear back from the server, so it can't be sure the recovery went through. The recovery "
+          'code may have been used. Try the same code once more; if it is refused, ask whoever runs your server '
+          'for a new one.',
+          ProblemKind.tryAgain,
+          reason: 'network');
+    }
     return AccountProblem(
         _changesServer(action)
             ? "Olive couldn't reach the server, or didn't hear back, so it can't be sure that went through. "

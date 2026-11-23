@@ -178,6 +178,12 @@ void main() {
     });
 
     test('the ones that need care are worded for their context', () {
+      for (final Object e in <Object>[TimeoutException('x'), const SocketException('x'), http.ClientException('x')]) {
+        final AccountProblem p = problemFor(e, AccountAction.recover);
+        expect(p.message, contains('may have been used'));
+        expect(p.message, contains('new one'));
+        expect(p.kind, ProblemKind.tryAgain);
+      }
       expect(problemFor(ApiException(404, 'not_found'), AccountAction.lookUpInvite).message, contains('invite code'));
       expect(problemFor(ApiException(404, 'not_found'), AccountAction.useInviteWithAccount).message, contains('different email'));
       expect(problemFor(ApiException(404, 'not_found'), AccountAction.confirmInvite).message, contains('no longer there'));

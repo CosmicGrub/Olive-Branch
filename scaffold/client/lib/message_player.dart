@@ -73,8 +73,8 @@ class MediaTicket {
 
 /// The signed media URL answer ([OliveApi.fetchInboxMediaUrl]) as an address the app may fetch, or null when it is
 /// anything else. The address must point back at [baseUrl]: the same scheme, host and port; a relative path must be
-/// under /media/ with no dot segments, no authority tricks and no credentials, query pieces beyond the signature, or
-/// fragment. Everything else the answer carries is ignored.
+/// under /media/ with no dot segments, no authority tricks and no credentials, or fragment. The query is not inspected (the
+/// target is still this server's /media/). Everything else the answer carries is ignored.
 MediaTicket? parseMediaTicket(Object? body, String baseUrl) {
   if (body is! Map) return null;
   final Object? raw = body['signedUrl'];
@@ -140,11 +140,14 @@ MediaFetcher httpMediaFetcher(
   http.Client client, {
   int maxBytes = kMaxMessageMediaBytes,
   Duration stallTimeout = const Duration(seconds: 20),
+  Duration totalTimeout = const Duration(minutes: 3),
   Future<Directory> Function()? tempDir,
 }) {
   return (Uri uri) async {
-    final http.StreamedResponse res =
-        await client.send(http.Request('GET', uri)).timeout(stallTimeout);
+    final Stopwatch clock = Stopwatch()..start();
+    // A redirect is never followed: the address was vetted as this server's own, and a 3xx would leave it.
+    final http.Request req = http.Request('GET', uri)..followRedirects = false;
+    final http.StreamedResponse res = await client.send(req).timeout(stallTimeout);
     if (res.statusCode != 200) {
       await res.stream.drain<void>().timeout(const Duration(seconds: 5), onTimeout: () {});
       throw HttpException('media answered ${res.statusCode}');
@@ -152,6 +155,7 @@ MediaFetcher httpMediaFetcher(
     final int? declared = res.contentLength;
     if (declared != null && declared > maxBytes) throw const HttpException('media too large');
     final Directory dir = await (tempDir ?? getTemporaryDirectory)();
+    await _sweepStaleMessageFiles(dir);
     final File file = File('${dir.path}${Platform.pathSeparator}olive_msg_${DateTime.now().microsecondsSinceEpoch}');
     final IOSink sink = file.openWrite();
     int total = 0;
@@ -159,6 +163,7 @@ MediaFetcher httpMediaFetcher(
       await for (final List<int> chunk in res.stream.timeout(stallTimeout)) {
         total += chunk.length;
         if (total > maxBytes) throw const HttpException('media too large');
+        if (clock.elapsed > totalTimeout) throw const HttpException('media took too long');
         sink.add(chunk);
       }
       await sink.flush();
@@ -182,6 +187,21 @@ MediaFetcher httpMediaFetcher(
       if (await file.exists()) await file.delete();
     });
   };
+}
+
+/// Removes message files an earlier run left behind (older than an hour). Never throws.
+Future<void> _sweepStaleMessageFiles(Directory dir) async {
+  try {
+    final DateTime cutoff = DateTime.now().subtract(const Duration(hours: 1));
+    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
+      if (e is! File) continue;
+      final String name = e.path.split(RegExp(r'[\/]')).last;
+      if (!name.startsWith('olive_msg_')) continue;
+      try {
+        if ((await e.lastModified()).isBefore(cutoff)) await e.delete();
+      } catch (_) {}
+    }
+  } catch (_) {}
 }
 
 /// What the player is doing, as the screen needs to know.
@@ -394,7 +414,15 @@ class _MessagePlayerScreenState extends State<MessagePlayerScreen> with WidgetsB
     try {
       final MediaTicket? ticket = await widget.loadTicket().timeout(widget.resolveTimeout);
       if (ticket == null) return _calm('no file for this message');
-      final LocalMedia media = await widget.fetchMedia(ticket.uri).timeout(const Duration(minutes: 3));
+      final Future<LocalMedia> inflight = widget.fetchMedia(ticket.uri);
+      final LocalMedia media;
+      try {
+        media = await inflight.timeout(const Duration(minutes: 3));
+      } catch (_) {
+        // If the download finishes later, nobody will play it: delete it rather than leave a private file behind.
+        unawaited(inflight.then((LocalMedia m) => m.dispose(), onError: (Object _) {}));
+        rethrow;
+      }
       if (_disposed) {
         await media.dispose();
         return;
