@@ -89,8 +89,15 @@ neither should ever be committed.
 
 ```bash
 cd scaffold/client
-flutter build apk --release --split-per-abi --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
+flutter build apk --release --flavor direct --split-per-abi --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
 ```
+
+**Two flavors.** `direct` is the build you sideload, attach to a GitHub release or serve from your own server; its
+update checker can download and install a newer APK (with the system confirmation). `play` is the Google Play build:
+Play updates it, it never installs a package itself and does not declare `REQUEST_INSTALL_PACKAGES`. Same application
+id, same code. `pubspec.yaml` sets `default-flavor: direct`, so a command with no `--flavor` builds `direct`; ask for the
+Play build explicitly with `--flavor play`. How an update is signed, packaged and published: `docs/RELEASING.md`,
+"Publishing an update".
 
 **The `--target` flag is not optional — get it wrong and this ships the demo's
 hardcoded PIN.** An untargeted `flutter build apk --release` (no `--target`)
@@ -117,7 +124,7 @@ To confirm which key actually signed the output:
 ```bash
 # From an Android SDK build-tools install (bundled with Android Studio /
 # the Android SDK command-line tools):
-apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+apksigner verify --print-certs build/app/outputs/flutter-apk/app-direct-release.apk
 ```
 
 The printed certificate fingerprint should match `keytool -list -v
@@ -129,21 +136,17 @@ well-known shared debug certificate.
 `--split-per-abi` (in the command above) writes one APK per architecture
 instead of one fat APK holding all four:
 
-```
-build/app/outputs/flutter-apk/app-arm64-v8a-release.apk     <- Galaxy Z Fold5, Tab S9 FE
-build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-build/app/outputs/flutter-apk/app-x86_64-release.apk
-```
-
-Both target devices are arm64, so `app-arm64-v8a-release.apk` is the only file
-to install on them. To build only that one (fastest, smallest output), add
-`--target-platform android-arm64` to the same command.
+The file names carry the flavor and the architecture; Flutter prints the exact `Built build/app/outputs/flutter-apk/...`
+lines, read them. Both target devices are arm64, so the arm64 file is the only one to install on them. To build only that
+one (fastest, smallest output), leave out `--split-per-abi` and add `--target-platform android-arm64`: the single file is
+`build/app/outputs/flutter-apk/app-direct-release.apk`, which is the file the update tooling
+(`tools/update/build-update-package.mjs`) expects.
 
 For a Play Store upload use an app bundle instead; Play then serves each
 device only its own architecture and resources:
 
 ```bash
-flutter build appbundle --release --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
+flutter build appbundle --release --flavor play --target=lib/main_live.dart --dart-define=OLIVE_API_BASE_URL=<your real server URL>
 ```
 
 No `splits {}` block is needed in `build.gradle.kts`; Flutter's own
@@ -162,9 +165,9 @@ one invocation:
 
 ```bash
 cd scaffold/client
-flutter build apk --release --split-per-abi --target=lib/main_live.dart --android-project-arg=olive.allowDebugSignedRelease=true
+flutter build apk --release --flavor direct --split-per-abi --target=lib/main_live.dart --android-project-arg=olive.allowDebugSignedRelease=true
 # or, straight through Gradle:
-cd android && ./gradlew assembleRelease -Polive.allowDebugSignedRelease=true
+cd android && ./gradlew assembleDirectRelease -Polive.allowDebugSignedRelease=true
 ```
 
 That artifact is signed with the public debug key. Never put the property in the

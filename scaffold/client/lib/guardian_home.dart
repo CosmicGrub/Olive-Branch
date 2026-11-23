@@ -60,6 +60,7 @@ import 'morning_briefing.dart';
 import 'screen_share_ui.dart' show ShareRedact;
 import 'send_time_guard.dart';
 import 'tiered_tile.dart';
+import 'update_screens.dart' show UpdateBanner;
 
 /// Opens the real AvailabilityScreen when this home screen has actually been
 /// given a live session (baseUrl/guardianId/childId — see GuardianHome's own
@@ -227,6 +228,8 @@ class GuardianHome extends StatelessWidget {
       // pass's grid expansion (six new guardian tiles) pushed real content
       // well past the default test viewport.
       final Widget full = SingleChildScrollView(child: Column(children: [
+        // One gentle line when an update is ready (adult-only; nothing at all otherwise): update_screens.dart.
+        const UpdateBanner(),
         ribbonBlock,
         const SizedBox(height: 20),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16),

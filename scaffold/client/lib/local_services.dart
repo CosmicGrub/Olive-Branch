@@ -334,6 +334,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
           '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
           'needed to use Olive on this phone, and a device wipe removes it.'),
+  LocalDataEntry(
+      area: 'updates', scope: LocalScope.device, encrypted: true, maxBytes: 8 * 1024,
+      what: 'App updates, on a grown-up\'s phone: when Olive last looked for an update and how it went (one word), '
+          'the newest update notice it has accepted (its number and date, so an older one is never taken), a grown-up\'s '
+          'choices (check each day, Wi-Fi only, an update source or channel they typed), a "Later" they chose, an install '
+          'handed to Android and not yet confirmed, and the plain-words notes of an update that just finished until a '
+          'grown-up has read them once. Never a key, a file path, a child or a family detail. Sealed on the device; '
+          'nothing here is uploaded; a device wipe removes it.'),
 ];
 
 /// Looks an area up in [localDataCatalogue]; throws for an unknown one, so a

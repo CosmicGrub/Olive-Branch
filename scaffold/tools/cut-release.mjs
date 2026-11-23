@@ -147,14 +147,14 @@ function main() {
   } else {
     const flutter = process.env.FLUTTER_BIN || 'flutter';
     const args = [
-      'build', 'apk', '--release', '--target-platform', 'android-arm64', '--target=lib/main_live.dart',
+      'build', 'apk', '--release', '--flavor', 'direct', '--target-platform', 'android-arm64', '--target=lib/main_live.dart',
       '--android-project-arg=olive.allowDebugSignedRelease=true',
       ...(o.baseUrl ? [`--dart-define=OLIVE_API_BASE_URL=${o.baseUrl}`] : []),
     ];
     console.log(`  flutter ${args.join(' ')}`);
     const r = spawnSync(flutter, args, { cwd: CLIENT, stdio: 'inherit', shell: process.platform === 'win32' });
     if (r.status !== 0) die('flutter build failed (see above)');
-    const built = join(CLIENT, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+    const built = join(CLIENT, 'build', 'app', 'outputs', 'flutter-apk', 'app-direct-release.apk');
     if (!existsSync(built)) die(`expected ${built} after the build`);
     copyFileSync(built, apkOut);
   }

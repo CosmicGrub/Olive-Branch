@@ -81,6 +81,25 @@ android {
         versionName = flutter.versionName
     }
 
+    // DISTRIBUTION FLAVORS (docs/RELEASING.md, "Two flavors"; MASTERFILE 7.24). One application id, one code base, two ways of
+    // getting an update:
+    //   direct  sideload / GitHub release / a family's own server. The app may download a newer APK, verify it against the
+    //           signed update manifest, and hand it to Android's PackageInstaller (the system confirmation always appears).
+    //           Only this flavor declares REQUEST_INSTALL_PACKAGES (src/direct/AndroidManifest.xml).
+    //   play    Google Play only. Updates come from Play (the In-App Updates API); the build never installs a package itself
+    //           and must not carry REQUEST_INSTALL_PACKAGES (src/play/AndroidManifest.xml removes it even if a plugin adds it).
+    // Flavor-only code goes in src/direct/kotlin and src/play/kotlin: the same class name in both, the real installer in
+    // direct and an inert stub in play, so the shared code never names PackageInstaller.
+    // NO applicationIdSuffix and NO versionNameSuffix, on purpose: a direct build must update an installed one in place, and
+    // the Play build keeps the permanent application id. tools/check-flavors.mjs (in verify) holds all of this.
+    // Dart reads the flavor as `appFlavor` (flutter's FLUTTER_APP_FLAVOR); pubspec.yaml's `default-flavor: direct` keeps a plain
+    // `flutter build apk` / `flutter run` working without --flavor.
+    flavorDimensions.add("distribution")
+    productFlavors {
+        create("direct") { dimension = "distribution" }
+        create("play") { dimension = "distribution" }
+    }
+
     signingConfigs {
         if (hasRealSigningConfig) {
             create("release") {
@@ -128,9 +147,13 @@ android {
 // (silently) with the debug key. Checked once the task graph is known, so
 // `flutter build apk --debug`, `compileDebugKotlin` and the wear module's own
 // tasks are never affected -- only an actual release packaging task is.
+// With flavors the packaging tasks are assembleDirectRelease, packagePlayRelease, bundlePlayRelease and so on, so the
+// guard matches the flavored names too (a guard that still named only assembleRelease would silently stop firing).
+// tools/check-flavors.mjs evaluates this exact pattern against sample task names.
+val releasePackagingTask = Regex("^(assemble|bundle|package)(Direct|Play)?Release\$")
 gradle.taskGraph.whenReady {
     val releasing = allTasks.any {
-        it.project == project && it.name in setOf("assembleRelease", "bundleRelease", "packageRelease")
+        it.project == project && releasePackagingTask.matches(it.name)
     }
     if (releasing && !hasRealSigningConfig && !allowDebugSignedRelease) {
         throw GradleException(
@@ -249,4 +272,9 @@ dependencies {
     // `compileDebugKotlin` failing with "Unresolved reference
     // 'localbroadcastmanager'" without this explicit line.
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+    // Google Play In-App Updates (MASTERFILE 7.24): the PLAY flavor's only way to update itself (src/play/kotlin). Linked
+    // into that flavor only, so the direct build carries none of it. 2.1.0 is the newest release on Google's Maven
+    // (checked against dl.google.com/android/maven2/com/google/android/play/app-update/maven-metadata.xml; it dates from
+    // 2023, well over two weeks old).
+    "playImplementation"("com.google.android.play:app-update:2.1.0")
 }
