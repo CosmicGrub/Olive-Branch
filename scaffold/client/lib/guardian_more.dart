@@ -35,6 +35,9 @@ import 'pairing_picture.dart';
 import 'pairing_records.dart';
 import 'pairing_trust.dart';
 import 'guardian_names_screen.dart';
+import 'guardian_send_screen.dart';
+import 'day_parts_editor_screen.dart';
+import 'day_parts_service.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
 import 'availability_screen.dart';
@@ -1315,6 +1318,22 @@ class GuardianMoreScreen extends StatelessWidget {
               ));
             }),
         ]),
+        // Sending to her and her day-parts need the server (the delivery chain is the server's), so they appear on a
+        // phone with a live session and nowhere else: no demo twin, nothing invented.
+        if (baseUrl != null && guardianId != null)
+          HubSection(title: 'Sending', children: [
+            HubTile(key: const Key('moreSend'), icon: Icons.schedule_send, title: 'Send to $childName',
+              subtitle: 'A video, photo or voice recording, now or when a part of her day starts. See what happened to it',
+              onTap: () => _open(context, GuardianSendScreen.live(baseUrl: baseUrl!, guardianId: guardianId!,
+                childId: childId, childName: childName, httpClient: availabilityHttpClient))),
+            HubTile(key: const Key('moreHerDay'), icon: Icons.schedule_outlined, title: "$childName's day",
+              subtitle: 'The parts of her day: when bedtime starts, and when her tablet stays quiet',
+              onTap: () => _open(context, DayPartsEditorScreen(childName: childName,
+                service: DayPartsService(
+                  childId: childId,
+                  openApi: () => apiFor(baseUrl!, userId: guardianId!, childId: childId, client: availabilityHttpClient),
+                  closeApi: availabilityHttpClient == null)))),
+          ]),
         HubSection(title: 'Coordination', children: [
           if (_localCare(context) != null)
             HubTile(key: const Key('moreCareHub'), icon: Icons.volunteer_activism_outlined, title: 'Care and coordination',

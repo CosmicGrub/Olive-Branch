@@ -118,7 +118,13 @@ AnchorPreview resolveAnchor(SendAnchor anchor, {
 /// guards live rather than just describing them.
 class SendTimeGuardScreen extends StatefulWidget {
   const SendTimeGuardScreen({super.key, this.childName = 'Ivy',
-    this.childLocalTime, this.zoneAbbr, this.dayPart, this.reachable});
+    this.childLocalTime, this.zoneAbbr, this.dayPart, this.reachable, this.sendInstead});
+
+  /// On a live session this screen can warn but cannot send: the real sending is guardian_send_screen.dart. Its
+  /// send buttons call this to go there. Null in the offline preview and in tests, where they stay the labelled
+  /// demo; on a live session with no callback they say plainly that nothing was sent (they used to print a
+  /// "Sent" line that was only text).
+  final VoidCallback? sendInstead;
 
   final String childName;
 
@@ -172,7 +178,19 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
     _bedtimeLabel = _scheduleShifted ? '8:00 PM' : '8:30 PM';
   });
 
-  void _sendNow() => setState(() => _confirmation = 'Sent — landing with ${widget.childName} now.');
+  void _sendNow() {
+    if (widget._isLive) {
+      final VoidCallback? go = widget.sendInstead;
+      if (go != null) {
+        go();
+      } else {
+        setState(() => _confirmation = 'Nothing was sent. To send ${widget.childName} something, use "Send to '
+            '${widget.childName}" on the home screen.');
+      }
+      return;
+    }
+    setState(() => _confirmation = 'Sent — landing with ${widget.childName} now.');
+  }
 
   void _deferSend(String label) =>
     setState(() => _confirmation = 'Set to deliver at $label.');
@@ -205,10 +223,17 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
       body: SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: _controller, maxLines: 3,
-            decoration: const InputDecoration(border: OutlineInputBorder(),
-              hintText: 'Type a message…')),
-          const SizedBox(height: 16),
+          if (!widget._isLive) ...[
+            TextField(controller: _controller, maxLines: 3,
+              decoration: const InputDecoration(border: OutlineInputBorder(),
+                hintText: 'Type a message…')),
+            const SizedBox(height: 16),
+          ] else ...[
+            Text('This is what she is doing right now. To send her something, make it on the Send screen: the server '
+                'carries videos, photos and voice recordings, and you choose when each arrives there.',
+              key: const Key('guardLiveNote'), style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(height: 16),
+          ],
 
           // --- guard 1: the notification gate --------------------------
           Container(
@@ -257,6 +282,17 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
             ])),
           ],
 
+          if (!widget._isLive) ..._demoAnchorSection(context, anchorPreview),
+        ]),
+      )),
+    );
+  }
+
+  /// The "next bedtime" versus "a specific night" demonstration. Offline preview only: it uses an invented
+  /// bedtime and a fixed June 1st, so it is not shown on a live session (the real choices, and her real schedule,
+  /// are on the Send screen).
+  List<Widget> _demoAnchorSection(BuildContext context, AnchorPreview anchorPreview) {
+    return [
           const SizedBox(height: 28),
           const Divider(),
           const SizedBox(height: 12),
@@ -287,8 +323,6 @@ class _SendTimeGuardScreenState extends State<SendTimeGuardScreen> {
             label: Text(_scheduleShifted
               ? 'Undo: put her bedtime back to 8:30 PM'
               : 'Preview: her bedtime moves 30 minutes earlier this week')),
-        ]),
-      )),
-    );
+    ];
   }
 }

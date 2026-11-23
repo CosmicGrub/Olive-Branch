@@ -1567,6 +1567,7 @@ class OliveApi {
     String? targetLocalDate,
     String daypart = 'bedtime',
     bool? preserve,
+    String? delivery,
   }) =>
       _post(messages, {
         'storageKey': storageKey,
@@ -1574,6 +1575,9 @@ class OliveApi {
         'captionKey': ?captionKey,
         'targetLocalDate': ?targetLocalDate,
         'daypart': daypart,
+        // The grown-up's outright choice: 'now', 'daypart' or 'date'. Omitted (null) when the caller names none,
+        // so the server infers it from [targetLocalDate] exactly as it always did.
+        'delivery': ?delivery,
         // S-D2 -- null (the default) is OMITTED so the server applies the
         // standing rule by sender: anything a GUARDIAN sends is preserved
         // (MASTERFILE §16.2 #5, "preservation is a standing rule"); a CHILD's
@@ -1581,6 +1585,23 @@ class OliveApi {
         // message unpreserved; true from a child is refused by the server.
         'preserve': ?preserve,
       }, childId: childId);
+
+  /// GET .../sent — the sender's own view of what they sent: for each message `{id, kind, state
+  /// (waiting|delivered|opened|expired|revoked), sentAt, delivery (now|daypart|date), daypart, targetLocalDate,
+  /// deliversAt, deliversHer {day, time}, deliveredAt, deliveredHer {day, time}, openedAt, receipt {localTime,
+  /// zone, phrase}}`, newest first, the caller's own sends only. Guardian only: a child session gets 403.
+  Future<Map<String, dynamic>> fetchSent(String childId) => _get(sentMessages, childId: childId);
+
+  /// GET .../day-parts — `{dayParts: [{kind, startsLocal, endsLocal, daysOfWeek, reachable}], hasBedtime}`, the
+  /// child's schedule in wall-clock HH:MM (her time). Guardian only.
+  Future<Map<String, dynamic>> fetchDayParts(String childId) => _get(dayParts, childId: childId);
+
+  /// PUT .../day-parts — REPLACES the child's whole schedule in one transaction (the server takes one writer
+  /// lock per child, so two saves never merge). [parts] is the complete new schedule, each `{kind, startsLocal,
+  /// endsLocal, daysOfWeek, reachable}`; the answer has the same shape as [fetchDayParts]. 400 for a bad kind,
+  /// time, day or an empty list, 409 `day_parts_overlap` when two parts of one kind overlap.
+  Future<Map<String, dynamic>> putDayParts(String childId, List<Map<String, dynamic>> parts) =>
+      _put(dayParts, childId: childId, body: <String, dynamic>{'dayParts': parts});
 
   /// POST .../media — server/routes.mjs's real upload route, the other real
   /// half of [sendMessage]'s own header comment ("the real backend for

@@ -55,6 +55,7 @@ import 'guardian_more.dart';
 import 'guardian_state_line.dart';
 import 'handover_notes.dart';
 import 'meds_care.dart';
+import 'guardian_send_screen.dart';
 import 'message_banking.dart';
 import 'morning_briefing.dart';
 import 'screen_share_ui.dart' show ShareRedact;
@@ -101,6 +102,23 @@ void _openCoordination(BuildContext context, {
     return;
   }
   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => builder()));
+}
+
+/// A phone with a live session sends through the real server (guardian_send_screen.dart); the offline preview and
+/// the local-only phone, which have no server to send to, keep the labelled demo (message_banking.dart).
+bool _canSendLive(String? baseUrl, String? guardianId, String? childId) =>
+    baseUrl != null && guardianId != null && childId != null;
+
+String _sendLabel(String childName, String? baseUrl, String? guardianId, String? childId) =>
+    _canSendLive(baseUrl, guardianId, childId) ? 'Send to $childName' : 'Message banking';
+
+void _openSend(BuildContext context, {required String childName, required String? baseUrl,
+    required String? guardianId, required String? childId, required http.Client? httpClient}) {
+  final Widget screen = _canSendLive(baseUrl, guardianId, childId)
+      ? GuardianSendScreen.live(baseUrl: baseUrl!, guardianId: guardianId!, childId: childId!,
+          childName: childName, httpClient: httpClient)
+      : const MessageBankingScreen();
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 }
 
 class RibbonBand {
@@ -363,9 +381,10 @@ class GuardianHome extends StatelessWidget {
           child: Column(children: [
             ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               key: const Key('guardianHomeHero'),
-              icon: Icons.schedule_send, label: 'Message banking',
-              onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const MessageBankingScreen())))),
+              icon: Icons.schedule_send, label: _sendLabel(childName, baseUrl, guardianId, childId),
+              onTap: (context) => _openSend(context, childName: childName,
+                baseUrl: baseUrl, guardianId: guardianId, childId: childId,
+                httpClient: availabilityHttpClient))),
             const SizedBox(height: 10),
             ConstrainedBox(constraints: const BoxConstraints(minWidth: double.infinity, minHeight: 128), child: TieredTile(readAloud: false, 
               icon: Icons.more_horiz, label: 'More',
@@ -432,18 +451,22 @@ List<_TileSpec> _kGuardianTiles({
   required String? childId,
   required http.Client? availabilityHttpClient,
 }) => <_TileSpec>[
-  _TileSpec(icon: Icons.schedule_send, label: 'Message banking', tier: _Tier.hero,
-    onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const MessageBankingScreen()))),
+  _TileSpec(icon: Icons.schedule_send, label: _sendLabel(childName, baseUrl, guardianId, childId), tier: _Tier.hero,
+    onTap: (context) => _openSend(context, childName: childName,
+      baseUrl: baseUrl, guardianId: guardianId, childId: childId, httpClient: availabilityHttpClient)),
   _TileSpec(icon: Icons.event_available, label: 'Availability', tier: _Tier.featured,
     onTap: (context) => _openAvailability(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,
       httpClient: availabilityHttpClient)),
   _TileSpec(icon: Icons.schedule, label: 'Send-time guard', tier: _Tier.featured,
     onTap: (context) => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SendTimeGuardScreen(childName: childName,
+      builder: (guardContext) => SendTimeGuardScreen(childName: childName,
         childLocalTime: childLocalTime, zoneAbbr: childZoneAbbr,
-        dayPart: dayPart, reachable: reachable)))),
+        dayPart: dayPart, reachable: reachable,
+        sendInstead: _canSendLive(baseUrl, guardianId, childId)
+          ? () => _openSend(guardContext, childName: childName, baseUrl: baseUrl,
+              guardianId: guardianId, childId: childId, httpClient: availabilityHttpClient)
+          : null)))),
   _TileSpec(icon: Icons.medical_services_outlined, label: 'Meds & care', tier: _Tier.featured,
     onTap: (context) => _openCoordination(context,
       baseUrl: baseUrl, guardianId: guardianId, childId: childId,

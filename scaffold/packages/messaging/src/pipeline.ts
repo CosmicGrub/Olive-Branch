@@ -41,7 +41,11 @@ export type CaptureDenial =
    * media_artifact's `preservation_is_attributed` CHECK with no `preserved_
    * by` value to attribute it to (a child has no app_user id to put there).
    */
-  | 'child_cannot_preserve';
+  | 'child_cannot_preserve'
+  /** "Send now" is a grown-up's choice; a child's message always rides the schedule. */
+  | 'child_cannot_send_now'
+  /** "Send now" names no night: asking for both is a mistake, not a preference. */
+  | 'now_has_no_date';
 
 export interface CaptureInput {
   childId: string;
@@ -70,6 +74,12 @@ export interface CaptureInput {
   /** null = deliver at the next bedtime; a date = a specific night. */
   targetLocalDate: string | null;
   daypart: string;
+  /**
+   * "Send now": deliver as soon as the worker next runs, with no day-part and no date. A GROWN-UP election
+   * only (a child's reply is never "now": `child_cannot_send_now`), and it never carries a date. The send-time
+   * guard is the sender's warning, not a server hold (materialize.ts, `immediate`).
+   */
+  immediate?: boolean;
   /** Guardian election, §9.8.1. Batch payloads default true (§9.5). Never
    * true for a child-originated capture — see `child_cannot_preserve`. */
   preserve: boolean;
@@ -98,7 +108,7 @@ export interface IntentRow {
    * an unattributed sender, and still is not. */
   senderId: string | null; senderChildId: string | null;
   payloadKind: 'video_msg'; payloadRef: string;
-  policy: 'at_daypart' | 'on_local_date';
+  policy: 'immediate' | 'at_daypart' | 'on_local_date';
   targetLocalDate: string | null; targetDaypart: string;
   batchId: string | null; batchSeq: number | null;
   expiresAt: string;
@@ -162,19 +172,23 @@ export function captureMessage(
       return { ok: false, reason: 'child_sender_mismatch' };
     }
     if (input.preserve) return { ok: false, reason: 'child_cannot_preserve' };
+    if (input.immediate) return { ok: false, reason: 'child_cannot_send_now' };
   } else {
     const d = can('message', edges, input.childId, now.toJSDate(), input.senderRole);
     if (!d.allow) return { ok: false, reason: 'not_authorized' };
   }
 
+  if (input.immediate && input.targetLocalDate) return { ok: false, reason: 'now_has_no_date' };
   const zone = resolveZone(ctx.tzIntervals, now, ctx.homeTz);
+  const policy: 'immediate' | 'at_daypart' | 'on_local_date' = input.immediate
+    ? 'immediate' : input.targetLocalDate ? 'on_local_date' : 'at_daypart';
 
   // Resolve the delivery instant FIRST, so the artifact's retention can be
   // derived from it rather than guessed.
   const probe: Intent = {
     id: 'probe', childId: input.childId, state: 'pending',
     expiresAt: now.plus({ days: UNOPENED_RETENTION_DAYS }).toISO()!,
-    policy: input.targetLocalDate ? 'on_local_date' : 'at_daypart',
+    policy,
     targetLocalDate: input.targetLocalDate ?? undefined,
     targetDaypart: input.daypart,
   };
@@ -229,7 +243,7 @@ export function captureMessage(
       senderId: isChildSender ? null : input.senderId ?? null,
       senderChildId: isChildSender ? input.senderChildId! : null,
       payloadKind: 'video_msg',
-      policy: input.targetLocalDate ? 'on_local_date' : 'at_daypart',
+      policy,
       targetLocalDate: input.targetLocalDate,
       targetDaypart: input.daypart,
       batchId: input.batchId ?? null,

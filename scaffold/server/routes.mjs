@@ -4067,6 +4067,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     },
   });
 
+  const DELIVERY_CHOICES = ['now', 'daypart', 'date'];
   api.register({
     // POST counterpart to GET .../inbox — records an async video message and
     // schedules it, the real backend for client/lib/receipt_screen.dart's
@@ -4111,6 +4112,26 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const targetLocalDate = typeof body.targetLocalDate === 'string'
         ? body.targetLocalDate : null;
       const daypart = typeof body.daypart === 'string' ? body.daypart : 'bedtime';
+      // `delivery` names the grown-up's choice outright: 'now' (as soon as the worker runs), 'daypart' (the
+      // next time that part of her day starts; the default) or 'date' (a specific night). It is optional so
+      // an older client that sends only `targetLocalDate` behaves exactly as before. A choice that
+      // contradicts the other fields is refused, never guessed at.
+      const delivery = body.delivery === undefined || body.delivery === null ? null : body.delivery;
+      if (delivery !== null && !DELIVERY_CHOICES.includes(delivery)) {
+        return { status: 400, body: { error: 'bad_delivery' } };
+      }
+      if (delivery === 'now' && c.principal.roleName === 'child') {
+        return { status: 403, body: { error: 'child_cannot_send_now' } };
+      }
+      if (delivery === 'now' && targetLocalDate) {
+        return { status: 400, body: { error: 'now_has_no_date' } };
+      }
+      if (delivery === 'date' && !targetLocalDate) {
+        return { status: 400, body: { error: 'date_required' } };
+      }
+      if (delivery === 'daypart' && targetLocalDate) {
+        return { status: 400, body: { error: 'daypart_has_no_date' } };
+      }
       // S-D2 -- "preservation is a standing rule" (MASTERFILE §16.2 #5, settled
       // v0.23.0): anything a GUARDIAN sends is kept unless she explicitly opts
       // OUT with preserve:false. This used to be `body.preserve === true`, so
@@ -4163,6 +4184,7 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
           captionKey,
           targetLocalDate,
           daypart,
+          immediate: delivery === 'now',
           preserve,
           batchId,
           batchSeq,
@@ -4396,6 +4418,20 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
     return { zone, part: activeDayPart(ctx, at.setZone(zone))?.kind ?? null };
   };
 
+  // A moment in HER clock for a sender's page: { day, time }. `day` is 'today', 'tomorrow' or 'yesterday'
+  // in her calendar, else a short date ("Sat, Nov 21"). Null when the instant or her zone is not known
+  // (a row not yet timed, a zone name the database no longer knows) -- the page then says less, never guesses.
+  const herMoment = (iso, tz) => {
+    if (!iso || typeof tz !== 'string' || !IANAZone.isValidZone(tz)) return null;
+    const at = DateTime.fromISO(iso, { zone: 'utc' }).setZone(tz).setLocale('en-US');
+    if (!at.isValid) return null;
+    const today = DateTime.utc().setZone(tz).startOf('day');
+    const days = Math.round(at.startOf('day').diff(today, 'days').days);
+    const day = days === 0 ? 'today' : days === 1 ? 'tomorrow' : days === -1 ? 'yesterday'
+      : at.toFormat('ccc, LLL d');
+    return { day, time: at.toFormat('h:mm a') };
+  };
+
   // G7 -- the SENDER's view of what she sent: waiting / delivered / opened,
   // with the receipt phrase in HER (the child's) frame -- "Watched at 7:42 PM
   // her time -- at bedtime." (pipeline.ts openReceipt, section 8.2.4). Guardian
@@ -4411,7 +4447,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       }
       const iso = (col) => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
       const rows = await inSession(c, (q) => q(
-        `SELECT id, payload_kind, state, ${iso('created_at')} AS sent_at,
+        `SELECT id, payload_kind, state, policy::text AS policy, target_daypart,
+                target_local_date::text AS target_local_date, materialized_tz,
+                ${iso('created_at')} AS sent_at,
                 ${iso('scheduled_at')} AS delivers_at,
                 ${iso('COALESCE(delivered_at, materialized_at)')} AS delivered_at,
                 ${iso('opened_at')} AS opened_at, opened_zone, opened_part
@@ -4439,10 +4477,19 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
             receipt = openReceipt(ctx, at, snap.part);
           }
         }
+        // The grown-up's own choice, so the page can say what they asked for in their words, and the
+        // moment a waiting message lands in HER clock ("tomorrow at 8:30 PM"), never arithmetic in theirs.
+        const delivery = r.policy === 'immediate' ? 'now'
+          : r.policy === 'on_local_date' ? 'date' : 'daypart';
         return {
           id: r.id, kind: r.payload_kind, state, sentAt: r.sent_at,
+          delivery,
+          daypart: delivery === 'daypart' ? r.target_daypart : null,
+          targetLocalDate: delivery === 'date' ? r.target_local_date : null,
           deliversAt: state === 'waiting' ? r.delivers_at : null,
+          deliversHer: state === 'waiting' ? herMoment(r.delivers_at, r.materialized_tz) : null,
           deliveredAt: state === 'delivered' || state === 'opened' ? r.delivered_at : null,
+          deliveredHer: state === 'delivered' ? herMoment(r.delivered_at, r.materialized_tz) : null,
           openedAt: state === 'opened' ? r.opened_at : null,
           receipt,
         };

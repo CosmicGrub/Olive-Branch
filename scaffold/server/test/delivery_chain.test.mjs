@@ -538,6 +538,96 @@ let M1, ART1;
   check(g, 'and it was delivered', (await dbRow(sent.body.id)).state, 'delivered');
 }
 
+// ===========================================================================
+// L . the grown-up's choice of WHEN: right away, a part of the day, a night -- and the sender's view of it
+// ===========================================================================
+{
+  const g = 'L send now and the sender view';
+  check(g, 'a schedule with a bedtime hours away', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+
+  // --- right away -----------------------------------------------------------
+  const now = await send(CHILD, dadTok, { delivery: 'now' });
+  check(g, 'delivery now is accepted', now.status, 201);
+  check(g, 'it is stored ready (due the moment of sending)', now.body.state, 'ready');
+  const nowRow = (await admin.query(`SELECT policy::text AS policy, state, scheduled_at <= now() AS due
+                                       FROM delivery_intent WHERE id = $1`, [now.body.id])).rows[0];
+  check(g, 'the stored policy is immediate', nowRow.policy, 'immediate');
+  check(g, 'and it is already due, not waiting for bedtime', nowRow.due, true);
+  const t1 = await tick();
+  check(g, 'the worker delivers it on its next tick, hours before bedtime', t1.ids.includes(now.body.id), true);
+  check(g, 'it is in her inbox', (await call('GET', `/v1/children/${CHILD}/inbox`, childTok)).body.messages
+    .some((m) => m.id === now.body.id), true);
+
+  // --- the same send with no bedtime at all ------------------------------------
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  const bare = await send(CHILD, dadTok, { delivery: 'now' });
+  check(g, 'right away works for a family whose day is not set up yet', bare.status, 201);
+  const bareBed = await send(CHILD, dadTok, { delivery: 'daypart', daypart: 'bedtime' });
+  check(g, 'but "at bedtime" still says there is no bedtime', `${bareBed.status}/${bareBed.body.error}`, '400/daypart_undefined');
+  check(g, 'a bedtime is set again', (await putParts(dadTok, [bedtimeAt(300)])).status, 200);
+
+  // --- hostile combinations ---------------------------------------------------
+  const refuse = async (name, extra, want, token = dadTok, cid = CHILD) => {
+    const r = await send(cid, token, extra);
+    check(g, `${name} -> ${want}`, `${r.status}/${r.body.error}`, want);
+  };
+  await refuse('an unknown delivery word', { delivery: 'soon' }, '400/bad_delivery');
+  await refuse('delivery as a number', { delivery: 1 }, '400/bad_delivery');
+  await refuse('now together with a night', { delivery: 'now', targetLocalDate: '2099-01-01' }, '400/now_has_no_date');
+  await refuse('a night chosen but no night given', { delivery: 'date' }, '400/date_required');
+  await refuse('a part of the day together with a night', { delivery: 'daypart', targetLocalDate: '2099-01-01' },
+    '400/daypart_has_no_date');
+  const none = await call('POST', `/v1/children/${CHILD}/messages`, dadTok, { delivery: 'now' });
+  check(g, 'no storage key is still refused first', none.status, 400);
+
+  // --- the omitted field keeps the old behaviour ---------------------------------
+  const old = await send(CHILD, dadTok, {});
+  check(g, 'a client that sends no delivery field still schedules at bedtime', old.status, 201);
+  check(g, 'as at_daypart', (await admin.query(`SELECT policy::text AS p FROM delivery_intent WHERE id=$1`,
+    [old.body.id])).rows[0].p, 'at_daypart');
+  const night = DateTime.now().setZone(NY).plus({ days: 5 }).toISODate();
+  const oldDate = await send(CHILD, dadTok, { targetLocalDate: night });
+  check(g, 'and one that sends only a night still schedules that night', oldDate.status, 201);
+  check(g, 'as on_local_date', (await admin.query(`SELECT policy::text AS p FROM delivery_intent WHERE id=$1`,
+    [oldDate.body.id])).rows[0].p, 'on_local_date');
+
+  // --- the sender's view says what they chose and when it lands in HER clock ---------------
+  const view = (await call('GET', `/v1/children/${CHILD}/sent`, dadTok)).body.messages;
+  const byId = (id) => view.find((m) => m.id === id);
+  const clock = /^\d{1,2}:\d\d (AM|PM)$/;
+  check(g, 'the right-away message shows as delivered, with the choice',
+    `${byId(now.body.id).state}/${byId(now.body.id).delivery}`, 'delivered/now');
+  check(g, 'delivered carries her clock "h:mm AM/PM"', clock.test(byId(now.body.id).deliveredHer.time), true);
+  check(g, 'and a day word', typeof byId(now.body.id).deliveredHer.day, 'string');
+  const waitingBed = byId(old.body.id);
+  check(g, 'a bedtime message is waiting, and says which part of the day',
+    `${waitingBed.state}/${waitingBed.delivery}/${waitingBed.daypart}`, 'waiting/daypart/bedtime');
+  check(g, 'it says when it lands in her clock', clock.test(waitingBed.deliversHer.time), true);
+  check(g, 'a waiting message has no delivered time', waitingBed.deliveredHer, null);
+  const waitingDate = byId(oldDate.body.id);
+  check(g, 'a night message says the night', `${waitingDate.delivery}/${waitingDate.targetLocalDate}`, `date/${night}`);
+  check(g, 'a night message has no day-part', waitingDate.daypart, null);
+  check(g, 'the day word for a night five days off is a date, not "tomorrow"', waitingDate.deliversHer.day.includes(','), true);
+  check(g, 'a right-away message names no day-part or night',
+    `${byId(now.body.id).daypart}/${byId(now.body.id).targetLocalDate}`, 'null/null');
+  check(g, 'a row never carries a raw zone name', JSON.stringify(view).includes('America/'), false);
+  check(g, 'the child still cannot read the sender view', (await call('GET', `/v1/children/${CHILD}/sent`, childTok)).status, 403);
+  check(g, "a second guardian does not see Dad's sends (own sends only)",
+    (await call('GET', `/v1/children/${CHILD}/sent`, momTok)).body.messages
+      .some((m) => [now.body.id, old.body.id, oldDate.body.id].includes(m.id)), false);
+
+  // --- who may send now ----------------------------------------------------------
+  const childNow = await call('POST', `/v1/children/${CHILD}/messages`, childTok,
+    { storageKey: await upload(CHILD, childTok), durationMs: 5000, delivery: 'now' });
+  check(g, 'the child cannot send "now"', `${childNow.status}/${childNow.body.error}`, '403/child_cannot_send_now');
+  const sitterNow = await call('POST', `/v1/children/${CHILD}/messages`, sitterTok,
+    { storageKey: await upload(CHILD, sitterTok), durationMs: 5000, delivery: 'now' });
+  check(g, 'a sitter has no right to send at all', sitterNow.status, 403);
+  const strangerNow = await call('POST', `/v1/children/${CHILD}/messages`, strangerTok,
+    { storageKey: 'children/' + CHILD + '/messages/' + randomUUID(), durationMs: 5000, delivery: 'now' });
+  check(g, 'a stranger from another family is turned away', strangerNow.status, 403);
+}
+
 function report() {
 let gg = '';
 for (const r of rows) { if (r.g !== gg) { gg = r.g; console.log(`\n${gg}`); }

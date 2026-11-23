@@ -2903,12 +2903,14 @@ guardianHome: function(){ return P_engine('Guardian home — the Day Ribbon',
 
 sendguard: function(){ return P_engine('The send-time guard',
   '<p>Fires as the parent composes, not after. The safe option is primary and the '
-  + 'override is styled as the exception it is.</p>'
+  + 'override is styled as the exception it is. In the app, on a phone with a live session, the guard reads her real day-parts and the real '
+  + 'clock check; sending itself is the Send screen (MASTERFILE section 8.31).</p>'
   + real('recipientContext()', T.sendGuard())); },
 
 banking: function(){ return P_engine('Message banking',
   '<p>180 <code>on_local_date</code> intents from one recording session, materialised '
-  + 'by the same engine that handles a single message.</p>'
+  + 'by the same engine that handles a single message. This is the engine, demoed. In the app the banking screen is a labelled demo; a phone '
+  + 'with a live session sends one message at a time from the Send screen (MASTERFILE section 8.31).</p>'
   + real('bankBatch(180)', T.bankBatch(180))); },
 
 meds: function(){ return P_engine('The exchange-day double dose',

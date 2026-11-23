@@ -328,6 +328,13 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'picture). Never on a child\'s device and never shown in her app. Sealed on the device; nothing is '
           'uploaded.'),
   LocalDataEntry(
+      area: 'sendoutbox', scope: LocalScope.guardian, encrypted: true, maxBytes: 28 * _mib,
+      what: 'Messages you made for her (a video, a photo or a voice recording) that the server has not taken yet, '
+          'so a restart or no signal does not lose them: the file itself, when you want it to arrive, and how many '
+          'times it was tried. Each goes the moment this phone can reach the server and is deleted from here once '
+          'the server has it, or when you discard it. At most three at a time. Sealed on the device; never shown '
+          'in her app.'),
+  LocalDataEntry(
       area: 'account', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
       what: 'Whether this phone has an optional Olive account, how far setting it up got, and which child was added '
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '

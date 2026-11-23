@@ -59,6 +59,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'colour': "Today's colour",
   'profile': 'Offline start-up',
   'outbox': 'Waiting to send',
+  'sendoutbox': 'Messages you made for her, waiting to send',
   'learn': 'Parent Learn',
   'screenshares': 'Screens shared between grown-ups',
   'rhythm': 'Routine and rhythm',
