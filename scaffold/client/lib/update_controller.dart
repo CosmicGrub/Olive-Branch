@@ -527,7 +527,10 @@ class AppUpdater extends ChangeNotifier {
           lastAttemptMs: now,
           lastResult: ignorable ? 'ok' : (why?.code == UpdateRefusalCode.offline ? 'offline' : 'refused:${why?.code.name ?? 'none'}'),
           lastCheckMs: ignorable ? now : _state.lastCheckMs));
-      final UpdatePhase back = (before == UpdatePhase.checking || before == UpdatePhase.off || before == UpdatePhase.failed)
+      final UpdatePhase back = (before == UpdatePhase.checking ||
+              before == UpdatePhase.off ||
+              before == UpdatePhase.failed ||
+              before == UpdatePhase.idle)
           ? (ignorable ? UpdatePhase.upToDate : UpdatePhase.idle)
           : before;
       _set(back, failure: ignorable ? null : why?.code);
@@ -942,7 +945,8 @@ class AppUpdater extends ChangeNotifier {
       notifyListeners();
       return null;
     }
-    final String? why = updateUrlProblem(v, allowLoopbackHttp: _config.allowLoopbackHttp);
+    final String? why = updateUrlProblem(v, allowLoopbackHttp: _config.allowLoopbackHttp) ??
+        ((Uri.tryParse(v)?.hasQuery ?? false) ? 'a query string (it could carry a secret)' : null);
     if (why != null) return why;
     await _save(_state.copyWith(manifestUrl: v));
     notifyListeners();
