@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'app_lock.dart';
 import 'local_pin.dart';
+import 'local_pin_screens.dart' show LocalPinSetupScreen;
 
 /// The one calm sentence shown before screenshots are allowed (owner-approved wording, QR-VETTING-BRAINSTORM.md).
 const String kScreenshotsAllowedWarning =
@@ -23,6 +24,18 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
   AppLockController get c => widget.controller;
   String? _error;
 
+  /// Starts from what the caller knew and turns true the moment a PIN is chosen right here, so the lock is never a
+  /// switch with no way to make the PIN it asks for.
+  late bool _pinSet = widget.pinIsSet;
+
+  Future<void> _choosePin() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(
+      builder: (BuildContext ctx) => LocalPinSetupScreen(service: c.pin, onDone: () => Navigator.of(ctx).pop()),
+    ));
+    final bool now = await c.pin.isSet();
+    if (mounted) setState(() { _pinSet = now; _error = null; });
+  }
+
   /// Private needs nothing. Screenshots allowed needs the grown-up's PIN on this phone and one yes to the sentence above.
   Future<void> _chooseScreens(AppLockPrefs p, bool allowed) async {
     if (allowed == p.screenshotsAllowed) return;
@@ -30,8 +43,8 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
       await _set(p.copyWith(hideRecents: true));
       return;
     }
-    if (!widget.pinIsSet) {
-      setState(() => _error = 'Set a PIN for this phone first (Settings, Change PIN). Screenshots stay off until then.');
+    if (!_pinSet) {
+      setState(() => _error = 'Choose a PIN for this phone first (the button above). Screenshots stay off until then.');
       return;
     }
     final bool? yes = await showDialog<bool>(
@@ -61,13 +74,19 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-                  if (!widget.pinIsSet)
-                    const Card(
-                      key: Key('appLockNeedsPin'),
+                  if (!_pinSet)
+                    Card(
+                      key: const Key('appLockNeedsPin'),
                       child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('The lock uses your PIN, and no PIN is set on this phone yet. '
-                            'Set one under Change PIN, then come back.'),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                          const Text('The lock uses your PIN, and no PIN is set on this phone yet.'),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                              key: const Key('appLockChoosePin'),
+                              onPressed: _choosePin,
+                              child: const Text('Choose a PIN for this phone')),
+                        ]),
                       ),
                     ),
                   SwitchListTile(

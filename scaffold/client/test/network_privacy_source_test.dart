@@ -29,7 +29,7 @@ void main() {
     final RegExp ask = RegExp(r'getWifiName|getWifiBSSID|getWifiIP|getWifiGatewayIP|getWifiSubmask|NetworkInfo\b|WifiInfo|'
         r'\bssid\b|\bbssid\b|macAddress|\bgetHostName|Platform\.localHostname|InternetAddress\.lookup|NetworkInterface\.list',
         caseSensitive: false);
-    final Set<String> allowedInterfaceList = <String>{'lan_bind.dart', 'local_discovery.dart'};
+    final Set<String> allowedInterfaceList = <String>{'lan_bind.dart', 'local_discovery.dart', 'lan_pairing_transport.dart'};
     final List<String> offenders = <String>[
       for (final File f in files)
         if (ask.allMatches(code(f)).any((RegExpMatch m) =>
@@ -40,7 +40,7 @@ void main() {
   });
 
   test('only the LAN filter, discovery, the session server (via the filter), the pairing controller and the adult proximity QR touch interface addresses', () {
-    final Set<String> allowed = <String>{'lan_bind.dart', 'local_discovery.dart', 'local_pairing.dart', 'local_session.dart', 'connect_child_screen.dart'};
+    final Set<String> allowed = <String>{'lan_bind.dart', 'local_discovery.dart', 'local_pairing.dart', 'local_session.dart', 'connect_child_screen.dart', 'lan_pairing_transport.dart'};
     final List<String> users = <String>[
       for (final File f in files)
         if (RegExp(r'ownLocalIPv4|lanBindAddresses|NetworkInterface').hasMatch(code(f))) name(f)

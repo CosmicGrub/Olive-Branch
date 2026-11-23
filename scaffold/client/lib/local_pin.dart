@@ -87,6 +87,39 @@ bool isEasyGuessLocalPin(String pin) {
   return steps.length == 1 && (steps.first == 0 || steps.first == 1 || steps.first == 9);
 }
 
+/// A GENTLE warning, never a block: true when [pin] looks like a date (a birthday or a year) or is a short pattern said
+/// twice or a well-known keypad shape. [isEasyGuessLocalPin] is the only refusal (every digit the same, a straight run);
+/// everything here is the grown-up's call, so the screen says it once and lets them keep their choice.
+bool isGuessableLocalPin(String pin) {
+  if (!isValidLocalPin(pin) || isEasyGuessLocalPin(pin)) return false;
+  final int n = pin.length;
+  int num(int from, int to) => int.parse(pin.substring(from, to));
+  bool month(int m) => m >= 1 && m <= 12;
+  bool day(int d) => d >= 1 && d <= 31;
+  bool year4(int y) => (y >= 1900 && y <= 2099);
+  if (n == 4) {
+    if (year4(num(0, 4))) return true; // 1987, 2015
+    final int a = num(0, 2), b = num(2, 4);
+    if ((month(a) && day(b)) || (day(a) && month(b))) return true; // 0827 or 2708
+  } else if (n == 6) {
+    final int a = num(0, 2), b = num(2, 4);
+    if ((month(a) && day(b)) || (day(a) && month(b))) return true; // 270815, 082715
+  } else if (n == 8) {
+    if (year4(num(0, 4)) && month(num(4, 6)) && day(num(6, 8))) return true; // 20150827
+    final int a = num(0, 2), b = num(2, 4);
+    if (year4(num(4, 8)) && ((month(a) && day(b)) || (day(a) && month(b)))) return true; // 27081987
+  }
+  // A short block said again: 1212, 4545, 123123, 56785678.
+  for (int p = 2; p <= n ~/ 2; p++) {
+    if (n % p == 0 && pin.substring(0, p) * (n ~/ p) == pin) return true;
+  }
+  return const <String>{'2580', '0852', '1379', '1357', '2468', '1590', '0007', '1004', '6969', '4200'}.contains(pin);
+}
+
+/// What the grown-up is told for [isGuessableLocalPin]: one calm sentence, and the choice stays theirs.
+const String kGuessablePinMessage =
+    'That looks like a date or a common pattern, which someone who knows you might try first. You can still use it.';
+
 /// What the guardian is told, in plain adult words.
 const String kEasyGuessPinMessage = 'That PIN is easy to guess. Please choose one that is harder for someone else to work out.';
 

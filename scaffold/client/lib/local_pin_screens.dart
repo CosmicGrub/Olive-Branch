@@ -10,51 +10,84 @@
 // The words are the account PIN's words where there is one (guardian_setup.dart): "Enter
 // a 4-8 digit PIN.", "The two PINs don't match.", and the lockout line
 // ([kLocalPinLockedMessage]). A wrong or locked PIN never reveals anything else.
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter, TextInputFormatter;
 
 import 'guardian_local_scope.dart';
 import 'local_pin.dart';
+import 'pin_keypad.dart';
 import 'screen_privacy.dart';
 import 'guardian_pin_recovery_screens.dart';
 
-/// The two-field form. [onSaved] fires after the PIN is really stored; a store that cannot
-/// be written shows a message and does NOT call it (the PIN would not exist after a restart).
+/// The "choose a PIN" form: the ordinary keypad (pin_keypad.dart), once to choose and once to confirm. [onSaved] fires
+/// after the PIN is really stored; a store that cannot be written shows a message and does NOT call it (the PIN would not
+/// exist after a restart).
+///
+/// WHAT IT TELLS THE GROWN-UP (plain words, no child in sight): 4 to 8 digits; not a birthday, not 1234 or the same digit
+/// repeated. An obviously trivial PIN (every digit the same, a straight run) is refused (owner decision 2026-11-08); a
+/// date-like or patterned one gets ONE gentle warning and the grown-up may keep it. The typed digits live only in this
+/// widget while it is on screen; only the salted slow hash is ever stored ([LocalPinService.setPin]).
 class LocalPinSetupForm extends StatefulWidget {
-  const LocalPinSetupForm({super.key, required this.service, required this.onSaved, this.saveLabel = 'Save PIN'});
+  const LocalPinSetupForm({super.key, required this.service, required this.onSaved, this.saveLabel = 'Save PIN', this.scramble = false});
   final LocalPinService service;
   final VoidCallback onSaved;
   final String saveLabel;
+
+  /// Shuffle the number keys (the grown-up's own choice, keypad_prefs.dart). Off unless chosen.
+  final bool scramble;
 
   @override
   State<LocalPinSetupForm> createState() => _LocalPinSetupFormState();
 }
 
+enum _SetupStep { choose, warn, confirm }
+
 class _LocalPinSetupFormState extends State<LocalPinSetupForm> {
-  final TextEditingController _pin = TextEditingController();
-  final TextEditingController _confirm = TextEditingController();
+  _SetupStep _step = _SetupStep.choose;
+  String _chosen = '';
   String? _error;
   bool _working = false;
 
+  /// Bumped whenever the keypad must start empty again (a new step, a mismatch).
+  int _pad = 0;
+
   @override
   void dispose() {
-    _pin.dispose();
-    _confirm.dispose();
+    _chosen = '';
     super.dispose();
   }
 
-  Future<void> _save() async {
+  void _restart({String? message}) => setState(() {
+        _chosen = '';
+        _step = _SetupStep.choose;
+        _error = message;
+        _pad++;
+      });
+
+  void _onChosen(String pin) {
     if (_working) return;
-    if (!isValidLocalPin(_pin.text)) {
-      setState(() => _error = 'Enter a 4-8 digit PIN.');
+    if (!isValidLocalPin(pin)) {
+      setState(() { _error = 'Enter a 4-8 digit PIN.'; _pad++; });
       return;
     }
-    if (isEasyGuessLocalPin(_pin.text)) {
-      setState(() => _error = kEasyGuessPinMessage);
+    if (isEasyGuessLocalPin(pin)) {
+      setState(() { _error = kEasyGuessPinMessage; _pad++; });
       return;
     }
-    if (_pin.text != _confirm.text) {
-      setState(() => _error = "The two PINs don't match.");
+    setState(() {
+      _chosen = pin;
+      _error = null;
+      _step = isGuessableLocalPin(pin) ? _SetupStep.warn : _SetupStep.confirm;
+      _pad++;
+    });
+  }
+
+  Future<void> _onConfirmed(String again) async {
+    if (_working) return;
+    if (again != _chosen) {
+      _restart(message: "The two PINs don't match. Let's choose again.");
       return;
     }
     setState(() {
@@ -62,18 +95,18 @@ class _LocalPinSetupFormState extends State<LocalPinSetupForm> {
       _error = null;
     });
     try {
-      await widget.service.setPin(_pin.text);
+      await widget.service.setPin(_chosen);
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _working = false;
         _error = 'Could not keep your PIN on this device. Please try again.';
+        _pad++;
       });
       return;
     }
     if (!mounted) return;
-    _pin.clear();
-    _confirm.clear();
+    _chosen = '';
     setState(() => _working = false);
     widget.onSaved();
   }
@@ -83,45 +116,63 @@ class _LocalPinSetupFormState extends State<LocalPinSetupForm> {
 
   Widget _buildSensitive(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final Widget body = switch (_step) {
+      _SetupStep.warn => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
+          Text(kGuessablePinMessage, key: const Key('localPinGuessable'), style: tt.bodyLarge),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 56,
+            child: FilledButton(
+              key: const Key('localPinUseAnyway'),
+              onPressed: () => setState(() { _step = _SetupStep.confirm; _pad++; }),
+              child: const Text('Use it anyway', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 56,
+            child: OutlinedButton(
+              key: const Key('localPinChooseAnother'),
+              onPressed: _restart,
+              child: const Text('Choose another', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ]),
+      _SetupStep.choose || _SetupStep.confirm => Column(crossAxisAlignment: CrossAxisAlignment.center, children: <Widget>[
+          Text(_step == _SetupStep.choose ? 'Choose your PIN' : 'Type it once more to confirm',
+              key: const Key('localPinPrompt'), style: tt.titleLarge, textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          Text(
+            _step == _SetupStep.choose
+                ? '4 to 8 digits. Not a birthday, and not 1234 or the same digit repeated.'
+                : 'This is the same PIN again, so we know you typed what you meant.',
+            style: tt.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          PinKeypad(
+            key: ValueKey<String>('pad${_step.name}$_pad'),
+            scramble: widget.scramble,
+            submitLabel: _step == _SetupStep.choose ? 'Next' : widget.saveLabel,
+            submitKey: _step == _SetupStep.choose ? const Key('localPinNext') : const Key('localPinSave'),
+            onSubmit: _step == _SetupStep.choose ? _onChosen : (String v) => unawaited(_onConfirmed(v)),
+          ),
+          if (_step == _SetupStep.confirm)
+            TextButton(key: const Key('localPinStartOver'), onPressed: _working ? null : _restart, child: const Text('Start over')),
+        ]),
+    };
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
-      TextField(
-        key: const Key('localPinNew'),
-        controller: _pin,
-        obscureText: true,
-        keyboardType: TextInputType.number,
-        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
-        maxLength: kLocalPinMaxDigits,
-        decoration: const InputDecoration(labelText: 'New PIN', counterText: '', border: OutlineInputBorder()),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        key: const Key('localPinConfirm'),
-        controller: _confirm,
-        obscureText: true,
-        keyboardType: TextInputType.number,
-        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
-        maxLength: kLocalPinMaxDigits,
-        decoration: const InputDecoration(labelText: 'Confirm PIN', counterText: '', border: OutlineInputBorder()),
-        onSubmitted: (_) => _save(),
-      ),
+      body,
       if (_error != null)
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Text(_error!,
               key: const Key('localPinError'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.error)),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.error)),
         ),
-      const SizedBox(height: 16),
-      SizedBox(
-        height: 56,
-        child: FilledButton(
-          key: const Key('localPinSave'),
-          onPressed: _working ? null : _save,
-          child: _working
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4))
-              : Text(widget.saveLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-        ),
-      ),
+      if (_working) const Padding(padding: EdgeInsets.only(top: 12), child: Center(child: CircularProgressIndicator(strokeWidth: 2.4))),
     ]);
   }
 }
@@ -135,7 +186,7 @@ class LocalPinSetupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Choose a PIN for this device')),
+        appBar: AppBar(title: const Text('Choose your PIN')),
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -143,8 +194,8 @@ class LocalPinSetupScreen extends StatelessWidget {
               Icon(Icons.pin_outlined, size: 40, color: Theme.of(context).colorScheme.primary),
               const SizedBox(height: 16),
               Text(
-                'This PIN is only for this device. It guards your settings, her locked age and '
-                'clearing data, and works with no connection.',
+                'This PIN is only for this device. It guards your settings, the app lock, her locked age and '
+                'clearing data, and works with no connection. It never leaves this phone.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),

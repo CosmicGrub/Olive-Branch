@@ -1,7 +1,7 @@
 /**
  * The simulate-connect guard (tools/check-simulate-connect.mjs): the legitimate layout passes, every kind of planted offender is
  * caught, the device script mangling or defaulting the define is caught, and the real tree is clean.
- * usage: node tools/test/simulate_connect_guard.test.mjs
+ * usage: node tools/test/sim_connect_guard.test.mjs
  */
 import { simulateProblems, realTreeProblems, DEVICE_SCRIPT } from '../check-simulate-connect.mjs';
 
