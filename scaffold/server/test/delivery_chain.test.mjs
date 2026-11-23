@@ -135,6 +135,12 @@ const bedtimeAt = (startsInMin) => {
   const refused = await send(CHILD, dadTok);
   check(g, 'a send before any bedtime exists is refused as daypart_undefined (not "not allowed")',
     `${refused.status}/${refused.body.error}`, '400/daypart_undefined');
+  // A day-part that is not one of the ten kinds is the caller's mistake: 400, never the database's CHECK as a 500.
+  const hostile = await send(CHILD, dadTok, { daypart: 'morning', targetLocalDate: DateTime.now().toISODate() });
+  check(g, 'an unknown daypart is refused 400 invalid_daypart (was a bare 500)',
+    `${hostile.status}/${hostile.body.error}`, '400/invalid_daypart');
+  const hostile2 = await send(CHILD, dadTok, { daypart: "bedtime'; DROP TABLE delivery_intent;--" });
+  check(g, 'a hostile daypart string is refused the same way', `${hostile2.status}/${hostile2.body.error}`, '400/invalid_daypart');
 
   for (const [who, t, want] of [['unauthenticated', null, 401], ['a sitter (no settings)', sitterTok, 403],
     ['a stranger guardian of another family', strangerTok, 403], ['the child herself', childTok, 403]]) {

@@ -4111,6 +4111,10 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
       const targetLocalDate = typeof body.targetLocalDate === 'string'
         ? body.targetLocalDate : null;
       const daypart = typeof body.daypart === 'string' ? body.daypart : 'bedtime';
+      // An unknown day-part used to pass every check here and die on the database's CHECK constraint as a bare
+      // 500 "internal". It is the caller's mistake, so it is refused up front as a 400 (the same ten kinds the
+      // day-parts PUT accepts).
+      if (!DAY_PART_KINDS.includes(daypart)) return { status: 400, body: { error: 'invalid_daypart' } };
       // S-D2 -- "preservation is a standing rule" (MASTERFILE §16.2 #5, settled
       // v0.23.0): anything a GUARDIAN sends is kept unless she explicitly opts
       // OUT with preserve:false. This used to be `body.preserve === true`, so
