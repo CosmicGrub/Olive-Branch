@@ -18,14 +18,14 @@ void main() {
   late Directory dir;
   late FakeTransport net;
   late Uint8List apkBytes;
-  late ApkInfo apk;
+  late ApkEntry apk;
   late UpdateStaging staging;
   const int kChunk = 65536;
 
-  Future<ApkInfo> infoFor(Uint8List bytes, {Map<String, Object?> Function(Map<String, Object?>)? tweak}) async {
+  Future<ApkEntry> infoFor(Uint8List bytes, {Map<String, Object?> Function(Map<String, Object?>)? tweak}) async {
     Map<String, Object?> d = await draftFor(bytes);
     if (tweak != null) d = tweak(d);
-    return (await verifyManifestDocument(encodeDoc(await s.sign(d)), s.trust)).manifest.apk;
+    return (await verifyManifestDocument(encodeDoc(await s.sign(d)), s.trust)).manifest.apks.first;
   }
 
   UpdateDownloader downloader({int retries = 3}) => UpdateDownloader(
@@ -150,8 +150,8 @@ void main() {
     });
 
     test('chunk hashes right but the whole-file hash wrong (a manifest that contradicts itself): deleted, never kept', () async {
-      final ApkInfo bad = await infoFor(apkBytes, tweak: (Map<String, Object?> d) {
-        (d['apk']! as Map<String, Object?>)['sha256'] = '0' * 64;
+      final ApkEntry bad = await infoFor(apkBytes, tweak: (Map<String, Object?> d) {
+        apk0(d)['sha256'] = '0' * 64;
         return d;
       });
       expect(await failure(() => downloader().download(bad)), UpdateRefusalCode.hashMismatch);
@@ -222,7 +222,7 @@ void main() {
 
     test('a new manifest sweeps the old version\'s files away', () async {
       final Uint8List old = fakeApk(kChunk + 5, 3);
-      final ApkInfo oldInfo = await infoFor(old);
+      final ApkEntry oldInfo = await infoFor(old);
       await staging.ensure();
       await staging.partFor(oldInfo).writeAsBytes(old);
       await staging.finalFor(oldInfo).writeAsBytes(old);

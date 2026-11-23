@@ -190,7 +190,7 @@ class FakeTransport implements UpdateTransport {
     if (f.error != null) throw f.error!;
     final bool ranged = rangeStart != null && rangeStart > 0 && f.honorRange;
     final int start = ranged ? rangeStart : 0;
-    Uint8List body = Uint8List.fromList(f.bytes.sublist(start));
+    final Uint8List body = Uint8List.fromList(f.bytes.sublist(start));
     if (f.corrupt != null && f.corrupt! >= start && f.corrupt! < f.bytes.length) {
       body[f.corrupt! - start] ^= 0xff;
     }
@@ -358,7 +358,7 @@ class Rig {
       FakePlay(),
       MemoryUpdateStateRepository(),
       dir,
-      UpdateConfig(manifestUrls: manifestUrls, channel: channel, trust: withKey ? who.trust : UpdateTrust(const <List<int>>[])),
+      UpdateConfig(manifestUrls: manifestUrls, channel: channel, trust: withKey ? who.trust : UpdateTrust(const <String, List<int>>{})),
       <DateTime>[kNow],
     );
   }

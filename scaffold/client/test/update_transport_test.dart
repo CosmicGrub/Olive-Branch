@@ -1,6 +1,5 @@
 // The updater's real transport against a real local HTTP server: ranges, redirects judged hop by hop, byte caps, the
 // cleartext rule, and what is (not) sent. Only loopback is ever contacted. MASTERFILE 7.24.
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 

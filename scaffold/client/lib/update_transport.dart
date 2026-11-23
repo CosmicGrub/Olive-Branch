@@ -71,6 +71,8 @@ class HttpUpdateTransport implements UpdateTransport {
     OliveTransportPolicy? policy,
     this.maxRedirects = 5,
     this.timeout = const Duration(seconds: 30),
+    this.getHosts,
+    this.openHosts,
   })  : _client = client ?? http.Client(),
         _policy = policy ?? const OliveTransportPolicy(release: kReleaseMode);
 
@@ -79,11 +81,23 @@ class HttpUpdateTransport implements UpdateTransport {
   final int maxRedirects;
   final Duration timeout;
 
-  Future<http.StreamedResponse> _send(Uri url, int? rangeStart, UpdateCancel? cancel, List<Uri> finalUrl) async {
+  /// When set, EVERY hop (the first address and each redirect) of a [get] / an [open] must be on one of these hosts, and
+  /// must be https whatever the build mode (the GitHub source pins itself this way). Null means "judged by the policy only".
+  final Set<String>? getHosts;
+  final Set<String>? openHosts;
+
+  Future<http.StreamedResponse> _send(Uri url, int? rangeStart, UpdateCancel? cancel, List<Uri> finalUrl, Set<String>? hosts) async {
     Uri at = url;
     for (int hop = 0; hop <= maxRedirects; hop++) {
       if (cancel?.isCancelled ?? false) throw const UpdateRefusal(UpdateRefusalCode.cancelled);
-      final String? why = _policy.violation(at);
+      // A pinned transport (the GitHub source) is judged by its own stricter rule: https, one of the named hosts, the
+      // default port. The Olive-server policy is not applied to it, because that rule forbids a query string and a file
+      // host's signed download address carries one.
+      final String? why = hosts != null
+          ? ((at.scheme != 'https' || !hosts.contains(at.host.toLowerCase()) || (at.hasPort && at.port != 443))
+              ? 'not an allowed address'
+              : null)
+          : _policy.violation(at);
       if (why != null || at.userInfo.isNotEmpty) {
         throw UpdateRefusal(hop == 0 ? UpdateRefusalCode.badUrl : UpdateRefusalCode.badRedirect, why ?? 'credentials');
       }
@@ -132,7 +146,7 @@ class HttpUpdateTransport implements UpdateTransport {
   @override
   Future<UpdateResponse> get(Uri url, {required int maxBytes, UpdateCancel? cancel}) async {
     final List<Uri> fin = <Uri>[];
-    final http.StreamedResponse res = await _send(url, null, cancel, fin);
+    final http.StreamedResponse res = await _send(url, null, cancel, fin, getHosts);
     final int? declared = res.contentLength;
     if (declared != null && declared > maxBytes) {
       unawaited(res.stream.drain<void>().catchError((Object _) {}));
@@ -158,7 +172,7 @@ class HttpUpdateTransport implements UpdateTransport {
   @override
   Future<UpdateStream> open(Uri url, {int? rangeStart, UpdateCancel? cancel}) async {
     final List<Uri> fin = <Uri>[];
-    final http.StreamedResponse res = await _send(url, rangeStart, cancel, fin);
+    final http.StreamedResponse res = await _send(url, rangeStart, cancel, fin, openHosts);
     int? start;
     if (res.statusCode == 206) {
       final Match? m = RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(res.headers['content-range'] ?? '');

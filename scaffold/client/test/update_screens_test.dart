@@ -3,8 +3,6 @@
 //
 // The controller does real file work, so each test first brings it to the state under test inside runAsync, then pumps
 // the screen.
-import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -13,10 +11,15 @@ import 'package:olive_client/update_controller.dart';
 import 'package:olive_client/update_manifest.dart';
 import 'package:olive_client/update_platform.dart';
 import 'package:olive_client/update_screens.dart';
-import 'package:olive_client/update_store.dart';
 import 'package:olive_client/update_transport.dart';
 
 import 'update_support.dart';
+
+/// The words for "now" in THIS machine's own time zone (the screen shows local time; a test must not assume one).
+String _todayAt(DateTime t) {
+  final DateTime l = t.toLocal();
+  return 'today at ${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+}
 
 void main() {
   late Rig rig;
@@ -48,11 +51,21 @@ void main() {
       if (then != null) await then(u);
     });
     addTearDown(u.dispose);
+    current = u;
     return u;
   }
 
+  AppUpdater? current;
+
+  /// Lets the real file work of the controller finish (it is real I/O, so it runs inside runAsync), then redraws. Waits
+  /// until the updater is no longer busy, so a slow disk makes a test slower, never flaky.
   Future<void> settle(WidgetTester t) async {
-    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
+    await t.runAsync(() async {
+      for (int i = 0, quiet = 0; i < 400 && quiet < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        quiet = (current?.busy ?? false) ? 0 : quiet + 1;
+      }
+    });
     await t.pump();
   }
 
@@ -85,7 +98,7 @@ void main() {
     final AppUpdater u = await prepared(t, then: (AppUpdater u) => u.checkNow());
     await pumpScreen(t, u);
     expect(find.text('Olive is up to date'), findsOneWidget);
-    expect(find.text('Last checked: today at 12:00'), findsOneWidget);
+    expect(find.text('Last checked: ${_todayAt(kNow)}'), findsOneWidget);
     expect(find.byKey(const Key('updateDownloadWifi')), findsNothing);
   });
 
@@ -297,7 +310,7 @@ void main() {
     testWidgets('on the home screen: the line is there, the rest of the home is untouched, and "Later" does not hide it', (t) async {
       await rig.publish(apk, tweak: (Map<String, Object?> d) => d..['minSupportedVersionCode'] = 5150);
       final AppUpdater u = await prepared(t, then: (AppUpdater u) => u.checkNow());
-      await pumpScreen(t, u, child: Scaffold(body: Column(children: const <Widget>[UpdateBanner(), Text('Everything else on the home screen')])));
+      await pumpScreen(t, u, child: const Scaffold(body: Column(children: <Widget>[UpdateBanner(), Text('Everything else on the home screen')])));
       expect(find.byKey(const Key('updateBannerPlease')), findsOneWidget);
       expect(find.text('Please update Olive'), findsOneWidget);
       expect(find.text('Everything else on the home screen'), findsOneWidget);
@@ -306,7 +319,7 @@ void main() {
   });
 
   group('the gentle line on the home screen', () {
-    Widget home() => Scaffold(body: Column(children: const <Widget>[UpdateBanner(), Text('home content')]));
+    Widget home() => const Scaffold(body: Column(children: <Widget>[UpdateBanner(), Text('home content')]));
 
     testWidgets('"An update is ready" with Later; Later puts it away; See opens the page', (t) async {
       await publish();
@@ -324,7 +337,7 @@ void main() {
     testWidgets('See the update opens Settings > App updates', (t) async {
       await publish();
       final AppUpdater u = await prepared(t, then: (AppUpdater u) => u.checkNow());
-      await pumpScreen(t, u, child: Builder(builder: (BuildContext c) => Scaffold(body: Column(children: const <Widget>[UpdateBanner()]))));
+      await pumpScreen(t, u, child: Builder(builder: (BuildContext c) => const Scaffold(body: Column(children: <Widget>[UpdateBanner()]))));
       await t.tap(find.text('See the update'));
       await t.pumpAndSettle();
       expect(find.text('App updates'), findsWidgets);
@@ -375,7 +388,7 @@ void main() {
       expect(find.text("What's new in 0.52.0"), findsOneWidget);
       expect(find.text('• Messages open a little faster.'), findsOneWidget);
       expect(find.byKey(const Key('updateDataNote')), findsOneWidget);
-      expect(find.text('Last updated to 0.52.0 today at 12:00'), findsOneWidget);
+      expect(find.text('Last updated to 0.52.0 ${_todayAt(kNow)}'), findsOneWidget);
       await t.tap(find.byKey(const Key('updateWhatsNewGotIt')));
       await settle(t);
       expect(find.byKey(const Key('updateWhatsNew')), findsNothing);

@@ -27,6 +27,7 @@ import 'package:path_provider/path_provider.dart';
 import 'local_services.dart';
 import 'server_transport_policy.dart' show OliveTransportPolicy, kAllowDevCleartext;
 import 'update_download.dart';
+import 'update_github.dart';
 import 'update_manifest.dart';
 import 'update_platform.dart';
 import 'update_policy.dart';
@@ -40,7 +41,12 @@ class UpdateConfig {
     this.channel = 'stable',
     required this.trust,
     this.allowLoopbackHttp = false,
+    this.githubEnabled = false,
   });
+
+  /// The built-in "GitHub releases" source of the direct build (update_github.dart). Used only when no usable signed
+  /// manifest source is configured (an address AND an owner key): a signed manifest is the stronger path and wins.
+  final bool githubEnabled;
 
   /// The primary manifest address first, then mirrors. Empty means "no source built in".
   final List<String> manifestUrls;
@@ -56,6 +62,8 @@ class UpdateConfig {
         channel: const String.fromEnvironment('OLIVE_UPDATE_CHANNEL', defaultValue: 'stable'),
         trust: UpdateTrust.fromEnvironment(),
         allowLoopbackHttp: kAllowDevCleartext,
+        // On by default in the direct build with no setup; --dart-define=OLIVE_UPDATE_GITHUB=false turns it off.
+        githubEnabled: const bool.fromEnvironment('OLIVE_UPDATE_GITHUB', defaultValue: true),
       );
 }
 
@@ -73,6 +81,10 @@ enum UpdatePhase {
   installing,
   failed,
 }
+
+/// The folder, inside the app's own files, that a download lives in. The direct flavor's native side reads from this same
+/// name (UpdateBridge.STAGING_DIR) and from nowhere else: test/update_source_test.dart holds the two together.
+const String kUpdateStagingDir = 'olive_updates';
 
 /// Throttled phone readings used between chunks.
 const int kLowBatteryPercent = 15;
@@ -118,13 +130,15 @@ class AppUpdater extends ChangeNotifier {
     required this._config,
     required UpdateStateRepository repository,
     required this._transport,
+    UpdateTransport? githubTransport,
     this._staging,
     this._direct,
     this._play,
     UpdateSafety? safety,
     DateTime Function()? clock,
     this._sleep,
-  })  : _envSource = environment,
+  })  : _githubTransport = githubTransport,
+        _envSource = environment,
         _repo = repository,
         _safety = safety ?? UpdateSafety(),
         _clock = clock ?? DateTime.now;
@@ -139,7 +153,14 @@ class AppUpdater extends ChangeNotifier {
       config: config ?? UpdateConfig.fromEnvironment(),
       repository: LocalStoreUpdateStateRepository(),
       transport: HttpUpdateTransport(policy: const OliveTransportPolicy(release: kReleaseMode)),
-      staging: f == UpdateFlavor.direct ? UpdateStaging(Directory('${support.path}${Platform.pathSeparator}olive_updates')) : null,
+      // The GitHub source is pinned to GitHub's own hosts on every hop; the signed-manifest transport is not.
+      githubTransport: HttpUpdateTransport(
+        policy: const OliveTransportPolicy(release: kReleaseMode),
+        getHosts: kGithubApiHosts,
+        openHosts: kGithubDownloadHosts,
+        timeout: const Duration(seconds: 20),
+      ),
+      staging: f == UpdateFlavor.direct ? UpdateStaging(Directory('${support.path}${Platform.pathSeparator}$kUpdateStagingDir')) : null,
       direct: f == UpdateFlavor.direct ? native : null,
       play: f == UpdateFlavor.play ? native : null,
       safety: UpdateSafety.forApp(),
@@ -150,6 +171,7 @@ class AppUpdater extends ChangeNotifier {
   final UpdateConfig _config;
   final UpdateStateRepository _repo;
   final UpdateTransport _transport;
+  final UpdateTransport? _githubTransport;
   final UpdateStaging? _staging;
   final DirectInstaller? _direct;
   final PlayUpdater? _play;
@@ -169,6 +191,23 @@ class AppUpdater extends ChangeNotifier {
 
   /// The update that was found, if any.
   UpdateManifest? get manifest => _verdict?.manifest;
+
+  /// The signed-manifest source has an address and an owner key.
+  bool get _signedUsable => manifestUrls.isNotEmpty && !_config.trust.isEmpty;
+
+  /// This build looks for updates in GitHub's releases (no signed manifest is configured). The transport used for that
+  /// source is pinned to GitHub; a download from here is verified by size and SHA-256 only, never by a signature.
+  bool get usesGithub => _flavor == UpdateFlavor.direct && _config.githubEnabled && !_signedUsable;
+
+  UpdateTransport get _gh => _githubTransport ?? _transport;
+
+  /// Releases newer than the installed build but older than the one on offer (newest first), for "what you missed".
+  List<GithubRelease> get missedReleases => _between;
+  List<GithubRelease> _between = const <GithubRelease>[];
+
+  /// The newest release on offer was a pre-release.
+  bool get offerIsPrerelease => _offer?.prerelease ?? false;
+  GithubRelease? _offer;
 
   /// The file for this phone (null in the Play flavor, which never downloads one).
   ApkEntry? get apk => _verdict?.apk;
@@ -209,6 +248,10 @@ class AppUpdater extends ChangeNotifier {
 
   UpdateCancel? _cancel;
   bool _busy = false;
+
+  /// A check, a download or an install is running right now (a second request is ignored while this is true).
+  bool get busy => _busy;
+
   StreamSubscription<InstallEvent>? _installSub;
   StreamSubscription<PlayEvent>? _playSub;
   int _lastGuardMs = 0;
@@ -241,9 +284,8 @@ class AppUpdater extends ChangeNotifier {
       return;
     }
     _flavor = flavorFromWord(_env!.flavor);
-    final bool haveSource = _config.manifestUrls.isNotEmpty || _state.manifestUrl != null;
     if (_flavor == UpdateFlavor.none ||
-        (_flavor == UpdateFlavor.direct && (!haveSource || _config.trust.isEmpty || _direct == null || _staging == null)) ||
+        (_flavor == UpdateFlavor.direct && (!(_signedUsable || usesGithub) || _direct == null || _staging == null)) ||
         (_flavor == UpdateFlavor.play && _play == null)) {
       _set(UpdatePhase.off);
       return;
@@ -296,10 +338,28 @@ class AppUpdater extends ChangeNotifier {
   }
 
   File get _manifestCopy => File('${_staging!.dir.path}${Platform.pathSeparator}manifest.json');
+  File get _githubCopy => File('${_staging!.dir.path}${Platform.pathSeparator}github_releases.json');
+
+  /// The last answer that offered an update (the signed document, or GitHub's list), kept so a restart needs no network.
+  /// A download sweeps the folder, so it is written again once the file is complete.
+  Uint8List? _docBytes;
+
+  Future<void> _writeCopy() async {
+    final Uint8List? b = _docBytes;
+    if (b == null || _staging == null) return;
+    try {
+      await _staging.ensure();
+      await (usesGithub ? _githubCopy : _manifestCopy).writeAsBytes(b, flush: true);
+    } catch (_) {}
+  }
 
   Future<void> _restoreStaged() async {
     if (_staging == null || _flavor != UpdateFlavor.direct) return;
     try {
+      if (usesGithub) {
+        await _restoreGithub();
+        return;
+      }
       if (!await _manifestCopy.exists()) return;
       final Uint8List doc = await _manifestCopy.readAsBytes();
       final VerifiedManifest v = await verifyManifestDocument(doc, _config.trust, allowLoopbackHttp: _config.allowLoopbackHttp);
@@ -322,11 +382,38 @@ class AppUpdater extends ChangeNotifier {
     }
   }
 
-  UpdateContext _context() => UpdateContext(
+  Future<void> _restoreGithub() async {
+    if (!await _githubCopy.exists()) return;
+    final Uint8List doc = await _githubCopy.readAsBytes();
+    final GithubOffer? offer = pickGithubOffer(parseGithubReleases(doc), _env!.installedVersionCode);
+    if (offer == null) {
+      await _staging!.sweep();
+      return;
+    }
+    _docBytes = doc;
+    final UpdateVerdict d = _adoptOffer(offer);
+    final ApkEntry file = d.apk!;
+    final File done = _staging!.finalFor(file);
+    final bool have = await done.exists() && await done.length() == file.size;
+    _set(have ? UpdatePhase.ready : UpdatePhase.available, failure: _failure);
+  }
+
+  /// Makes [offer] the update this run shows, through the same decision the signed path uses (right app, right channel,
+  /// strictly newer than what is installed, a file for this chip). Throws [UpdateRefusal] if it is not.
+  UpdateVerdict _adoptOffer(GithubOffer offer) {
+    final UpdateManifest m = githubAsManifest(offer.newest, channel: channel, now: _clock());
+    final UpdateVerdict d = decideUpdate(m, _context(replayGuard: false));
+    _verdict = d;
+    _offer = offer.newest;
+    _between = offer.between;
+    return d;
+  }
+
+  UpdateContext _context({bool replayGuard = true}) => UpdateContext(
         channel: channel,
         installedVersionCode: _env!.installedVersionCode,
         now: _clock(),
-        highestSeenSequence: _state.highestSeenSequence,
+        highestSeenSequence: replayGuard ? _state.highestSeenSequence : null,
         deviceAbis: _env!.abis,
         requireApk: _flavor == UpdateFlavor.direct,
       );
@@ -341,7 +428,7 @@ class AppUpdater extends ChangeNotifier {
     if (!s.autoCheck) return;
     final int now = _clock().millisecondsSinceEpoch;
     final int? last = s.lastAttemptMs;
-    final Duration gap = s.lastResult == 'ok' ? kCheckEvery : kRetryAfterFailure;
+    final Duration gap = s.lastResult == 'ok' ? (usesGithub ? kGithubCheckEvery : kCheckEvery) : kRetryAfterFailure;
     if (last != null && now >= last && now - last < gap.inMilliseconds) {
       await pollQueuedDownload();
       return;
@@ -380,6 +467,8 @@ class AppUpdater extends ChangeNotifier {
       _set(UpdatePhase.checking);
       if (_flavor == UpdateFlavor.play) {
         await _checkPlay();
+      } else if (usesGithub) {
+        await _checkGithub(before, manual);
       } else {
         await _checkManifests(before);
       }
@@ -462,10 +551,54 @@ class AppUpdater extends ChangeNotifier {
     // Keep the signed document so the update survives a restart without the network.
     try {
       await _staging!.ensure();
+      _docBytes = _lastDocs[best];
       await _manifestCopy.writeAsBytes(_lastDocs[best]!, flush: true);
     } catch (_) {}
     final File? f = best.apk == null ? null : await _staging!.verifiedFile(best.apk!);
     _set(f != null ? UpdatePhase.ready : UpdatePhase.available);
+  }
+
+  /// Looks in GitHub's releases. Every failure is quiet unless a grown-up pressed the button ([manual]); a failed check
+  /// never takes away an update that was already found.
+  Future<void> _checkGithub(UpdatePhase before, bool manual) async {
+    final int now = _clock().millisecondsSinceEpoch;
+    UpdateRefusal? why;
+    try {
+      final UpdateResponse r = await _gh.get(githubReleasesUri(), maxBytes: kMaxGithubBytes);
+      final GithubOffer? offer = pickGithubOffer(parseGithubReleases(r.body), _env!.installedVersionCode);
+      if (offer == null) {
+        await _save(_state.copyWith(lastAttemptMs: now, lastCheckMs: now, lastResult: 'ok'));
+        _verdict = null;
+        _offer = null;
+        _between = const <GithubRelease>[];
+        _docBytes = null;
+        await _staging?.sweep();
+        _set(UpdatePhase.upToDate);
+        return;
+      }
+      final UpdateVerdict d = _adoptOffer(offer);
+      await _save(_state.copyWith(
+        lastAttemptMs: now,
+        lastCheckMs: now,
+        lastResult: 'ok',
+        lastSeenVersionName: offer.newest.versionName,
+      ));
+      _docBytes = r.body;
+      await _writeCopy();
+      final File? f = await _staging!.verifiedFile(d.apk!);
+      _set(f != null ? UpdatePhase.ready : UpdatePhase.available);
+      return;
+    } on UpdateRefusal catch (e) {
+      why = e;
+    } catch (_) {
+      why = const UpdateRefusal(UpdateRefusalCode.badShape, 'unreadable');
+    }
+    await _save(_state.copyWith(
+        lastAttemptMs: now, lastResult: why.code == UpdateRefusalCode.offline ? 'offline' : 'refused:${why.code.name}'));
+    final UpdatePhase back = (before == UpdatePhase.checking || before == UpdatePhase.off || before == UpdatePhase.failed)
+        ? UpdatePhase.idle
+        : before;
+    _set(back, failure: manual ? why.code : null);
   }
 
   Future<void> _checkPlay() async {
@@ -548,7 +681,7 @@ class AppUpdater extends ChangeNotifier {
       _progress = DownloadProgress(0, file.size);
       _set(UpdatePhase.downloading);
       final UpdateDownloader dl = UpdateDownloader(
-        transport: _transport,
+        transport: usesGithub ? _gh : _transport,
         staging: staging,
         sleep: _sleep,
       );
@@ -568,6 +701,7 @@ class AppUpdater extends ChangeNotifier {
         },
       );
       _progress = DownloadProgress(file.size, file.size);
+      await _writeCopy();
       await _save(_state.copyWith(queuedVersionCode: null));
       _set(UpdatePhase.ready);
     } on UpdateRefusal catch (r) {
@@ -657,7 +791,7 @@ class AppUpdater extends ChangeNotifier {
         _set(UpdatePhase.failed, failure: UpdateRefusalCode.apkMismatch);
         return;
       }
-      if (!ins.signedLikeInstalled(pinned: file.signerSha256)) {
+      if (!ins.signedLikeInstalled(pinned: file.signerSha256.isEmpty ? null : file.signerSha256)) {
         await _staging.discard(file);
         _set(UpdatePhase.failed, failure: UpdateRefusalCode.certMismatch);
         return;
@@ -833,7 +967,7 @@ class AppUpdater extends ChangeNotifier {
   Future<StagedUpdate?> stagedForHandover() async {
     final UpdateManifest? m = manifest;
     final ApkEntry? file = apk;
-    if (m == null || file == null || _staging == null || _flavor != UpdateFlavor.direct) return null;
+    if (m == null || file == null || _staging == null || _flavor != UpdateFlavor.direct || usesGithub) return null;
     final File? f = await _staging.verifiedFile(file);
     if (f == null || !await _manifestCopy.exists()) return null;
     return StagedUpdate(manifestDocument: await _manifestCopy.readAsBytes(), apk: f, manifest: m);

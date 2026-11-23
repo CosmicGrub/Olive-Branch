@@ -69,12 +69,20 @@ void main() {
       expect(main.contains('UpdateStatusReceiver'), isFalse);
     });
 
-    test('the direct manifest declares it exactly once, and its receiver is not exported', () {
+    test('the direct manifest declares it exactly once, and declares nothing else (no exported component, no file provider)', () {
       expect('REQUEST_INSTALL_PACKAGES'.allMatches(direct).length, 1);
       expect(direct, contains('<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>'));
-      expect(direct, contains('android:name=".UpdateStatusReceiver"'));
-      expect(RegExp(r'UpdateStatusReceiver"\s+android:exported="false"').hasMatch(direct), isTrue);
+      expect(direct.contains('<receiver'), isFalse);
+      expect(direct.contains('<provider'), isFalse);
+      expect(direct.contains('exported="true"'), isFalse);
       expect(direct.contains('FileProvider'), isFalse, reason: 'a session install streams from the private folder; no content URI is shared');
+    });
+
+    test('the installer answers come to a receiver registered at run time and NOT exported', () {
+      final String kt = read('android/app/src/direct/kotlin/com/olivebranch/olive_client/UpdateBridge.kt');
+      expect(kt, contains('Context.RECEIVER_NOT_EXPORTED'));
+      expect(kt, contains('intent.setPackage(context.packageName)'));
+      expect(kt, contains('registerReceiver(UpdateStatusReceiver()'));
     });
 
     test('the play manifest REMOVES it, so no library can add it back', () {
@@ -182,7 +190,7 @@ void main() {
 
     test('the folder the native side will read from is the folder Dart writes to', () {
       expect(d['STAGING_DIR'], 'olive_updates');
-      expect(read('lib/update_controller.dart'), contains("'olive_updates'"));
+      expect(read('lib/update_controller.dart'), contains("kUpdateStagingDir = 'olive_updates'"));
     });
 
     test('the words native sends for results are the words Dart reads', () {

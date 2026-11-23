@@ -7,7 +7,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/update_controller.dart';
-import 'package:olive_client/update_download.dart';
 import 'package:olive_client/update_manifest.dart';
 import 'package:olive_client/update_platform.dart';
 import 'package:olive_client/update_store.dart';
@@ -87,7 +86,7 @@ void main() {
       expect(u.belowMinimum, isFalse);
       expect(u.state.lastResult, 'ok');
       expect(u.state.lastCheckMs, kNow.millisecondsSinceEpoch);
-      expect(u.state.highestSeenVersionCode, 5200);
+      expect(u.state.highestSeenSequence, 1795255200);
       expect(u.state.lastSeenVersionName, '0.52.0');
       expect(u.bannerWanted, isTrue);
     });
@@ -105,7 +104,7 @@ void main() {
       final Rig r = await Rig.create(manifestUrls: const <String>[kManifestUrl, kManifestMirror]);
       addTearDown(r.dispose);
       final Uint8List old = fakeApk(kChunk + 10, 5);
-      Map<String, Object?> oldDraft = await draftFor(old, versionName: '0.51.5', minSupported: 5100);
+      Map<String, Object?> oldDraft = await draftFor(old, versionName: '0.51.5', minSupported: 5100, sequence: 1795255100);
       r.transport.manifests[kManifestUrl] = encodeDoc(await r.signer.sign(oldDraft));
       Map<String, Object?> newDraft = await draftFor(apk);
       r.transport.manifests[kManifestMirror] = encodeDoc(await r.signer.sign(newDraft));
@@ -187,11 +186,11 @@ void main() {
       final AppUpdater u = await started();
       await u.checkNow();
       expect(u.phase, UpdatePhase.available);
-      rig.transport.manifests[kManifestUrl] = encodeDoc(await rig.signer.sign(await draftFor(apk, versionName: '0.51.5', minSupported: 5100)));
+      rig.transport.manifests[kManifestUrl] = encodeDoc(await rig.signer.sign(await draftFor(apk, versionName: '0.51.5', minSupported: 5100, sequence: 1795255100)));
       await u.checkNow();
       expect(u.phase, UpdatePhase.available);
       expect(u.manifest!.versionName, '0.52.0');
-      expect(u.state.highestSeenVersionCode, 5200);
+      expect(u.state.highestSeenSequence, 1795255200);
     });
 
     test('a manifest for another channel', () async {
@@ -206,11 +205,11 @@ void main() {
       expect(u.failure, UpdateRefusalCode.expired);
       rig.time = DateTime.utc(2026, 10, 1);
       u = await checked(encodeDoc(await rig.signer.sign(await draftFor(apk))));
-      expect(u.failure, UpdateRefusalCode.future);
+      expect(u.failure, UpdateRefusalCode.notYetValid);
     });
 
     test('a manifest for another app, one for another chip, and one with a cleartext address', () async {
-      AppUpdater u = await checked(encodeDoc(await rig.signer.sign(await draftFor(apk, appId: 'com.example.other'))));
+      AppUpdater u = await checked(encodeDoc(await rig.signer.sign(await draftFor(apk, app: 'com.example.other'))));
       expect(u.failure, UpdateRefusalCode.wrongApp);
       u = await checked(encodeDoc(await rig.signer.sign(await draftFor(apk, abi: 'x86_64'))));
       expect(u.failure, UpdateRefusalCode.noApkForDevice);
@@ -322,7 +321,7 @@ void main() {
       await u.downloadOnWifi();
       expect(u.phase, UpdatePhase.ready);
       expect(u.progress!.fraction, 1.0);
-      expect(File('${rig.staging.path}${Platform.pathSeparator}${u.manifest!.apk.sha256}.apk').existsSync(), isTrue);
+      expect(File('${rig.staging.path}${Platform.pathSeparator}${u.apk!.sha256}.apk').existsSync(), isTrue);
       expect(u.state.queuedVersionCode, isNull);
     });
 
@@ -400,7 +399,7 @@ void main() {
       });
       await u.downloadOnWifi();
       expect(u.phase, UpdatePhase.waitingForWifi);
-      final File part = File('${rig.staging.path}${Platform.pathSeparator}${u.manifest!.apk.sha256}.part');
+      final File part = File('${rig.staging.path}${Platform.pathSeparator}${u.apk!.sha256}.part');
       expect(await part.length(), greaterThanOrEqualTo(kChunk), reason: 'the good chunks are kept');
       rig.transport.files[kPrimary] = FileBehavior(apk);
       rig.env.value = wifiPhone();
@@ -428,7 +427,7 @@ void main() {
       await u.downloadNow();
       expect(u.phase, UpdatePhase.failed);
       expect(u.failure, UpdateRefusalCode.hashMismatch);
-      final String sha = u.manifest!.apk.sha256;
+      final String sha = u.apk!.sha256;
       expect(File('${rig.staging.path}${Platform.pathSeparator}$sha.apk').existsSync(), isFalse);
       rig.transport.files[kPrimary] = FileBehavior(apk);
       await u.checkNow();
@@ -443,7 +442,7 @@ void main() {
       });
       await u.downloadNow();
       expect(u.phase, UpdatePhase.available);
-      final File part = File('${rig.staging.path}${Platform.pathSeparator}${u.manifest!.apk.sha256}.part');
+      final File part = File('${rig.staging.path}${Platform.pathSeparator}${u.apk!.sha256}.part');
       expect(part.existsSync() && await part.length() >= kChunk, isTrue);
     });
   });
@@ -464,7 +463,7 @@ void main() {
       expect(u.phase, UpdatePhase.installing);
       expect(rig.installer.inspects, 1);
       final Map<String, Object?> call = rig.installer.installs.single;
-      expect(call['sha256'], u.manifest!.apk.sha256);
+      expect(call['sha256'], u.apk!.sha256);
       expect(call['size'], apk.length);
       expect(call['versionCode'], 5200);
       expect(rig.flushed, <String>['flushed'], reason: 'pending writes are flushed first');
@@ -482,12 +481,12 @@ void main() {
       expect(u.phase, UpdatePhase.failed);
       expect(u.failure, UpdateRefusalCode.certMismatch);
       expect(rig.installer.installs, isEmpty);
-      expect(File('${rig.staging.path}${Platform.pathSeparator}${u.manifest!.apk.sha256}.apk').existsSync(), isFalse);
+      expect(File('${rig.staging.path}${Platform.pathSeparator}${u.apk!.sha256}.apk').existsSync(), isFalse);
     });
 
     test('a certificate the owner pinned in the manifest must be the one on the file', () async {
       await rig.publish(apk, tweak: (Map<String, Object?> d) {
-        (d['apk']! as Map<String, Object?>)['signerSha256'] = certHash('pinned');
+        apk0(d)['signerSha256'] = certHash('pinned');
         return d;
       });
       final AppUpdater u = await started();
@@ -497,7 +496,7 @@ void main() {
       expect(u.failure, UpdateRefusalCode.certMismatch, reason: 'the file is signed like the app, but not by the pinned certificate');
       rig.installer.signers = <String>[certHash('owner'), certHash('pinned')];
       await rig.publish(apk, tweak: (Map<String, Object?> d) {
-        (d['apk']! as Map<String, Object?>)['signerSha256'] = certHash('pinned');
+        apk0(d)['signerSha256'] = certHash('pinned');
         return d;
       });
       await u.checkNow();
@@ -589,7 +588,7 @@ void main() {
 
     test('a file changed on disk after it was verified is not installed', () async {
       final AppUpdater u = await ready();
-      final File f = File('${rig.staging.path}${Platform.pathSeparator}${u.manifest!.apk.sha256}.apk');
+      final File f = File('${rig.staging.path}${Platform.pathSeparator}${u.apk!.sha256}.apk');
       final RandomAccessFile r = await f.open(mode: FileMode.append);
       await r.writeByte(1);
       await r.close();
@@ -799,7 +798,7 @@ void main() {
       final UpdateRefusal? r = await tablet.acceptHandedOver(staged.manifestDocument, staged.apk.openRead());
       expect(r, isNull);
       expect(tablet.phase, UpdatePhase.ready);
-      expect(tablet.state.highestSeenVersionCode, 5200);
+      expect(tablet.state.highestSeenSequence, 1795255200);
       await tablet.install();
       expect(tablet.phase, UpdatePhase.installing);
       expect(same.transport.openLog, isEmpty);

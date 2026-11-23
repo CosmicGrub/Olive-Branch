@@ -159,6 +159,7 @@ class UpdateDownloader {
       onProgress?.call(DownloadProgress(apk.size, apk.size));
       return already;
     }
+    if (apk.chunks.isEmpty) return _downloadWhole(apk, onProgress, cancel, guard);
     int good = await staging.goodChunks(apk);
     onProgress?.call(DownloadProgress(_bytesFor(apk, good), apk.size));
     UpdateRefusal? last;
@@ -194,6 +195,107 @@ class UpdateDownloader {
     }
     if (good < apk.chunkCount) throw last ?? const UpdateRefusal(UpdateRefusalCode.truncated, 'no address worked');
     return _finish(apk);
+  }
+
+  /// A file that names only its size and whole-file hash (the GitHub source: a release publishes one hash, not one per
+  /// chunk). It is streamed to the `.part` file and continues from where it stopped after a dropped connection; only the
+  /// FINAL check (exact size, then SHA-256 of the whole file) can turn it into the finished name, so a corrupt or swapped
+  /// byte anywhere is caught before the installer could ever be handed the file.
+  Future<File> _downloadWhole(ApkEntry apk, void Function(DownloadProgress)? onProgress, UpdateCancel? cancel, UpdateGuard? guard) async {
+    final File part = staging.partFor(apk);
+    UpdateRefusal? last;
+    for (int u = 0; u < apk.urls.length; u++) {
+      int attempt = 0;
+      while (true) {
+        if (cancel?.isCancelled ?? false) throw const UpdateRefusal(UpdateRefusalCode.cancelled);
+        try {
+          await _pullWhole(apk, apk.urls[u], part, onProgress, cancel, guard);
+          return _finish(apk);
+        } on UpdateRefusal catch (e) {
+          last = e;
+          switch (e.code) {
+            case UpdateRefusalCode.cancelled:
+            case UpdateRefusalCode.lowBattery:
+            case UpdateRefusalCode.needsWifi:
+            case UpdateRefusalCode.noSpace:
+            case UpdateRefusalCode.hashMismatch:
+            case UpdateRefusalCode.sizeMismatch:
+              rethrow; // a pause, or a finished file that failed its check (already deleted)
+            case UpdateRefusalCode.offline:
+            case UpdateRefusalCode.truncated:
+              if (++attempt <= retriesPerUrl) {
+                await _sleep(backoff * (1 << (attempt - 1)));
+                continue;
+              }
+            default:
+              break;
+          }
+          break;
+        }
+      }
+    }
+    throw last ?? const UpdateRefusal(UpdateRefusalCode.truncated, 'no address worked');
+  }
+
+  Future<void> _pullWhole(ApkEntry apk, Uri url, File part, void Function(DownloadProgress)? onProgress, UpdateCancel? cancel,
+      UpdateGuard? guard) async {
+    int have = await part.exists() ? await part.length() : 0;
+    if (have > apk.size) {
+      await part.delete();
+      have = 0;
+    }
+    if (have == apk.size) return;
+    onProgress?.call(DownloadProgress(have, apk.size));
+    final UpdateStream s = await transport.open(url, rangeStart: have, cancel: cancel);
+    if (have > 0) {
+      if (s.status == 206 && s.contentRangeStart == have) {
+        if (s.contentLength != null && s.contentLength! > apk.size - have) {
+          throw const UpdateRefusal(UpdateRefusalCode.tooMuchData, 'more than the file');
+        }
+      } else if (s.status == 206) {
+        throw const UpdateRefusal(UpdateRefusalCode.httpError, 'wrong range');
+      } else {
+        have = 0; // the server sent the whole file: start the part file again
+        if (s.contentLength != null && s.contentLength! > apk.size) {
+          throw const UpdateRefusal(UpdateRefusalCode.tooMuchData, 'more than the file');
+        }
+      }
+    } else if (s.contentLength != null && s.contentLength! > apk.size) {
+      throw const UpdateRefusal(UpdateRefusalCode.tooMuchData, 'more than the file');
+    }
+    final RandomAccessFile out = await part.open(mode: have == 0 ? FileMode.write : FileMode.append);
+    int done = have;
+    int reported = have;
+    try {
+      try {
+        await for (final List<int> data in s.body.timeout(stall)) {
+          if (cancel?.isCancelled ?? false) throw const UpdateRefusal(UpdateRefusalCode.cancelled);
+          await guard?.call();
+          if (done + data.length > apk.size) throw const UpdateRefusal(UpdateRefusalCode.tooMuchData, 'more than the file');
+          try {
+            await out.writeFrom(data);
+          } on FileSystemException {
+            throw const UpdateRefusal(UpdateRefusalCode.noSpace, 'could not write the file');
+          }
+          done += data.length;
+          if (done - reported >= 256 * 1024 || done == apk.size) {
+            reported = done;
+            onProgress?.call(DownloadProgress(done, apk.size));
+          }
+          if (done == apk.size) break;
+        }
+        await out.flush();
+      } on TimeoutException {
+        throw const UpdateRefusal(UpdateRefusalCode.offline, 'the connection stalled');
+      } on SocketException {
+        throw const UpdateRefusal(UpdateRefusalCode.offline, 'the connection dropped');
+      } on HttpException {
+        throw const UpdateRefusal(UpdateRefusalCode.offline, 'the connection dropped');
+      }
+    } finally {
+      await out.close();
+    }
+    if (done < apk.size) throw const UpdateRefusal(UpdateRefusalCode.truncated, 'the connection ended early');
   }
 
   int _bytesFor(ApkEntry a, int chunks) => chunks >= a.chunkCount ? a.size : chunks * a.chunkSize;

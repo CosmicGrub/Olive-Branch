@@ -20,18 +20,15 @@ void main() {
     int installed = 5100,
     String channel = 'stable',
     int? seen,
-    DateTime? seenAt,
     DateTime? now,
     List<String> abis = const <String>['arm64-v8a'],
     bool requireApk = true,
   }) =>
       UpdateContext(
-        appId: kUpdateAppId,
         channel: channel,
         installedVersionCode: installed,
         now: now ?? kNow,
-        highestSeenVersionCode: seen,
-        highestSeenPublishedAt: seenAt,
+        highestSeenSequence: seen,
         deviceAbis: abis,
         requireApk: requireApk,
       );
@@ -56,13 +53,14 @@ void main() {
     expect(refusal(m, ctx(installed: 5300)), UpdateRefusalCode.rollback);
   });
 
-  test('replay: a manifest older than one already accepted is refused, however well signed', () async {
+  test('replay: a manifest with a lower sequence than one already accepted is refused, however well signed', () async {
     final UpdateManifest m = await manifest(null);
-    expect(refusal(m, ctx(seen: 5300)), UpdateRefusalCode.replayed);
-    expect(refusal(m, ctx(seen: 5200)), isNull);
-    // The same version served again, but an OLDER copy of it than the one already accepted.
-    expect(refusal(m, ctx(seen: 5200, seenAt: m.publishedAt.add(const Duration(days: 1)))), UpdateRefusalCode.replayed);
-    expect(refusal(m, ctx(seen: 5200, seenAt: m.publishedAt)), isNull);
+    expect(m.sequence, 1795255200);
+    expect(refusal(m, ctx(seen: m.sequence + 1)), UpdateRefusalCode.replayed);
+    // The same sequence again is a harmless re-fetch, a higher one is the next release.
+    expect(refusal(m, ctx(seen: m.sequence)), isNull);
+    expect(refusal(m, ctx(seen: m.sequence - 1)), isNull);
+    expect(refusal(m, ctx()), isNull);
   });
 
   test('a manifest from a different channel is refused', () async {
@@ -71,33 +69,31 @@ void main() {
     expect(refusal(beta, ctx(channel: 'beta')), isNull);
   });
 
-  test('a manifest for another app is refused', () async {
-    final UpdateManifest other = await manifest((Map<String, Object?> d) => d..['appId'] = 'com.example.other');
-    expect(refusal(other, ctx()), UpdateRefusalCode.wrongApp);
+  test('a manifest that names another app is refused by the parser, and never reaches the policy', () async {
+    expect(manifest((Map<String, Object?> d) => d..['app'] = 'com.example.other'), throwsA(isA<UpdateRefusal>()));
   });
 
-  test('the clock: not from the future (a day of slack), not past validUntil', () async {
+  test('the clock: not from the future (a day of slack), not past expiresAt', () async {
     final UpdateManifest m = await manifest(null);
     expect(refusal(m, ctx(now: DateTime.utc(2026, 11, 20, 11))), isNull, reason: 'within the day of slack');
-    expect(refusal(m, ctx(now: DateTime.utc(2026, 11, 19))), UpdateRefusalCode.future);
+    expect(refusal(m, ctx(now: DateTime.utc(2026, 11, 19))), UpdateRefusalCode.notYetValid);
     expect(refusal(m, ctx(now: DateTime.utc(2027, 5, 22))), UpdateRefusalCode.expired);
-    final UpdateManifest forever = await manifest((Map<String, Object?> d) => d..remove('validUntil'));
-    expect(refusal(forever, ctx(now: DateTime.utc(2030))), isNull);
   });
 
   test('a file for another chip is refused; a universal file runs anywhere; Play needs no file', () async {
     final UpdateManifest x86 = await manifest((Map<String, Object?> d) {
-      (d['apk']! as Map<String, Object?>)['abi'] = 'x86_64';
+      apk0(d)['abi'] = 'x86_64';
       return d;
     });
     expect(refusal(x86, ctx()), UpdateRefusalCode.noApkForDevice);
     expect(refusal(x86, ctx(requireApk: false)), isNull);
     final UpdateManifest uni = await manifest((Map<String, Object?> d) {
-      (d['apk']! as Map<String, Object?>)['abi'] = 'universal';
+      apk0(d)['abi'] = 'universal';
       return d;
     });
     expect(refusal(uni, ctx(abis: const <String>[])), isNull);
-    expect(abiAccepted('arm64-v8a', const <String>[]), isFalse);
+    expect(uni.apkFor(const <String>['arm64-v8a'])?.abi, 'universal');
+    expect(x86.apkFor(const <String>['arm64-v8a']), isNull);
   });
 
   test('the minimum: below it the verdict says so; at or above it does not; an update is still an update', () async {

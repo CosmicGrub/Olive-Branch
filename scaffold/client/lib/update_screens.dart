@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 
 import 'update_controller.dart';
 import 'update_download.dart' show DownloadProgress;
+import 'update_github.dart' show GithubRelease, kGithubOwner, kGithubRepo;
 import 'update_manifest.dart';
 import 'update_platform.dart';
 import 'update_store.dart';
@@ -101,7 +102,8 @@ String updateTimeWords(int? ms, DateTime now) {
   if (ms == null) return 'not yet';
   final DateTime t = DateTime.fromMillisecondsSinceEpoch(ms);
   final String hh = t.hour.toString().padLeft(2, '0'), mm = t.minute.toString().padLeft(2, '0');
-  final bool sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
+  final DateTime n = now.toLocal();
+  final bool sameDay = t.year == n.year && t.month == n.month && t.day == n.day;
   return sameDay ? 'today at $hh:$mm' : '${t.day} ${_months[t.month - 1]} ${t.year}, $hh:$mm';
 }
 
@@ -209,7 +211,7 @@ class UpdateBanner extends StatelessWidget {
       return _card(context, scheme,
           key: const Key('updateBannerReady'),
           icon: Icons.system_update_outlined,
-          title: 'An update is ready',
+          title: u.usesGithub && name.isNotEmpty ? 'Update available: $name' : 'An update is ready',
           body: name.isEmpty ? 'A new version of Olive is available.' : 'Olive $name is available.',
           actions: <Widget>[
             FilledButton(onPressed: () => openAppUpdates(context), child: const Text('See the update')),
@@ -385,7 +387,10 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
       case UpdatePhase.failed:
         kids.addAll(_updateBody(context, u, m));
     }
-    if (u.failure != null &&
+    if (u.usesGithub && u.failure != null && _isCheckFailure(u.failure!) && u.phase != UpdatePhase.downloading) {
+      // Only a grown-up who pressed the button ever sees this: a check in the background fails silently.
+      kids.add(line('Could not check right now. Nothing was changed.', key: const Key('updateFailure')));
+    } else if (u.failure != null &&
         u.phase != UpdatePhase.available &&
         u.phase != UpdatePhase.downloading &&
         u.phase != UpdatePhase.installing) {
@@ -400,11 +405,41 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
     );
   }
 
+  static bool _isCheckFailure(UpdateRefusalCode c) =>
+      c == UpdateRefusalCode.offline ||
+      c == UpdateRefusalCode.httpError ||
+      c == UpdateRefusalCode.badRedirect ||
+      c == UpdateRefusalCode.badUrl ||
+      c == UpdateRefusalCode.tooLarge ||
+      c == UpdateRefusalCode.tooMuchData ||
+      c == UpdateRefusalCode.notJson ||
+      c == UpdateRefusalCode.badShape;
+
   Widget _checkButton(AppUpdater u) => Padding(
         padding: const EdgeInsets.only(top: 10),
         child: OutlinedButton(
-            key: const Key('updateCheckNow'), onPressed: () => unawaited(u.checkNow()), child: const Text('Check now')),
+            key: const Key('updateCheckNow'),
+            onPressed: u.busy ? null : () => unawaited(u.checkNow()),
+            child: Text(u.usesGithub ? 'Check for updates' : 'Check now')),
       );
+
+  Widget _missed(BuildContext context, AppUpdater u) {
+    final List<GithubRelease> older = u.missedReleases;
+    if (older.isEmpty) return const SizedBox.shrink();
+    final TextTheme t = Theme.of(context).textTheme;
+    return Column(key: const Key('updateMissed'), crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Padding(padding: const EdgeInsets.only(top: 14), child: Text('Also since this version', style: t.titleSmall)),
+      for (final GithubRelease r in older)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            Text('Olive ${r.versionName}${r.prerelease ? ' (preview)' : ''}', style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            if (r.headline.isNotEmpty) Text(r.headline),
+            for (final String n in r.notes) Padding(padding: const EdgeInsets.only(top: 2), child: Text('• $n')),
+          ]),
+        ),
+    ]);
+  }
 
   List<Widget> _updateBody(BuildContext context, AppUpdater u, UpdateManifest? m) {
     final TextTheme t = Theme.of(context).textTheme;
@@ -439,6 +474,11 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
         kids.add(Column(key: const Key('updateNotes'), crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           for (final String n in m.notes) Padding(padding: const EdgeInsets.only(top: 6), child: Text('• $n')),
         ]));
+        if (u.usesGithub && u.offerIsPrerelease) {
+          kids.add(const Padding(
+              padding: EdgeInsets.only(top: 6), child: Text('This is a preview version.', key: Key('updatePreviewNote'))));
+        }
+        if (u.usesGithub) kids.add(_missed(context, u));
       }
     }
     switch (u.phase) {
@@ -453,7 +493,9 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
                 onPressed: () => unawaited(u.downloadOnWifi()),
                 child: const Text('Download on Wi-Fi')),
             OutlinedButton(
-                key: const Key('updateDownloadNow'), onPressed: () => unawaited(_downloadNow(context, u)), child: const Text('Download now')),
+                key: const Key('updateDownloadNow'),
+                onPressed: () => unawaited(_downloadNow(context, u)),
+                child: Text(u.usesGithub ? 'Update now' : 'Download now')),
             TextButton(key: const Key('updateLater'), onPressed: () => unawaited(u.later()), child: const Text('Later')),
           ]));
         }
@@ -575,7 +617,19 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
           value: s.wifiOnly,
           onChanged: (bool v) => unawaited(u.setWifiOnly(v)),
         ),
-      if (!play) ...<Widget>[
+      if (!play && u.usesGithub) ...<Widget>[
+        const SizedBox(height: 8),
+        const Text('Where updates come from: GitHub releases of $kGithubOwner/$kGithubRepo (github.com)',
+            key: Key('updateSource')),
+        const SizedBox(height: 8),
+        const Text(
+            'Updates from GitHub are as trustworthy as that GitHub account: Olive checks that the file is the size and '
+            'fingerprint the release states, and Android only accepts a file made by the same maker as this Olive. '
+            'Preview builds are signed with a public test key, so they only update a copy signed the same way. '
+            'The stronger way, updates signed by the maker with a private key, is used instead whenever one is set up.',
+            key: Key('updateGithubHonesty')),
+      ],
+      if (!play && !u.usesGithub) ...<Widget>[
         const SizedBox(height: 8),
         Text('Where updates come from: ${updateSourceHost(u.manifestUrls)}', key: const Key('updateSource')),
         const SizedBox(height: 8),
@@ -625,8 +679,11 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
             child: Text('Stable is for everyday use. Early versions come sooner and may have rough edges.')),
       ],
       const SizedBox(height: 16),
-      const Text('Olive only installs an update that was signed by its maker, and Android always asks you to confirm '
-          'first. Nothing is ever installed in the background.'),
+      Text(
+          u.usesGithub
+              ? 'Android always asks you to confirm first. Nothing is ever installed in the background.'
+              : 'Olive only installs an update that was signed by its maker, and Android always asks you to confirm '
+                  'first. Nothing is ever installed in the background.'),
     ]);
   }
 }
