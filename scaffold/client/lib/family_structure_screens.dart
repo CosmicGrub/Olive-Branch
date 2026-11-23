@@ -18,6 +18,7 @@ import 'design_tokens.dart';
 import 'family_structure_logic.dart';
 import 'family_structure_store.dart';
 import 'my_people_screen.dart' show NicknamePick, NicknameSheet;
+import 'ui/olive_ui.dart' show OliveAvatar, OliveChip, OliveTone;
 
 const String syncLaterNote =
     'These choices live on this device. Syncing between devices comes later.';
@@ -759,11 +760,22 @@ class _FamilyHistoryState extends State<FamilyHistoryScreen> {
                 selected: <String>{_filter}, onSelectionChanged: (Set<String> s) => setState(() => _filter = s.first)),
               _gap(),
               if (o.history.isEmpty)
-                const Padding(padding: EdgeInsets.all(AppSpacing.lg), child: Text(
+                Padding(padding: const EdgeInsets.all(AppSpacing.lg), child: Column(children: <Widget>[
+                  const Text(
                     'No changes yet. Every change to her people, homes and rhythm will appear here, with who made it and when she was told.',
-                    key: Key('historyEmpty'))),
+                    key: Key('historyEmpty')),
+                  _gap(),
+                  FilledButton.tonal(
+                      key: const Key('historyStart'), onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Start with her people')),
+                ])),
               for (final HistoryRow r in o.history.where((HistoryRow r) => _filter == 'All' || (r.entry.entry == 'change' && opCategory(r.entry.op!) == _filter)))
                 _row(context, o, r),
+              if (o.history.isNotEmpty) ...<Widget>[
+                _gap(),
+                _note(context, 'Court orders are shown as such and can’t be changed here. “Told” is a date a guardian recorded, not something the app guessed.',
+                    key: const Key('historyToldNote')),
+              ],
             ])),
     );
   }
@@ -779,13 +791,22 @@ class _FamilyHistoryState extends State<FamilyHistoryScreen> {
       text = describeOp(r.entry.op!, rec.actorName);
     }
     final bool undone = o.history.any((HistoryRow h) => h.record.undoes == r.entry.id);
+    final bool pending = !isRelease && (r.state == 'held' || r.state == 'scheduled');
     return Card(
       key: Key('hist_${r.entry.id}'),
-      child: Padding(padding: const EdgeInsets.all(AppSpacing.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      child: Padding(padding: const EdgeInsets.all(AppSpacing.md), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        OliveAvatar(rec.actorName.trim().isEmpty ? '?' : rec.actorName.trim().characters.first.toUpperCase(), size: 38, label: rec.actorName),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text(text, style: Theme.of(context).textTheme.titleSmall),
-        Text('${rec.createdOn} · ${stateWords(r.state)}'
-            '${isRelease ? ' on ${rec.toldOn}' : ''}${rec.undoes != null ? ' · puts a change back; the first stays' : ''}${undone ? ' · undone by a later entry' : ''}',
+        Text('${rec.createdOn}'
+            '${isRelease ? ' · told on ${rec.toldOn}' : (rec.toldOn != null && r.state != 'held' ? ' · told ${widget.ctx.childName} on ${rec.toldOn}' : '')}'
+            '${rec.undoes != null ? ' · puts a change back; the first stays' : ''}${undone ? ' · undone by a later entry' : ''}',
             style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: <Widget>[
+          OliveChip(historyChipText(r, undone), key: Key('histChip_${r.entry.id}'), tone: historyChipTone(r, undone), small: true),
+        ]),
         if (rec.story != null) Text('A story from you travels with this change.', style: Theme.of(context).textTheme.bodySmall),
         if (!isRelease && !undone)
           Align(alignment: Alignment.centerRight, child: TextButton(
@@ -799,7 +820,7 @@ class _FamilyHistoryState extends State<FamilyHistoryScreen> {
               }
               await _load();
             },
-            child: const Text('Undo (as a new entry)'))),
+            child: Text(pending ? 'Cancel it' : 'Undo (as a new entry)'))),
         if (!isRelease && r.state == 'held')
           Align(alignment: Alignment.centerRight, child: TextButton(
             key: Key('histRelease_${r.entry.id}'),
@@ -808,10 +829,34 @@ class _FamilyHistoryState extends State<FamilyHistoryScreen> {
                   actorName: widget.ctx.actorName, yearsOld: widget.ctx.yearsOld, changeId: r.entry.id);
               await _load();
             },
-            child: const Text('I have told her'))),
+            child: const Text('I have told her. Release'))),
+        ])),
       ])),
     );
   }
+}
+
+/// The status chip the prototype shows on every history row (Held until told, On a date, Released,
+/// Applied, Undone by a newer entry). Words only; nothing is counted.
+String historyChipText(HistoryRow r, bool undone) {
+  if (r.entry.entry == 'release') return 'Released';
+  if (undone) return 'Undone by a newer entry';
+  return switch (r.state) {
+    'held' => 'Held until told',
+    'scheduled' => 'On ${r.entry.timing?.on ?? 'a date'}',
+    'told' => 'Released',
+    _ => 'Applied',
+  };
+}
+
+OliveTone historyChipTone(HistoryRow r, bool undone) {
+  if (r.entry.entry == 'release') return OliveTone.ok;
+  if (undone) return OliveTone.quiet;
+  return switch (r.state) {
+    'held' => OliveTone.warn,
+    'scheduled' => OliveTone.info,
+    _ => OliveTone.ok,
+  };
 }
 
 // ================================================================ age bands ===

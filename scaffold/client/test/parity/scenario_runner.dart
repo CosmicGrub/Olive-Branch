@@ -22,6 +22,7 @@ import 'package:olive_client/add_device_screen.dart';
 import 'package:olive_client/child_home_growth.dart' show ageAtLocalDay;
 import 'package:olive_client/contact_labels.dart';
 import 'package:olive_client/family_structure_logic.dart';
+import 'package:olive_client/family_structure_screens.dart' show FamilyContext, FamilyHistoryScreen, FamilyStructureScreen, MyPeopleScreen;
 import 'package:olive_client/family_structure_store.dart';
 import 'package:olive_client/colour_day_logic.dart';
 import 'package:olive_client/her_colour_store.dart';
@@ -94,6 +95,8 @@ class ParityWorld {
     await tester.pump();
     mounted = w.runtimeType.toString();
   }
+
+  FamilyContext famContext() => FamilyContext(service: fam, principal: _guardian, actorName: 'Jess', childName: 'Ivy', yearsOld: 9);
 
   Future<void> unmount() async {
     await tester.pumpWidget(const SizedBox.shrink());
@@ -349,6 +352,24 @@ final Map<String, _Driver> _drivers = <String, _Driver>{
     w.heldChangeId = r.state == 'held' ? r.id : w.heldChangeId;
     return r.ok ? const Res.ok() : Res.pending('FamilyService refused: ${r.reason}');
   },
+  // The real guardian screens, mounted over the same service the changes were written to.
+  'go:g-family': (ParityWorld w, _Act a) async {
+    await w.mount(FamilyStructureScreen(ctx: w.famContext()));
+    await w.tester.pumpAndSettle();
+    return const Res.ok();
+  },
+  'go:g-history': (ParityWorld w, _Act a) async {
+    await w.mount(FamilyHistoryScreen(ctx: w.famContext()));
+    await w.tester.pumpAndSettle();
+    return const Res.ok();
+  },
+  // The tablet side: only what was released reaches her. Mounted from the child's own read.
+  'tap:kid.openMyPeople': (ParityWorld w, _Act a) async {
+    final FamilyChildSnapshot snap = await w.fam.childSnapshot(_child, childId: 'child-1', yearsOld: 9);
+    await w.mount(MyPeopleScreen(snapshot: snap, childName: 'Ivy', age: w.age));
+    await w.tester.pumpAndSettle();
+    return const Res.ok();
+  },
   'tap:gRelease': (ParityWorld w, _Act a) async {
     if (w.heldChangeId == null) return const Res.pending('nothing is held');
     final FamilyWrite r = await w.fam.release(_guardian, actorName: 'Jess', yearsOld: 9, changeId: w.heldChangeId!);
@@ -374,6 +395,9 @@ const Map<String, Type> _screenTypes = <String, Type>{
   'ob.kid.age': ObAgeScreen,
   'ob.kid.name': ObNameScreen,
   'ob.kid.connect': PairingRedeemScreen,
+  'g-family': FamilyStructureScreen,
+  'g-history': FamilyHistoryScreen,
+  'k.people': MyPeopleScreen,
 };
 
 Res _eq(Object? flutter, Object? proto, String what) =>
