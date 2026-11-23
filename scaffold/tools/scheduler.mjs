@@ -116,6 +116,7 @@ import { notifyDevices } from '../packages/transport/src/notify.mjs';
 import { FilesystemStorage, reap } from '../packages/storage/src/storage.mjs';
 import { digestRecordFor, DIGEST_LEAD_DAYS } from '../packages/storage/src/retention.mjs';
 import { encryptFile, pruneBackups, DEFAULT_DAILY_KEEP, DEFAULT_WEEKLY_KEEP } from './backup_lib.mjs';
+import { sweepBackups } from '../server/family_backup.mjs';
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -552,6 +553,17 @@ export async function runPurgeChallengesJob(pool, opts = {}) {
   return { removed: await purgeExpiredChallenges(pool, opts.graceMs) };
 }
 
+// --------------------------------------------------------- sweep-backups ---
+/**
+ * Encrypted family backup housekeeping (migration 0054, MASTERFILE 7.22): unfinished uploads that ran out
+ * of time give their bytes back, restore requests nobody finished lapse (with a notice), and a set-aside
+ * version whose recovery window has ended finally has its bytes purged. It never touches a live version or
+ * one still inside its window (the database triggers would refuse anyway).
+ */
+export async function runSweepBackupsJob(pool, opts = {}) {
+  return sweepBackups(pool, opts.now ?? new Date());
+}
+
 // ---------------------------------------------------------- expiry-digest ---
 export const DEFAULT_DIGEST_BATCH = 5000;
 export const DIGEST_KEEP_DAYS = 30;
@@ -746,7 +758,7 @@ export async function runBackupJob(env = process.env, opts = {}) {
 }
 
 // --------------------------------------------------------- job registry ---
-export const JOB_NAMES = ['rematerialize', 'deliver', 'end-stale-calls', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'expiry-digest', 'backup', 'health-alert'];
+export const JOB_NAMES = ['rematerialize', 'deliver', 'end-stale-calls', 'reap-media', 'sweep-orphan-media', 'purge-challenges', 'sweep-backups', 'expiry-digest', 'backup', 'health-alert'];
 
 // One real FilesystemStorage instance, constructed once — same convention
 // as HEALTH_ALERT_SCRIPT above. `runNamedJob`'s `storage` param exists
@@ -777,6 +789,7 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
       if (jobName === 'reap-media') return runMediaReapSweep(pool, storage, {});
       if (jobName === 'sweep-orphan-media') return runOrphanMediaSweep(pool, storage, {});
       if (jobName === 'purge-challenges') return runPurgeChallengesJob(pool, {});
+      if (jobName === 'sweep-backups') return runSweepBackupsJob(pool, {});
       if (jobName === 'expiry-digest') return runExpiryDigestJob(pool, {});
       if (jobName === 'backup') return runBackupJob(process.env, {});
       if (jobName === 'health-alert') return runHealthAlertSubprocess(databaseUrl);
@@ -887,6 +900,16 @@ export async function runNamedJob(pool, databaseUrl, jobName, storage = defaultM
     logLine({
       event: 'end', job: jobName, status: 'ok', duration_ms: durationMs,
       removed: lockResult.result.removed, at: DateTime.utc().toISO(),
+    });
+    return { ok: true, skipped: false };
+  }
+
+  if (jobName === 'sweep-backups') {
+    const r = lockResult.result;
+    logLine({
+      event: 'end', job: jobName, status: 'ok', duration_ms: durationMs, vaults: r.vaults,
+      expired_uploads: r.expiredUploads, purged_versions: r.purgedVersions, freed_bytes: r.freedBytes,
+      expired_restores: r.expiredRestores, at: DateTime.utc().toISO(),
     });
     return { ok: true, skipped: false };
   }

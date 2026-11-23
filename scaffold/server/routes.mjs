@@ -80,6 +80,7 @@ import { cleanName as cleanIdentityName, cleanTz, cleanBirthDate } from './ident
 import { parseHexSecret } from './secrets.mjs';
 import { sniffMedia } from './media_sniff.mjs';
 import { resolveWebauthn, originAllowed } from './webauthn_config.mjs';
+import { registerBackupRoutes } from './family_backup_routes.mjs';
 
 /**
  * MASTERFILE §20.2b's own gap, closed here: "`StoragePort` has no
@@ -4753,4 +4754,9 @@ export function registerRoutes(api, pool, storage = defaultMediaStorage, opts = 
         nextBefore: events.length ? events[events.length - 1].seq : null } };
     },
   });
+
+  // Encrypted family backup (migration 0054, MASTERFILE 7.22): /v1/backup/*. Grown-up sessions on an
+  // enrolled device only; the server holds ciphertext and never a key.
+  registerBackupRoutes(api, pool, { requireOwnPin, env: opts.backupEnv ?? process.env,
+    limiters: opts.backupLimiters, cfg: opts.backupConfig });
 }

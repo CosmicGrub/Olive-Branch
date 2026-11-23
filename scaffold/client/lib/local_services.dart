@@ -290,7 +290,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       area: 'adultunlock', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
       what: 'On a child\'s device: a salted slow hash of the grown-up\'s PIN, only so a grown-up can '
           'type it there to leave or unlock the app, and the count of wrong tries toward a 15 minute '
-          'lock. The PIN itself is never kept and a child cannot create or change it. Sealed on the device.'),
+          'lock. The PIN itself is never kept and a child cannot create or change it. It also holds one yes or no: '
+          'whether a grown-up chose to scramble the number keypad. Sealed on the device.'),
   LocalDataEntry(
       area: 'pairedkids', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '

@@ -257,7 +257,9 @@ Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) asyn
     runApp(OliveLocalGuardian(initialTheme: defaultAppTheme, controller: controller));
     return;
   }
-  runApp(_GuardianOnboardingApp(role: role, services: local));
+  // A family saved by a run that was stopped before the PIN was chosen: reopen on "Choose your PIN" (nothing asked again).
+  // A family with no PIN never reaches the home, so locked features cannot exist without a PIN to open them.
+  runApp(_GuardianOnboardingApp(role: role, services: local, resumeFamily: pinSet ? null : family));
 }
 
 /// Settings > Account > Connect this device: the optional code screen. "Not now" goes back.
@@ -306,9 +308,10 @@ class _PairingBootApp extends StatelessWidget {
 /// The guardian onboarding in a bare MaterialApp (no shell exists yet). On finish it boots the
 /// local flow again, which now finds the family and PIN and opens the offline home.
 class _GuardianOnboardingApp extends StatelessWidget {
-  const _GuardianOnboardingApp({required this.role, required this.services});
+  const _GuardianOnboardingApp({required this.role, required this.services, this.resumeFamily});
   final DeviceRole role;
   final GuardianLocalServices services;
+  final LocalFamily? resumeFamily;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -317,6 +320,7 @@ class _GuardianOnboardingApp extends StatelessWidget {
     home: GuardianOnboardingFlow(
       role: role,
       services: services,
+      resumeFamily: resumeFamily,
       serverAvailable: true,
       baseUrl: kLiveBaseUrl,
       onRedeemed: (Map<String, dynamic> r) => unawaited(completeGuardianRedeem(r)),

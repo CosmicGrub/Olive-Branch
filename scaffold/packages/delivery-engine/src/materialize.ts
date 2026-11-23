@@ -80,7 +80,17 @@ export function partsOn(ctx: ChildCtx, localDate: string): DayPart[] {
     (!p.effectiveTo || localDate <= p.effectiveTo));
 }
 
-const wraps = (p: DayPart) => p.startsLocal > p.endsLocal;
+/**
+ * A day-part bound as a fixed-width 'HH:mm:ss'. Bounds arrive as 'HH:mm' (the
+ * API, the demo) or 'HH:mm:ss' (a Postgres `time` with non-zero seconds, e.g.
+ * an all-day window ending 23:59:59); string comparison across the two widths
+ * is wrong, and truncating the seconds away (what childCtxFor() used to do)
+ * ended a window up to 59 s early -- a 23:59:59 end became a gap for the whole
+ * last minute of the day, a hole in the asleep/school gate at local midnight.
+ */
+export const hms = (t: string): string => (t.length === 5 ? `${t}:00` : t);
+
+const wraps = (p: DayPart) => hms(p.startsLocal) > hms(p.endsLocal);
 
 /**
  * The part of a given kind that STARTS on `localDate`, resolved by that
@@ -92,7 +102,7 @@ function dayPartFor(ctx: ChildCtx, kind: string, localDate: string): DayPart | n
   const dow = DateTime.fromISO(localDate, { zone: 'utc' }).weekday % 7;   // Sun=0
   return partsOn(ctx, localDate)
     .filter(p => p.kind === kind && p.daysOfWeek.includes(dow))
-    .sort((a, b) => a.startsLocal.localeCompare(b.startsLocal))[0] ?? null;
+    .sort((a, b) => hms(a.startsLocal).localeCompare(hms(b.startsLocal)))[0] ?? null;
 }
 
 /**
@@ -107,17 +117,17 @@ export function activeDayPart(ctx: ChildCtx, local: DateTime): DayPart | null {
   const yesterday = local.minus({ days: 1 }).toISODate()!;
   const dow = local.weekday % 7;
   const yDow = (dow + 6) % 7;
-  const hhmm = local.toFormat('HH:mm');
+  const hhmm = local.toFormat('HH:mm:ss');
 
   const hits: DayPart[] = [];
   for (const p of partsOn(ctx, today)) {
     if (!p.daysOfWeek.includes(dow)) continue;
-    const on = wraps(p) ? hhmm >= p.startsLocal
-      : hhmm >= p.startsLocal && hhmm < p.endsLocal;
+    const on = wraps(p) ? hhmm >= hms(p.startsLocal)
+      : hhmm >= hms(p.startsLocal) && hhmm < hms(p.endsLocal);
     if (on) hits.push(p);
   }
   for (const p of partsOn(ctx, yesterday)) {
-    if (wraps(p) && p.daysOfWeek.includes(yDow) && hhmm < p.endsLocal) hits.push(p);
+    if (wraps(p) && p.daysOfWeek.includes(yDow) && hhmm < hms(p.endsLocal)) hits.push(p);
   }
   hits.sort((a, b) => Number(a.reachable) - Number(b.reachable) || a.kind.localeCompare(b.kind));
   return hits[0] ?? null;

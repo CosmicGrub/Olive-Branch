@@ -331,8 +331,8 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
   // as LESS than the longer one it's a prefix of, so a two-row split at
   // exact boundaries would have made this section's result depend on which
   // minute it happened to run in. That mismatch is now fixed at the source
-  // — childCtxFor() (packages/db/src/pool.ts) truncates the `::text` cast
-  // to 'HH:mm' width before gate() ever sees it, and
+  // — childCtxFor() (packages/db/src/pool.ts) trims a zero-seconds bound to
+  // 'HH:mm', keeps non-zero seconds (the engine normalises both: hms()), and
   // packages/delivery-engine/test/delivery.test.mjs's "G4b boundary minute"
   // section locks down gate()'s own comparison operators at exact boundary
   // minutes — so the overlap below is no longer load-bearing, just left in
@@ -403,6 +403,40 @@ const dadP = { roleName: 'guardian', userId: DAD, childId: null };
     calls3.includes('tok-notify-G4-guardian'), 'true');
 
   await admin.query(`DELETE FROM device_token WHERE id = $1 OR id = $2`, [childDeviceId, dadDeviceId]);
+  await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+  await admin.query(`DELETE FROM child WHERE id = $1`, [CHILD]);
+}
+
+// ===========================================================================
+// G5 · quiet hours at LOCAL MIDNIGHT, real day_part rows through the REAL
+// childCtxFor() -> gate(), clock injected (never the wall clock). Regression:
+// childCtxFor() cut '23:59:59' to 'HH:mm', so an all-day asleep part ended at
+// 23:59 and a call rang a sleeping child for the last minute of her day
+// (CI, 05:59 UTC = 23:59 America/Chicago). Also pins the '24:00' end the e2e
+// suite uses.
+// ===========================================================================
+{
+  const { DateTime } = await import('luxon');
+  const { childCtxFor } = await import('../../db/src/pool.mjs');
+  const { gate } = await import('../../delivery-engine/src/gate.mjs');
+  const CHILD = 'c5555555-5555-5555-5555-555555555555';
+  const ZONES = ['America/Chicago', 'Asia/Kolkata', 'Australia/Lord_Howe'];
+  for (const end of ['23:59:59', '24:00']) {
+    for (const zone of ZONES) {
+      await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
+      await admin.query(`DELETE FROM child WHERE id = $1`, [CHILD]);
+      await admin.query(`INSERT INTO child (id, display_name, birth_date, home_tz) VALUES ($1, 'Mid', '2016-04-02', $2)`, [CHILD, zone]);
+      await admin.query(
+        `INSERT INTO day_part (child_id, kind, starts_local, ends_local, days_of_week, reachable, effective)
+         VALUES ($1, 'asleep', '00:00', $2, '{0,1,2,3,4,5,6}', false, '[2020-01-01,2099-01-01)')`, [CHILD, end]);
+      const ctx = await childCtxFor(pool, CHILD);
+      const probes = ['2026-11-21T00:00:00', '2026-11-21T00:00:01', '2026-11-21T23:58:59', '2026-11-21T23:59:00', '2026-11-21T23:59:30', '2026-11-21T23:59:58', '2026-11-22T00:00:00'];
+      const leaked = probes.filter((t) => gate(ctx, DateTime.fromISO(t, { zone }).toUTC()).allow);
+      check('G5 midnight', `${zone}, end ${end}: no probe around local midnight is reachable`, leaked.join(' ') || 'none', 'none');
+    }
+  }
+  const last = (await childCtxFor(pool, CHILD)).dayParts[0].endsLocal;
+  check('G5 midnight', "childCtxFor() keeps the 24:00 end instead of truncating it", last, '24:00');
   await admin.query(`DELETE FROM day_part WHERE child_id = $1`, [CHILD]);
   await admin.query(`DELETE FROM child WHERE id = $1`, [CHILD]);
 }
