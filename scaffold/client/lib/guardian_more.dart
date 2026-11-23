@@ -56,6 +56,7 @@ import 'emergency_card_local.dart';
 import 'exchange_screen.dart';
 import 'expenses_screen.dart';
 import 'expiry_digest.dart';
+import 'family_account_entry.dart';
 import 'family_agreement_screen.dart';
 import 'gallery_screen.dart';
 import 'ui/olive_ui_gallery.dart';
@@ -838,6 +839,14 @@ class GuardianMoreScreen extends StatelessWidget {
             store: learnStore ?? LocalStoreLearnStore.forGuardian(guardianId)))),
       ]),
       SettingsGroup('Account', [
+        // Optional, like everything online: shown only where the build can reach a server (a connected shell, or a
+        // local one that was given the way to open it). A phone with no account is the normal phone.
+        if (live || local?.onAccount != null)
+          SettingsRow(id: 'familyaccount', icon: Icons.family_restroom_outlined, title: 'Family account',
+            subtitle: 'Optional. Make an account, add $childName, and invite another grown-up',
+            onTap: () => live
+              ? openFamilyAccount(context, baseUrl: baseUrl!)
+              : local!.onAccount!(context)),
         if (local?.onConnect != null)
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',

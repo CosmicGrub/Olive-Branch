@@ -440,6 +440,35 @@ void main() {
     });
   });
 
+  group('Settings > Account > Family account (optional)', () {
+    testWidgets('it is there where the build can reach a server, says it is optional, and opens the account page', (t) async {
+      int opened = 0;
+      final GuardianLocalController withAccount =
+          GuardianLocalController(services, family: family(), onAccount: (BuildContext _) => opened++);
+      await pumpMore(t, ctl: withAccount);
+      await openSettings(t);
+      await t.ensureVisible(find.byKey(const Key('settingsRow_familyaccount')));
+      expect(find.text('Family account'), findsOneWidget);
+      expect(find.textContaining('Optional. Make an account'), findsOneWidget);
+      await t.tap(find.byKey(const Key('settingsRow_familyaccount')));
+      await t.pump();
+      expect(opened, 1);
+    });
+
+    testWidgets('a phone that cannot reach a server (or the preview) does not show it, and loses nothing', (t) async {
+      await pumpMore(t, ctl: controller);
+      await openSettings(t);
+      expect(find.byType(GuardianSettingsHubScreen), findsOneWidget);
+      expect(find.byKey(const Key('settingsRow_familyaccount')), findsNothing);
+      expect(find.byKey(const Key('settingsRow_deletion')), findsOneWidget, reason: 'the rest of Account is untouched');
+    });
+
+    testWidgets('it is a grown-up row only: the child shell never builds the settings hub', (t) async {
+      expect(File('lib/child_more.dart').readAsStringSync(), isNot(contains('familyaccount')));
+      expect(File('lib/child_home.dart').readAsStringSync(), isNot(contains('familyaccount')));
+    });
+  });
+
   test('the server PIN is not faked: nothing in the local PIN or local family path calls the account PIN routes', () {
     for (final String f in <String>[
       'local_pin.dart', 'local_pin_screens.dart', 'local_family.dart', 'guardian_onboarding.dart',

@@ -1808,11 +1808,10 @@ Future<Map<String, dynamic>?> fetchGuardianInvite(
   final res = await c.get(
     Uri.parse('$baseUrl${OliveApi.guardianInvite.replaceFirst(':inviteId', inviteId)}'));
   if (res.statusCode == 404) return null;
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body['invite'] as Map<String, dynamic>;
+  final body = _decodeOrThrow(res);
+  final Object? invite = body['invite'];
+  if (invite is! Map<String, dynamic>) throw ApiException(res.statusCode, 'unexpected_reply');
+  return invite;
 }
 
 /// Records the real accept decision -- POST guardianInvite/accept, server/
@@ -1831,11 +1830,10 @@ Future<Map<String, dynamic>> acceptGuardianInvite(
     Uri.parse('$baseUrl${OliveApi.guardianInviteAccept.replaceFirst(':inviteId', inviteId)}'),
     headers: {'content-type': 'application/json'},
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body['invite'] as Map<String, dynamic>;
+  final body = _decodeOrThrow(res);
+  final Object? invite = body['invite'];
+  if (invite is! Map<String, dynamic>) throw ApiException(res.statusCode, 'unexpected_reply');
+  return invite;
 }
 
 /// Cancels a pending invite before it's accepted -- POST guardianInviteRevoke,
@@ -1860,10 +1858,7 @@ Future<void> revokeGuardianInvite(
       'content-type': 'application/json',
     },
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
+  _decodeOrThrow(res);
 }
 
 /// Mints a real session for the invited party to complete passkey/PIN
@@ -1901,20 +1896,34 @@ Future<Map<String, dynamic>> bootstrapGuardianInvite(
     headers: {'content-type': 'application/json'},
     body: jsonEncode({'displayName': displayName, if (enrol) 'enrol': true}),
   );
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+  return _decodeOrThrow(res);
+}
+
+/// A response body as a map, or an empty map when it is empty, not JSON, or not an object. A proxy's HTML 502 page
+/// or a truncated reply must reach the caller as the status it carried, not as a FormatException that hides it.
+Map<String, dynamic> _bodyMap(http.Response res) {
+  if (res.body.isEmpty) return <String, dynamic>{};
+  try {
+    final Object? d = jsonDecode(res.body);
+    return d is Map<String, dynamic> ? d : <String, dynamic>{};
+  } catch (_) {
+    return <String, dynamic>{};
+  }
+}
+
+Map<String, dynamic> _decodeOrThrow(http.Response res) {
+  final body = _bodyMap(res);
   if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
+    final Object? e = body['error'];
+    throw ApiException.fromStatus(res.statusCode, e is String ? e : 'error');
   }
   return body;
 }
 
-Map<String, dynamic> _decodeOrThrow(http.Response res) {
-  final body = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-  if (res.statusCode >= 400) {
-    throw ApiException.fromStatus(res.statusCode, body['error'] as String? ?? 'error');
-  }
-  return body;
-}
+/// The entries of a JSON list that are objects. A list that is missing, or has odd entries, yields what is usable
+/// rather than a cast error.
+List<Map<String, dynamic>> _mapList(Object? v) =>
+    v is List ? <Map<String, dynamic>>[for (final Object? e in v) if (e is Map<String, dynamic>) e] : <Map<String, dynamic>>[];
 
 Future<Map<String, dynamic>> _identityPost(
   String baseUrl,
@@ -1987,7 +1996,7 @@ Future<List<Map<String, dynamic>>> fetchMyChildren(
   http.Client? client,
 }) async {
   final body = await _identityGet(baseUrl, OliveApi.meChildren, sessionToken, client: client);
-  return (body['children'] as List<dynamic>).cast<Map<String, dynamic>>();
+  return _mapList(body['children']);
 }
 
 /// Creates a child and the caller's own guardianship edge to her -- POST
@@ -2008,7 +2017,9 @@ Future<Map<String, dynamic>> createChild(
     sessionToken: sessionToken,
     client: client,
   );
-  return body['child'] as Map<String, dynamic>;
+  final Object? child = body['child'];
+  if (child is! Map<String, dynamic>) throw ApiException(201, 'unexpected_reply');
+  return child;
 }
 
 /// The caller's own invites for [childId], with their state -- GET
@@ -2027,7 +2038,7 @@ Future<List<Map<String, dynamic>>> fetchGuardianInvitesForChild(
     sessionToken,
     client: client,
   );
-  return (body['invites'] as List<dynamic>).cast<Map<String, dynamic>>();
+  return _mapList(body['invites']);
 }
 
 /// An existing account presents an accepted invite addressed to its own email
