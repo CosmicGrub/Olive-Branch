@@ -1036,6 +1036,218 @@
    }
   }
  ],
+ "supersede": [
+  {
+   "name": "no earlier answer",
+   "existing": null,
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "expect": false
+  },
+  {
+   "name": "different colour 3 minutes later",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1180000
+   },
+   "expect": true
+  },
+  {
+   "name": "different colour just inside ten minutes",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1599999
+   },
+   "expect": true
+  },
+  {
+   "name": "different colour exactly ten minutes later",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1600000
+   },
+   "expect": false
+  },
+  {
+   "name": "different colour an hour later",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 4600000
+   },
+   "expect": false
+  },
+  {
+   "name": "same colour again soon",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1060000
+   },
+   "expect": false
+  },
+  {
+   "name": "older answer arrives late, an hour apart",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 4600000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "expect": true
+  },
+  {
+   "name": "older answer arrives late, same colour",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 4600000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "expect": false
+  },
+  {
+   "name": "different colour at the very same instant",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "expect": true
+  },
+  {
+   "name": "a colour day is not a close answer",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1001000
+   },
+   "expect": false
+  },
+  {
+   "name": "a colour day over her answer is not a close answer",
+   "existing": {
+    "localDate": "2026-11-07",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "mint",
+    "chosenBy": "guardian",
+    "override": true,
+    "chosenAtMs": 1001000
+   },
+   "expect": false
+  },
+  {
+   "name": "another day",
+   "existing": {
+    "localDate": "2026-11-06",
+    "colourId": "sea",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1000000
+   },
+   "incoming": {
+    "localDate": "2026-11-07",
+    "colourId": "sunny",
+    "chosenBy": "child",
+    "override": false,
+    "chosenAtMs": 1001000
+   },
+   "expect": false
+  }
+ ],
  "days": [
   {
    "localDate": "2026-11-05",

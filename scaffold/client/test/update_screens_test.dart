@@ -41,6 +41,8 @@ void main() {
     await t.pump();
   }
 
+  AppUpdater? current;
+
   /// A started updater brought to [then] with real I/O.
   Future<AppUpdater> prepared(WidgetTester t, {Future<void> Function(AppUpdater u)? then, Rig? r}) async {
     final Rig use = r ?? rig;
@@ -55,7 +57,6 @@ void main() {
     return u;
   }
 
-  AppUpdater? current;
 
   /// Lets the real file work of the controller finish (it is real I/O, so it runs inside runAsync), then redraws. Waits
   /// until the updater is no longer busy, so a slow disk makes a test slower, never flaky.

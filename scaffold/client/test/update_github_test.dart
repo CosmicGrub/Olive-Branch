@@ -16,7 +16,6 @@ import 'package:olive_client/update_controller.dart';
 import 'package:olive_client/update_download.dart';
 import 'package:olive_client/update_github.dart';
 import 'package:olive_client/update_manifest.dart';
-import 'package:olive_client/update_platform.dart';
 import 'package:olive_client/update_policy.dart';
 import 'package:olive_client/update_store.dart';
 import 'package:olive_client/update_transport.dart';
@@ -59,7 +58,7 @@ Map<String, Object?> rel(
         'size': bytes.length,
         'state': 'uploaded',
         'browser_download_url': downloadUrl ?? 'https://github.com/CosmicGrub/Olive-Branch/releases/download/$t/$name',
-        if (digest != null) 'digest': digest,
+        'digest': ?digest,
       },
       <String, Object?>{'name': 'SHA256SUMS', 'size': 90, 'state': 'uploaded'},
     ],
@@ -505,7 +504,7 @@ void main() {
     test('a file longer or shorter than the release said is refused', () async {
       feed(<Object?>[r('0.53.0')]);
       serve(Uint8List.fromList(<int>[...apkA, 1, 2, 3]), '0.53.0');
-      AppUpdater u = make();
+      final AppUpdater u = make();
       await u.start();
       await u.checkNow();
       await u.downloadNow();
