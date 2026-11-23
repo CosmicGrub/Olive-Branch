@@ -13,6 +13,7 @@ void main() {
         escalatedUntil: DateTime.now().add(const Duration(minutes: 15)),
         onExitKiosk: () {},
         childName: 'Wren',
+        proof: const EscalationProof(pin: true, biometric: true),
       )));
       expect(find.textContaining('PIN and biometric'), findsOneWidget);
       expect(find.textContaining('Wren'), findsOneWidget);
@@ -36,9 +37,10 @@ void main() {
       await t.pumpWidget(wrap(GuardianEscalationScreen(
         escalatedUntil: null,
         onExitKiosk: () {},
+        proof: const EscalationProof(pin: true, biometric: true),
       )));
       expect(t.takeException(), isNull);
-      expect(find.textContaining('Verified with PIN and biometric'), findsOneWidget);
+      expect(find.textContaining('Verified with your PIN and biometric'), findsOneWidget);
     });
 
     testWidgets('defaults childName sensibly when not supplied', (t) async {

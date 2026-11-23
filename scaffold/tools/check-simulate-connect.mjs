@@ -32,7 +32,7 @@ export const ALLOWED = new Set([
   'scaffold/client/test/her_tablet_child_test.dart',
   'scaffold/client/test/connect_simulation_source_test.dart',
   'scaffold/tools/check-simulate-connect.mjs',
-  'scaffold/tools/test/simulate_connect_guard.test.mjs',
+  'scaffold/tools/test/sim_connect_guard.test.mjs',
 ]);
 const PROSE = /\.(md|html)$/i;
 const NAME = /SIMULATE_CONNECT/i;

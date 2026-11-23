@@ -301,7 +301,7 @@ class LanPairingTransport implements PairingTransport {
     final ConnectTarget? target = connectTargetFor(host, interfaces: interfaces ?? await _platformInterfaces());
     if (target == null) {
       // Not an address this device will dial. No address is logged (the app never writes where it is).
-      debugPrint('[olive.pairing] the window address was not one a pairing may use');
+      debugPrint('[olive.pairing] that window link was not one a pairing may use');
       return null;
     }
     final HttpClient c = HttpClient()..connectionTimeout = timeout;

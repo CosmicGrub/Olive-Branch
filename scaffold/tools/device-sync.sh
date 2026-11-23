@@ -41,6 +41,15 @@ SIM_ARGS=()
 if [ "${SIMULATE_CONNECT:-}" = 1 ]; then SIM_ARGS=(--dart-define=OLIVE_SIMULATE_CONNECT=true); echo "dev seam: simulated connect is ON in these builds"; fi
 if [ -f "$FCM_DEFINES" ]; then FCM_ARGS=(--dart-define-from-file="$FCM_DEFINES"); echo "push: using the Firebase settings in the secrets folder"; fi
 
+# Developer-only: OLIVE_DEV_FIRST_RUN_PREVIEW=1 builds the guardian shell so it opens the grown-up's first run (Choose
+# your PIN included) over an in-memory store, on a phone that is already set up. Nothing on the phone is read or changed.
+# Off unless asked for; tools/check-dev-first-run.mjs fails CI if any other file passes the define.
+FIRSTRUN_ARGS=()
+if [ "${OLIVE_DEV_FIRST_RUN_PREVIEW:-}" = 1 ]; then
+  FIRSTRUN_ARGS=(--dart-define=OLIVE_DEV_GUARDIAN_FIRST_RUN=true)
+  echo "first-run preview: the guardian build opens the first run over an in-memory store"
+fi
+
 build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
@@ -62,6 +71,6 @@ if [ "$WHICH" = child ] || [ "$WHICH" = both ]; then
 fi
 if [ "$WHICH" = guardian ] || [ "$WHICH" = both ]; then
   [ -n "$FOLD" ] || { echo "set FOLD=<phone serial> (see: adb devices)"; exit 2; }
-  build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1; push "$FOLD" guardian
+  build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1 ${FIRSTRUN_ARGS[@]+"${FIRSTRUN_ARGS[@]}"}; push "$FOLD" guardian
 fi
 echo "done. apks in $OUT"
