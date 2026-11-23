@@ -111,7 +111,7 @@ String updateTimeWords(int? ms, DateTime now) {
 String updateFailureWords(UpdateRefusalCode c) {
   switch (c) {
     case UpdateRefusalCode.offline:
-      return 'Olive could not reach the update source. This phone may be offline. Nothing was changed.';
+      return 'Olive could not reach the update source. This phone may have no connection. Nothing was changed.';
     case UpdateRefusalCode.noSpace:
       return 'There is not enough free space on this phone for the update. Free some up, then try again. Nothing was changed.';
     case UpdateRefusalCode.lowBattery:
@@ -391,7 +391,7 @@ class _AppUpdatesScreenState extends State<AppUpdatesScreen> with WidgetsBinding
       // Only a grown-up who pressed the button ever sees this: a check in the background fails silently.
       kids.add(line('Could not check right now. Nothing was changed.', key: const Key('updateFailure')));
     } else if (u.failure != null &&
-        u.phase != UpdatePhase.available &&
+        (u.phase != UpdatePhase.available || u.failure == UpdateRefusalCode.offline) &&
         u.phase != UpdatePhase.downloading &&
         u.phase != UpdatePhase.installing) {
       kids.add(line(updateFailureWords(u.failure!), key: const Key('updateFailure')));
