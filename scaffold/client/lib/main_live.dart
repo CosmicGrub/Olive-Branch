@@ -84,6 +84,7 @@ import 'onboarding_flow.dart';
 import 'pairing_redeem_screen.dart';
 import 'read_aloud.dart';
 import 'role_picker_screen.dart';
+import 'screen_privacy.dart';
 import 'theme.dart';
 import 'theme_data.dart';
 
@@ -577,6 +578,8 @@ class _FirstRunApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (welcome)',
     theme: buildThemeData(defaultAppTheme),
+    // A child's device (or one not yet told who uses it) always blocks screenshots (screen_privacy.dart).
+    builder: childShieldBuilder,
     home: FirstRunFlow(
       baseUrl: baseUrl,
       draftRepository: draftRepository,
@@ -601,8 +604,8 @@ class _RolePickerApp extends StatelessWidget {
     title: 'Olive (welcome)',
     theme: buildThemeData(defaultAppTheme),
     navigatorObservers: [sharedReadAloudObserver],
-    builder: (context, child) =>
-        ReadAloudScope(controller: sharedReadAloud, child: child ?? const SizedBox.shrink()),
+    builder: (context, child) => ChildScreenShield(
+        child: ReadAloudScope(controller: sharedReadAloud, child: child ?? const SizedBox.shrink())),
     home: RolePickerScreen(onPicked: (DeviceRole r) => unawaited(onPicked(r))),
   );
 }
@@ -633,6 +636,7 @@ class _PairingBootApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (pairing)',
     theme: buildThemeData(defaultAppTheme),
+    builder: childShieldBuilder,
     home: PairingRedeemScreen(baseUrl: baseUrl, role: 'child', onRedeemed: _onRedeemed),
   );
 }
@@ -686,6 +690,7 @@ class _OnboardingBootApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Olive (onboarding)',
     theme: buildThemeData(defaultAppTheme),
+    builder: childShieldBuilder,
     home: OnboardingFlowScreen(
       childId: childId,
       baseUrl: baseUrl,
@@ -787,7 +792,7 @@ class _OliveLiveState extends State<OliveLive> {
           curve: Curves.easeInOut,
           // Accessibility settings and read-aloud (access_shell.dart).
           // The label scope: every child-facing screen says what SHE calls her grown-ups.
-          child: KidLabelsHost(childId: widget.childId, child: withAccess(child!)),
+          child: ChildScreenShield(child: KidLabelsHost(childId: widget.childId, child: withAccess(child!))),
         ),
         home: KioskShell(
           phoneUnlock: widget.phoneUnlock,

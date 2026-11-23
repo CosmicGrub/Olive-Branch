@@ -56,6 +56,7 @@ const Map<String, String> kLocalDataAreaNames = <String, String>{
   'profile': 'Offline start-up',
   'outbox': 'Waiting to send',
   'learn': 'Parent Learn',
+  'screenshares': 'Screens shared between grown-ups',
   'rhythm': 'Routine and rhythm',
   'newplace': 'A new place',
   'voice': 'Her helpers and symbols',

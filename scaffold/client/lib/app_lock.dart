@@ -12,10 +12,11 @@
 //     to ask: the lock is never "on" without one. Delay choices: right away, 1, 5 or 15
 //     minutes. The short default (1 minute) lets a photo picker or a permission box open
 //     and close without locking the app on its owner.
-//  2. HIDE IN RECENT APPS. On Android this sets FLAG_SECURE on the window so the recent
-//     apps list shows a blank card instead of the family's screens. Honest cost, said in
-//     the settings screen: it also blocks screenshots in this app. Nothing happens on
-//     other platforms or where the native side is missing.
+//  2. SCREENS ON THIS PHONE (Private, the default, or Screenshots allowed). Private sets FLAG_SECURE on the
+//     window so the recent apps list shows a blank card and screenshots and screen recordings are blocked.
+//     Android treats those as one thing, and the settings screen says so. Screenshots allowed clears it, but
+//     only after the grown-up's PIN, and a SENSITIVE screen (screen_privacy.dart) still blocks capture while it
+//     is showing. Nothing happens on other platforms or where the native side is missing.
 //  3. QUICK HIDE. One tap covers everything with a plain notes page. Coming back needs the
 //     PIN when one is set. DRAFT CONTENT: the wording and the way back are flagged for
 //     the owner's review (see the PR); change them in [kQuickHideNotes] only.
@@ -34,6 +35,7 @@ import 'local_pin.dart';
 import 'local_services.dart';
 import 'local_store.dart';
 import 'olive_tokens.dart' show kBodyFont;
+import 'screen_privacy.dart' show secureFlagWanted;
 
 /// How long a grown-up can be away before the app asks for the PIN again.
 enum AppLockDelay {
@@ -52,6 +54,10 @@ class AppLockPrefs {
   final bool lockOnLeave;
   final AppLockDelay delay;
   final bool hideRecents;
+
+  /// The grown-up chose "Screenshots allowed" for this phone. The stored key is still `recents` so an older save
+  /// reads the same way: Private (true) is the default and anything unreadable is Private.
+  bool get screenshotsAllowed => !hideRecents;
 
   AppLockPrefs copyWith({bool? lockOnLeave, AppLockDelay? delay, bool? hideRecents}) => AppLockPrefs(
         lockOnLeave: lockOnLeave ?? this.lockOnLeave,
@@ -164,6 +170,8 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
 
   AppLockPrefs _prefs = const AppLockPrefs();
   AppLockPrefs get prefs => _prefs;
+  int _secureHolds = 0;
+  bool? _lastSecure;
   bool _locked = false;
   bool _hidden = false;
   bool _ready = false;
@@ -195,16 +203,49 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     if (_disposed) return;
     _locked = _prefs.lockOnLeave && hasPin;
     _ready = true;
-    unawaited(secure.set(_prefs.hideRecents && !allowScreenshots));
+    _pushSecure(force: true);
     notifyListeners();
   }
 
   Future<void> update(AppLockPrefs next) async {
     await repo.save(next);
     _prefs = next;
-    unawaited(secure.set(next.hideRecents && !allowScreenshots));
+    _pushSecure(force: true);
     notifyListeners();
   }
+
+  /// Whether the window should be secure right now (see [secureFlagWanted]). This is the grown-up's phone, so it is
+  /// never a child device here; a child's device sets the flag in [ChildScreenShield] and has no controller.
+  bool get secureWanted => secureFlagWanted(
+      childDevice: false,
+      privateChoice: _prefs.hideRecents,
+      sensitiveHolds: _secureHolds,
+      covered: _locked || _hidden,
+      devAllow: allowScreenshots);
+
+  void _pushSecure({bool force = false}) {
+    final bool want = secureWanted;
+    if (!force && want == _lastSecure) return;
+    _lastSecure = want;
+    unawaited(secure.set(want));
+  }
+
+  /// A sensitive screen is showing: the window stays secure whatever the grown-up chose. Returns the release call, which
+  /// is safe to call more than once. See [SensitiveScreen].
+  VoidCallback holdSecure() {
+    _secureHolds++;
+    _pushSecure();
+    bool released = false;
+    return () {
+      if (released) return;
+      released = true;
+      if (_secureHolds > 0) _secureHolds--;
+      if (!_disposed) _pushSecure();
+    };
+  }
+
+  /// True while a sensitive screen is showing or the app is covered: nothing on screen may be shared then.
+  bool get sensitiveNow => _secureHolds > 0 || _locked || _hidden;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -221,12 +262,14 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_prefs.lockOnLeave || away < _prefs.delay.after) return;
     if (!await pin.isSet() || _disposed) return;
     _locked = true;
+    _pushSecure();
     notifyListeners();
   }
 
   /// Covers the app now. Coming back asks for the PIN when one is set.
   void quickHide() {
     _hidden = true;
+    _pushSecure();
     notifyListeners();
   }
 
@@ -236,6 +279,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
     if (c.ok && !_disposed) {
       _locked = false;
       _hidden = false;
+      _pushSecure();
       notifyListeners();
     }
     return c;
@@ -245,6 +289,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> leaveQuickHideWithoutPin() async {
     if (await pin.isSet()) return false;
     _hidden = false;
+    _pushSecure();
     notifyListeners();
     return true;
   }
