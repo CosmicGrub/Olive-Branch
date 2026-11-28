@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the tablet's side of taking an update from the grown-up's phone. Verified headless
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // (test/tablet_update_transfer_test.dart, tablet_update_hostile_test.dart, tablet_update_wiring_test.dart over the real
 // encrypted transport). MASTERFILE section 7.25.
 //

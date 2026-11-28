@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the seam between "an update the app trusts" and the family mesh that hands it to the child's tablet.
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // Verified headless (test/tablet_update_*_test.dart). MASTERFILE section 7.25 (A grown-up's phone updates the tablet).
 //
 // WHY THIS FILE EXISTS. The in-app updater (the client-updater lane: signed manifest, polite checks, resumable

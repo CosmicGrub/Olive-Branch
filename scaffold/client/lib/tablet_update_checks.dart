@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the checks the tablet repeats on its own, shared by the three places a file can become "an update the
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // tablet may install": received from the phone, fetched by the tablet itself, and the moment of installing. One
 // implementation so the three can never drift apart. Verified headless (test/tablet_update_hostile_test.dart).
 import 'dart:io';

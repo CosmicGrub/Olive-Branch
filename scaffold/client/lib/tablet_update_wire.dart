@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the wire for handing an update from a grown-up's phone to the paired tablet. Verified headless
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // (test/tablet_update_wire_test.dart). MASTERFILE section 7.25.
 //
 // It rides the existing authenticated LAN transport (play_transport.dart: sealed hello between the two PAIRED device
@@ -7,7 +8,7 @@
 // RESUMABLE request-and-answer protocol on top of that one, and every number in it is capped.
 //
 //   phone  -> tablet   offer  {docLen, docSha}      "I hold a signed update notice of this size and hash"
-//   tablet -> phone    need   {o, off, len}         "send me bytes [off, off+len) of the notice (o=doc) or the file (o=apk)"
+//   tablet -> phone    need   {o, off, len}         "send me len bytes from off of the notice (o=doc) or the file (o=apk)"
 //   phone  -> tablet   piece  {o, off, d}           up to 16 KiB of that range, base64
 //   either             end    {why}                 done | stop | refused (no reason text crosses the wire)
 //

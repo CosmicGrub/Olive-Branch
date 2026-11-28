@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the app-wide owner of the tablet update path: what is staged, the link to the phone, the install
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // handover that does not break the kiosk, and the result a grown-up is told. Verified headless
 // (test/tablet_update_service_test.dart, tablet_update_hostile_test.dart, tablet_update_wiring_test.dart).
 // MASTERFILE section 7.25.

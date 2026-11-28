@@ -1,4 +1,5 @@
 // OLIVE BRANCH — what the tablet keeps about an update it has staged: one sealed record in the device-scoped
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // `updatestage` area (see localDataCatalogue). Verified headless (test/tablet_update_store_test.dart).
 //
 // What is kept: the stage (receiving, ready, installing), the version, the signed notice exactly as it arrived (so the

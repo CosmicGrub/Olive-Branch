@@ -1,4 +1,5 @@
 // OLIVE BRANCH — SHA-256 helpers for the tablet update path: one-shot over bytes, and a streaming one that is fed
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // a file chunk by chunk so a 100 MB update is never held in memory. Verified headless
 // (test/tablet_update_hash_test.dart, against the two NIST vectors and a multi-chunk file).
 import 'dart:io';

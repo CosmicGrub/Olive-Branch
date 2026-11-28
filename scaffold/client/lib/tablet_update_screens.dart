@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the grown-up's screens for the tablet update path. Verified headless
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // (test/tablet_update_screens_test.dart). MASTERFILE section 7.25.
 //
 // TWO SURFACES, BOTH ADULT-ONLY.

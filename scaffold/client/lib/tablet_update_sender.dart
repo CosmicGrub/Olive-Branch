@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the grown-up's phone, handing a verified update to the paired tablet. Verified headless
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // (test/tablet_update_transfer_test.dart, tablet_update_hostile_test.dart). MASTERFILE section 7.25.
 //
 // WHAT IT DOES. A grown-up, on the grown-up's own phone, chooses "Share with the tablet". The phone then offers the
