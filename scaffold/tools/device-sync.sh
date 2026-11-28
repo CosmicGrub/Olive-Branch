@@ -34,13 +34,22 @@ FCM_DEFINES="${FCM_DEFINES:-../secrets/fcm.defines.json}"
 FCM_ARGS=()
 if [ -f "$FCM_DEFINES" ]; then FCM_ARGS=(--dart-define-from-file="$FCM_DEFINES"); echo "push: using the Firebase settings in the secrets folder"; fi
 
+# Developer-only: OLIVE_DEV_FIRST_RUN_PREVIEW=1 builds the guardian shell so it opens the grown-up's first run (Choose
+# your PIN included) over an in-memory store, on a phone that is already set up. Nothing on the phone is read or changed.
+# Off unless asked for; tools/check-dev-first-run.mjs fails CI if any other file passes the define.
+FIRSTRUN_ARGS=()
+if [ "${OLIVE_DEV_FIRST_RUN_PREVIEW:-}" = 1 ]; then
+  FIRSTRUN_ARGS=(--dart-define=OLIVE_DEV_GUARDIAN_FIRST_RUN=true)
+  echo "first-run preview: the guardian build opens the first run over an in-memory store"
+fi
+
 build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
-  flutter build apk --release --target-platform android-arm64 -t "lib/$entry.dart" \
+  flutter build apk --release --flavor direct --target-platform android-arm64 -t "lib/$entry.dart" \
     --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true ${FCM_ARGS[@]+"${FCM_ARGS[@]}"} "$@" \
     --android-project-arg=olive.allowDebugSignedRelease=true >"$OUT/$name.log" 2>&1 || { tail -20 "$OUT/$name.log"; exit 1; }
-  cp build/app/outputs/flutter-apk/app-release.apk "$OUT/$name.apk"
+  cp build/app/outputs/flutter-apk/app-direct-release.apk "$OUT/$name.apk"
 }
 push() { # $1 serial, $2 apk
   echo "== install $2 -> $1"
@@ -55,6 +64,6 @@ if [ "$WHICH" = child ] || [ "$WHICH" = both ]; then
 fi
 if [ "$WHICH" = guardian ] || [ "$WHICH" = both ]; then
   [ -n "$FOLD" ] || { echo "set FOLD=<phone serial> (see: adb devices)"; exit 2; }
-  build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1; push "$FOLD" guardian
+  build main_live_guardian guardian --dart-define=OLIVE_DEV_LOGIN=1 ${FIRSTRUN_ARGS[@]+"${FIRSTRUN_ARGS[@]}"}; push "$FOLD" guardian
 fi
 echo "done. apks in $OUT"

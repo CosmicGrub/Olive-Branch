@@ -58,6 +58,8 @@ import 'local_services.dart';
 import 'pairing_redeem_screen.dart';
 import 'theme.dart';
 import 'theme_data.dart';
+import 'update_controller.dart' show AppUpdater;
+import 'update_screens.dart' show UpdateHost, UpdateScope;
 
 /// The one session for a paired guardian device. When it ends (sign-out, revoked,
 /// deactivated) the shell returns to pairing, or to the offline home if this device has a
@@ -158,6 +160,7 @@ Future<void> bootLiveGuardian({required String guardianId, required AuthSession 
   // local family and local PIN areas are keyed by [kLocalGuardianScope], so they survive
   // connecting.
   await _openLocalStorage(guardianId);
+  unawaited(_startUpdater());
   final GuardianLocalServices local = GuardianLocalServices.from(LocalServices.current);
   final String childId = await _liveChildId();
   final initialTheme = await _fetchInitialTheme(guardianId, childId);
@@ -225,6 +228,21 @@ Future<void> completeGuardianRedeem(Map<String, dynamic> result) async {
   await bootLiveGuardian(guardianId: identity.targetId, session: _deviceSession(identity));
 }
 
+/// The grown-up's app updater (Settings > App updates, the gentle line on the home screen). Grown-up shells only: the
+/// child's shell never calls this. A build with no update source, or with no native side, ends up with the feature
+/// absent; any failure here leaves the app exactly as it was (an updater must never be why the app does not start).
+Future<void> _startUpdater() async {
+  if (UpdateHost.notifier.value != null) return;
+  try {
+    final AppUpdater u = await AppUpdater.forApp();
+    await u.start();
+    UpdateHost.notifier.value = u;
+    unawaited(u.maybeCheckAtOpen());
+  } catch (_) {
+    UpdateHost.notifier.value = null;
+  }
+}
+
 /// A grown-up role with no identity: the local family. Runs the guardian onboarding when there
 /// is no local family and PIN yet, otherwise opens the offline home. [reuseStorage] keeps the
 /// already-open store (the unified entry opened it to read the role).
@@ -234,12 +252,15 @@ Future<void> bootGuardianFlow(DeviceRole role, {bool reuseStorage = false}) asyn
   final LocalFamily? family = await _safe(local.families.load, null);
   final bool pinSet = await _safe(local.pin.isSet, false);
   if (family != null && pinSet) {
+    unawaited(_startUpdater());
     final GuardianLocalController controller =
         GuardianLocalController(local, family: family, onConnect: _openConnect, onAccount: _openAccount);
     runApp(OliveLocalGuardian(initialTheme: defaultAppTheme, controller: controller));
     return;
   }
-  runApp(_GuardianOnboardingApp(role: role, services: local));
+  // A family saved by a run that was stopped before the PIN was chosen: reopen on "Choose your PIN" (nothing asked again).
+  // A family with no PIN never reaches the home, so locked features cannot exist without a PIN to open them.
+  runApp(_GuardianOnboardingApp(role: role, services: local, resumeFamily: pinSet ? null : family));
 }
 
 /// Settings > Account > Connect this device: the optional code screen. "Not now" goes back.
@@ -288,9 +309,10 @@ class _PairingBootApp extends StatelessWidget {
 /// The guardian onboarding in a bare MaterialApp (no shell exists yet). On finish it boots the
 /// local flow again, which now finds the family and PIN and opens the offline home.
 class _GuardianOnboardingApp extends StatelessWidget {
-  const _GuardianOnboardingApp({required this.role, required this.services});
+  const _GuardianOnboardingApp({required this.role, required this.services, this.resumeFamily});
   final DeviceRole role;
   final GuardianLocalServices services;
+  final LocalFamily? resumeFamily;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -299,6 +321,7 @@ class _GuardianOnboardingApp extends StatelessWidget {
     home: GuardianOnboardingFlow(
       role: role,
       services: services,
+      resumeFamily: resumeFamily,
       serverAvailable: true,
       // The guided first run (docs/planning/ONBOARDING-SCRIPT.md): warm words, a progress strip, then the connect step and the
       // tour on her home. A device that already finished first run never comes through here.
@@ -337,7 +360,7 @@ Widget _guardianApp({
             );
             // The guardian shell speaks the adult's voice in the ad-hoc play notices (play_notice.dart).
             final Widget voiced = PlayAudienceScope(audience: PlayAudience.adult, child: animated);
-            return local == null
+            final Widget shell = local == null
                 ? voiced
                 : GuardianLocalScope(
                     controller: local,
@@ -346,6 +369,8 @@ Widget _guardianApp({
                         controller: local.services.appLock,
                         // Share this screen with another grown-up (screen_share_ui.dart): the capture target.
                         child: ShareCaptureScope(service: local.services.shares, child: voiced)));
+            // The updater is reachable from the grown-up's screens only (a null updater adds nothing).
+            return UpdateScope(child: shell);
           },
           home: home,
         );

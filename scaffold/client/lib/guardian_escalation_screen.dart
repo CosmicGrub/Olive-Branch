@@ -22,6 +22,39 @@
 import 'package:flutter/material.dart';
 
 import 'alerts_card.dart';
+import 'keypad_prefs.dart';
+
+/// WHAT the grown-up actually used to get in. The banner below says exactly this and nothing more (a tablet that was
+/// opened with the PIN alone must not say "and biometric").
+class EscalationProof {
+  const EscalationProof({this.pin = false, this.phone = false, this.biometric = false});
+
+  /// A code typed on the keypad.
+  final bool pin;
+
+  /// The grown-up's phone answered the tablet's one-time challenge.
+  final bool phone;
+
+  /// A real biometric check ran and passed (never true for a stand-in that only returns "yes").
+  final bool biometric;
+}
+
+/// The banner sentence, true to [p]: "your PIN", "your phone", "biometric", or two of them. [until] is the already
+/// formatted expiry time, or null when there is none to show.
+String escalationVerifiedWords(EscalationProof p, {String? until}) {
+  final List<String> used = <String>[
+    if (p.pin) 'your PIN',
+    if (p.phone) 'your phone',
+    if (p.biometric) 'biometric',
+  ];
+  final String how = used.isEmpty
+      ? 'Verified.'
+      : used.length == 1
+          ? 'Verified with ${used.first}.'
+          : 'Verified with ${used.sublist(0, used.length - 1).join(', ')} and ${used.last}.';
+  if (until == null) return how;
+  return '${how.substring(0, how.length - 1)} — good until $until.';
+}
 
 class GuardianEscalationScreen extends StatelessWidget {
   const GuardianEscalationScreen({
@@ -30,10 +63,18 @@ class GuardianEscalationScreen extends StatelessWidget {
     required this.onExitKiosk,
     this.childName = 'your child',
     this.onShowWelcome,
+    this.proof = const EscalationProof(pin: true),
+    this.keypadPrefs,
   });
 
   /// "Show her the welcome again" (guided_child.dart). Null hides the button.
   final VoidCallback? onShowWelcome;
+
+  /// How this grown-up got in (see [EscalationProof]).
+  final EscalationProof proof;
+
+  /// Where "Scramble the keypad" is kept. Null hides the switch (a tablet with nowhere to keep it).
+  final KeypadPrefs? keypadPrefs;
 
   /// From `LockState.escalatedUntil` — when this scope naturally lapses.
   /// Nullable only because the type it's threaded from is; a screen that can
@@ -59,10 +100,9 @@ class GuardianEscalationScreen extends StatelessWidget {
               Icon(Icons.verified_user_outlined, color: scheme.primary),
               const SizedBox(width: 12),
               Expanded(child: Text(
-                until == null
-                  ? 'Verified with PIN and biometric.'
-                  : 'Verified with PIN and biometric — good until '
-                    '${TimeOfDay.fromDateTime(until).format(context)}.',
+                escalationVerifiedWords(proof,
+                    until: until == null ? null : TimeOfDay.fromDateTime(until).format(context)),
+                key: const Key('escalationVerifiedBanner'),
                 style: TextStyle(color: scheme.onPrimaryContainer))),
             ]),
           ),
@@ -82,6 +122,7 @@ class GuardianEscalationScreen extends StatelessWidget {
               icon: const Icon(Icons.replay),
               label: const Text('Show her the welcome again'))),
           ],
+          if (keypadPrefs != null) _ScrambleSwitch(prefs: keypadPrefs!),
           const SizedBox(height: 32),
           SizedBox(height: 52, child: FilledButton.icon(
             key: const Key('exitKioskButton'),
@@ -92,4 +133,43 @@ class GuardianEscalationScreen extends StatelessWidget {
       ))),
     );
   }
+}
+
+/// "Scramble the keypad": one switch, one plain sentence, off unless a grown-up turns it on (keypad_prefs.dart).
+class _ScrambleSwitch extends StatefulWidget {
+  const _ScrambleSwitch({required this.prefs});
+  final KeypadPrefs prefs;
+  @override
+  State<_ScrambleSwitch> createState() => _ScrambleSwitchState();
+}
+
+class _ScrambleSwitchState extends State<_ScrambleSwitch> {
+  String? _message;
+
+  Future<void> _set(bool on) async {
+    final bool ok = await widget.prefs.setScramble(on);
+    if (!mounted) return;
+    setState(() => _message = ok ? null : 'That could not be saved on this device. Nothing changed.');
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.prefs,
+        builder: (BuildContext context, Widget? _) => Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            SwitchListTile(
+              key: const Key('scrambleKeypadSwitch'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Scramble the keypad'),
+              subtitle: const Text('Shuffles the number keys each time, so a child watching over your shoulder '
+                  'cannot learn your code from where you tap.'),
+              value: widget.prefs.scramble,
+              onChanged: _set,
+            ),
+            if (_message != null)
+              Text(_message!, key: const Key('scrambleKeypadError'), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ]),
+        ),
+      );
 }

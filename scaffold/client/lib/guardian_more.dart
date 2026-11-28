@@ -102,6 +102,7 @@ import 'village_repositories.dart';
 import 'siblings_screen.dart';
 import 'storyteller_screen.dart' show StorytellerSafetyScreen;
 import 'the_book.dart';
+import 'update_screens.dart' show AppUpdatesScreen, UpdateScope;
 import 'theme.dart';
 import 'theme_picker_screen.dart';
 import 'webauthn_channel.dart';
@@ -891,6 +892,11 @@ class GuardianMoreScreen extends StatelessWidget {
           SettingsRow(id: 'connect', icon: Icons.link_rounded, title: 'Connect this device',
             subtitle: 'Optional. Share your family with your other devices',
             onTap: () => local!.onConnect!(context)),
+        // Only where this build has an updater (a source configured, or Google Play): otherwise absent, not greyed out.
+        if (UpdateScope.maybeOf(context)?.enabled ?? false)
+          SettingsRow(id: 'appupdates', icon: Icons.system_update_outlined, title: 'App updates',
+            subtitle: 'Find, download and install a new version of Olive',
+            onTap: () => _open(context, const AppUpdatesScreen())),
         SettingsRow(id: 'deletion', icon: Icons.delete_outline, title: 'Deletion',
           subtitle: 'What deletion means here, stated first', onTap: () => _openDeletion(context)),
         SettingsRow(id: 'signout', icon: Icons.logout, title: 'Sign out',

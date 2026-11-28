@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- DIRECT flavor only (sideload, GitHub release, a family's own server): lets the app ask Android to install an update
+         APK it has downloaded and verified (signed manifest, SHA-256, same signing certificate, strictly higher versionCode).
+         This is a "special app access" permission: Android never installs silently. The adult sees the system confirmation
+         every time, and on first use is sent to the system screen to allow this app to install. The play flavor
+         (src/play/AndroidManifest.xml) removes this permission; Google Play updates come from Play itself.
+         docs/RELEASING.md "Two flavors"; tools/check-flavors.mjs keeps it in this file and out of src/main. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+</manifest>

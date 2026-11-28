@@ -264,11 +264,18 @@ void main() {
       expect(find.byType(TextButton), findsNWidgets(10));
     });
 
-    testWidgets('the keypad is SHUFFLED — the child is watching', (t) async {
+    testWidgets('the keypad is the plain 1-9, 0 order by default; SHUFFLED only when a grown-up chose it', (t) async {
+      await t.pumpWidget(wrap(PinGate(digits: 4, onComplete: (_) {})));
+      expect(
+          t
+              .widgetList<Text>(find.descendant(of: find.byType(TextButton), matching: find.byType(Text)))
+              .map((Text w) => w.data!)
+              .join(),
+          '1234567890');
       final List<String> orders = <String>[];
       for (int i = 0; i < 12; i++) {
         await t.pumpWidget(wrap(PinGate(
-            key: ValueKey<int>(i), digits: 4, onComplete: (_) {})));
+            key: ValueKey<int>(i), digits: 4, shuffle: true, onComplete: (_) {})));
         orders.add(t
             .widgetList<Text>(find.descendant(
                 of: find.byType(TextButton), matching: find.byType(Text)))
@@ -279,7 +286,7 @@ void main() {
       expect(orders.toSet().length, greaterThan(1));
     });
 
-    testWidgets('shuffle can be disabled for deterministic tests only',
+    testWidgets('shuffle off is the plain order',
         (t) async {
       await t.pumpWidget(wrap(PinGate(
           digits: 4, shuffle: false, onComplete: (_) {})));
@@ -335,7 +342,7 @@ void main() {
       expect(find.textContaining('error'), findsNothing);
       expect(find.textContaining('failed'), findsNothing);
       expect(find.textContaining('Incorrect'), findsNothing);
-      expect(find.text('Welcome back'), findsOneWidget);
+      expect(find.text('Enter your code'), findsOneWidget);
     });
 
     testWidgets('tells her this needs a grown-up, from frame one, unconditionally',
