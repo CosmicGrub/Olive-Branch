@@ -177,6 +177,25 @@ export function mergeDay(existing: DayColour | null, incoming: DayColour): Merge
   return { ok: true, row: incoming, changed, kept: 'incoming' };
 }
 
+/** The prototype's "two answers came close together" window (PUT /v1/colour-of-day). */
+export const SUPERSEDE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Did one of two answers lose to the other in a way a grown-up should be told about?
+ * Only her own answers on the same day count (a colour day is a deliberate act and has its own
+ * wording). True when an OLDER answer arrives after a newer one (the newer is kept, the late one
+ * is acknowledged and dropped), or when two answers with DIFFERENT colours were given less than
+ * ten minutes apart (the later is kept on both devices). A repeat of the same colour never is.
+ * This does not decide who wins (mergeDay does); it only decides whether to say so.
+ */
+export function answersSuperseded(existing: DayColour | null, incoming: DayColour): boolean {
+  if (!existing || existing.localDate !== incoming.localDate) return false;
+  if (existing.chosenBy !== 'child' || incoming.chosenBy !== 'child') return false;
+  if (existing.colourId === incoming.colourId) return false;
+  if (existing.chosenAtMs > incoming.chosenAtMs) return true;
+  return Math.abs(existing.chosenAtMs - incoming.chosenAtMs) < SUPERSEDE_WINDOW_MS;
+}
+
 /** The most recent day's row, or null if she has never answered. */
 export function currentDay(days: DayColour[]): DayColour | null {
   let best: DayColour | null = null;

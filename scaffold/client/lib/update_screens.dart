@@ -1,4 +1,5 @@
 // OLIVE BRANCH — what a grown-up sees of app updates: Settings > "App updates", and one gentle card on the grown-up's home
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // screen. ADULT-ONLY: these widgets are built by the guardian shell only (guardian_more.dart's Settings hub and
 // guardian_home.dart); the child's shell and the kiosk never import this file (test/update_source_test.dart). The
 // child never sees an update screen, a count, a prompt or an error (P1-P11). Verified headless

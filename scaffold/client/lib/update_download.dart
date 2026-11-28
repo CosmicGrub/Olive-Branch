@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the resumable, chunk-verified download and the safe place it keeps a file. Verified headless
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // (test/update_download_test.dart: a fake transport that lies in every way a network can). MASTERFILE 7.24.
 //
 // SAFE PARTIAL FILES. The manifest (signed) names the size, the SHA-256 of every chunk and the SHA-256 of the whole

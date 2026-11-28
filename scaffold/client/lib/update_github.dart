@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the "GitHub releases" update source of the direct (sideload) build. Pure functions: no network, no
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // storage. Verified headless (test/update_github_test.dart, with a sequence of future releases, a pre-release, a draft,
 // a malformed one and hostile assets). MASTERFILE 7.24.
 //
@@ -119,7 +120,7 @@ Set<String> githubBodyHashes(String body) {
 String _plainLine(String s) {
   String t = s.trim();
   t = t.replaceAll(RegExp(r'^#{1,6}\s*'), '').replaceAll(RegExp(r'^[-*+]\s+'), '');
-  t = t.replaceAllMapped(RegExp(r'\[([^\]]*)\]\([^)]*\)'), (Match m) => m.group(1)!);
+  t = t.replaceAllMapped(RegExp(r'\[([^\]]*)\]\x28[^\x29]*\x29'), (Match m) => m.group(1)!);
   t = t.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'[*_`]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
   return t;
 }

@@ -16,6 +16,10 @@ Silent deletion is a process failure.
 
 ## [Unreleased]
 
+### Fix red main (after #260 and #261)
+- verify compiles Kotlin for both distribution flavors (the app now has `direct` and `play`, so the plain task name was ambiguous).
+- The update files carry the client contract marker and balanced literal braces; two update tests compile and pass the analyzer; the colour-of-the-day vectors are regenerated for the supersede rule; the data catalogue counts read 51 areas, 31 sealed.
+
 ### The app finds its own updates in GitHub releases (Android direct build; client + release tooling)
 A grown-up can now update the Android app straight from the project's GitHub releases, with nothing to set up. Full account in MASTERFILE 7.24.
 - **Built in, on by default in the direct build.** The in-app updater engine (signed manifest, resumable download, Android package-installer hand-off, grown-up-only screens) gains a "GitHub releases" source. It is used whenever no signed-manifest source with an owner key is configured; a configured signed source always wins (it is the stronger path). `--dart-define=OLIVE_UPDATE_GITHUB=false` turns it off. The Play flavor is unchanged.

@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the signed update manifest: what the app is allowed to believe about "a newer version exists".
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // The format of record is docs/UPDATE-MANIFEST.md (the release lane); tools/update/test-vectors.json is the shared truth
 // this reader must reproduce, and test/update_manifest_test.dart replays every vector in it (a signature made by Node over
 // the same canonical bytes, and a labelled set of documents that must be accepted or refused with a named code).
@@ -135,11 +136,11 @@ class _StrictJson {
     _ws();
     if (i >= s.length) _fail('unexpected end');
     final String c = s[i];
-    if (c == '{') {
+    if (c == '\x7B') {
       i++;
       final Map<String, Object?> o = <String, Object?>{};
       _ws();
-      if (i < s.length && s[i] == '}') {
+      if (i < s.length && s[i] == '\x7D') {
         i++;
         return o;
       }
@@ -157,7 +158,7 @@ class _StrictJson {
           i++;
           continue;
         }
-        if (i < s.length && s[i] == '}') {
+        if (i < s.length && s[i] == '\x7D') {
           i++;
           return o;
         }
@@ -300,14 +301,14 @@ void _canon(Object? v, StringBuffer b) {
       for (final Object? k in v.keys)
         if (k is String) k else throw const FormatException('object key is not a string'),
     ]..sort();
-    b.write('{');
+    b.write('\x7B');
     for (int i = 0; i < keys.length; i++) {
       if (i > 0) b.write(',');
       _canonString(keys[i], b);
       b.write(':');
       _canon(v[keys[i]], b);
     }
-    b.write('}');
+    b.write('\x7D');
   } else {
     // A double, or anything else JSON could not hold exactly: refused, never rounded.
     throw FormatException('value of type ${v.runtimeType} has no canonical form');
