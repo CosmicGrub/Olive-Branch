@@ -435,6 +435,80 @@ const intent = (o) => ({
   }
 }
 
+// ---------------------------------------------------------------------------
+// Quiet hours around LOCAL MIDNIGHT, clock injected (never the wall clock).
+// Real bug: childCtxFor() cut a Postgres time ('23:59:59') to 'HH:mm', so an
+// all-day unreachable window ended at 23:59 and the gate let a call/push
+// through for the whole last minute of the child's local day -- CI hit it at
+// ~05:59 UTC (23:59 America/Chicago). The engine now keeps seconds.
+// ---------------------------------------------------------------------------
+{
+  const allDay = (bounds, reachable = false) => ({
+    homeTz: CHI, tzIntervals: [],
+    dayParts: [{ kind: 'asleep', startsLocal: bounds[0], endsLocal: bounds[1], daysOfWeek: ALL, reachable,
+      effectiveFrom: '2020-01-01', effectiveTo: '2098-12-31' }],
+  });
+  const at = (zone, iso) => DateTime.fromISO(iso, { zone }).toUTC();
+  // [zone, local date] -- a plain day, then the zone's own DST changes, and half-hour / 45-min zones.
+  const CASES = [
+    ['America/Chicago', '2026-11-21'], ['America/Chicago', '2026-11-01'], ['America/Chicago', '2026-03-08'],
+    ['America/Chicago', '2026-03-09'], ['America/New_York', '2026-11-01'], ['Asia/Kolkata', '2026-11-21'],
+    ['Asia/Kathmandu', '2026-11-21'], ['Australia/Lord_Howe', '2026-10-04'], ['Australia/Lord_Howe', '2026-04-05'],
+    ['Pacific/Auckland', '2026-09-27'], ['Pacific/Kiritimati', '2026-11-21'], ['Pacific/Pago_Pago', '2026-11-21'],
+  ];
+  for (const bounds of [['00:00', '23:59:59'], ['00:00:00', '23:59:59']]) {
+    const ctx = allDay(bounds);
+    for (const [zone, date] of CASES) {
+      const c = { ...ctx, homeTz: zone };
+      const next = DateTime.fromISO(date, { zone }).plus({ days: 1 }).toISODate();
+      const probes = [`${date}T00:00:00`, `${date}T00:00:01`, `${date}T12:00:00`,
+        `${date}T23:58:59`, `${date}T23:59:00`, `${date}T23:59:30`, `${date}T23:59:58`, `${date}T23:59:59`,
+        `${next}T00:00:00`, `${next}T00:00:01`];
+      const leaked = probes.filter(t => {
+        const dt = at(zone, t);
+        // skip wall-clock times the zone does not have (DST gap)
+        if (dt.setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm:ss") !== t) return false;
+        return gate(c, dt).allow;
+      });
+      // 23:59:59 itself is the window's exclusive end: it is the one second that may be reachable.
+      const unexpected = leaked.filter(t => !t.endsWith('T23:59:59'));
+      check('G4b midnight gate', `${bounds.join('-')} ${zone} ${date}: no probe leaks except the exclusive end second`,
+        unexpected.join(' ') || 'none', 'none');
+    }
+  }
+  // The exact CI moment, as an instant: 2026-11-21T05:59:00Z is 23:59:00 in Chicago.
+  check('G4b midnight gate', 'CI repro: 05:59:00Z is 23:59 Chicago and an all-day asleep part blocks it',
+    gate(allDay(['00:00', '23:59:59']), DateTime.fromISO('2026-11-21T05:59:00Z')).allow, 'false');
+  // Every second of the minute either side of local midnight, in Chicago and Kolkata.
+  for (const zone of ['America/Chicago', 'Asia/Kolkata', 'Asia/Kathmandu']) {
+    const c = { ...allDay(['00:00', '23:59:59']), homeTz: zone };
+    const base = at(zone, '2026-11-21T23:59:00');
+    let leaks = 0;
+    for (let sec = 0; sec < 121; sec++) {
+      const dt = base.plus({ seconds: sec });
+      const isEndSecond = dt.setZone(zone).toFormat('HH:mm:ss') === '23:59:59';
+      if (gate(c, dt).allow && !isEndSecond) leaks++;
+    }
+    check('G4b midnight gate', `${zone}: 121 consecutive seconds across local midnight, no leak`, leaks, 0);
+  }
+  // Legacy 'HH:mm' bounds still behave (half-open: the end minute is awake).
+  const legacy = { ...allDay(['00:00', '23:59']), homeTz: CHI };
+  check('G4b midnight gate', "HH:mm end '23:59' is half-open: 23:58:59 blocked, 23:59:00 reachable",
+    `${gate(legacy, at(CHI, '2026-11-21T23:58:59')).allow}/${gate(legacy, at(CHI, '2026-11-21T23:59:00')).allow}`, 'false/true');
+  // A wrapping part with seconds, listed on Friday, runs into Saturday and ends at its own second.
+  const wrap = { homeTz: CHI, tzIntervals: [], dayParts: [{ kind: 'asleep', startsLocal: '21:00:30', endsLocal: '06:30:30',
+    daysOfWeek: ALL, reachable: false, effectiveFrom: null, effectiveTo: null }] };
+  const w = (t) => gate(wrap, at(CHI, t)).allow;
+  check('G4b midnight gate', 'wrap with seconds: 21:00:29 open, 21:00:30 blocked, 00:00:00 blocked, 06:30:29 blocked, 06:30:30 open',
+    [w('2026-11-20T21:00:29'), w('2026-11-20T21:00:30'), w('2026-11-21T00:00:00'), w('2026-11-21T06:30:29'), w('2026-11-21T06:30:30')].join('/'),
+    'true/false/false/false/true');
+  // Day-of-week rollover at local midnight: Mon-only all-day part must not bleed into Tuesday 00:00:00.
+  const monOnly = { homeTz: CHI, tzIntervals: [], dayParts: [{ kind: 'asleep', startsLocal: '00:00', endsLocal: '23:59:59',
+    daysOfWeek: [1], reachable: false, effectiveFrom: null, effectiveTo: null }] };
+  check('G4b midnight gate', 'Monday-only part: Mon 23:59:30 blocked, Tue 00:00:00 reachable',
+    `${gate(monOnly, at(CHI, '2026-11-23T23:59:30')).allow}/${gate(monOnly, at(CHI, '2026-11-24T00:00:00')).allow}`, 'false/true');
+}
+
 let g = '';
 for (const r of rows) {
   if (r.group !== g) { g = r.group; console.log(`\n${g}`); }

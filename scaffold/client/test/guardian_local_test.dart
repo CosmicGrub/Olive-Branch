@@ -133,7 +133,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byType(LocalPinSetupScreen), findsOneWidget);
       expect(find.byType(GuardianSetupScreen), findsNothing);
-      expect(find.text('Choose a PIN for this device'), findsOneWidget);
+      expect(find.text('Choose your PIN'), findsWidgets);
     });
 
     testWidgets('entry: serverPinSetup is the server-PIN setup exactly as before', (t) async {

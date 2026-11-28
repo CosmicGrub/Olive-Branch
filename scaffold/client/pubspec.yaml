@@ -3,7 +3,7 @@ description: Olive Branch client — child and guardian shells.
 publish_to: none
 # <spec version>+<build>; the build number is derived (major*10000 + minor*100 + patch) and is the Android
 # versionCode. tools/test/version_sync.test.mjs fails CI if this drifts from the CHANGELOG. docs/RELEASING.md.
-version: 0.51.0+5100
+version: 0.52.0+5200
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
@@ -151,6 +151,10 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+  # The two Android distribution flavors (android/app/build.gradle.kts: direct and play). Without a default, every plain
+  # `flutter build apk` / `flutter run` would fail asking for --flavor. `direct` is the build the sideload and GitHub
+  # release lane makes; the Play build is always asked for explicitly (--flavor play). docs/RELEASING.md "Two flavors".
+  default-flavor: direct
   assets:
     # The design tokens generated from the prototype's kit (tools/gen-design-tokens.mjs);
     # test/design_parity_test.dart loads this file to prove the theme matches it.

@@ -166,7 +166,7 @@ for spec in \
   "privacy gate: rules, hostile encodings, diff parsing, real CLI (public-repo hygiene)|tools/test/privacy_gate.test.mjs" \
   "slot lock tool: acquire/release/stale/refuse (heavy-job slots)|tools/test/slot.test.mjs" \
   "list-test-failures: names failing tests from a flutter compact log|tools/test/list_test_failures.test.mjs" \
-  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs" ; do
+  "snoop hardening: sealed relay envelope + table rules (pure)|packages/game-sync/test/relay_envelope.test.mjs"   "snoop hardening: sealed relay over real sockets, no existence oracle, TLS-only upgrades|server/test/sealed_relay.test.mjs"   "snoop hardening: transport (boot assertions, https-only, headers, internal gate, safe logging)|server/test/transport.test.mjs"   "snoop hardening: network-identity minimisation (pseudonyms, proxy hops, body keys, source sweeps)|server/test/network_identity.test.mjs"   "docker dev-stack compose bindings|tools/docker-dev/test/compose.test.mjs"   "jitsi call tokens: claims, expiry, room capability, moderator rules (pure)|packages/session-runtime/test/jitsi.test.mjs"   "call provider switch: config validation, grant shapes, no leakage (pure)|server/test/call_config.test.mjs"   "call grant golden vectors (Node reference for client/lib/call_provider.dart)|tools/test/call_grant_vectors.test.mjs"   "calls-on/off scripts against a fake docker (pure)|tools/jitsi-selfhost/test/calls_scripts.test.mjs"   "care guides: lossless converter + one schema (content hash before == after)|tools/test/care_guides.test.mjs"   "live chain support (pure): sign-up validation + setup-code gate, readiness, delivery worker config + shutdown, /readyz transport, compose wiring, seed-dev refusal|server/test/live_chain_pure.test.mjs"   "fcm settings tool: google-services.json to git-ignored dart-defines, shape checks, no value echoed, no write outside secrets/|tools/test/fcm_defines.test.mjs"   "encrypted family backup: hash chain, tamper detection, restore proof (pure)|server/test/family_backup_chain.test.mjs"   "encrypted family backup: route / Dart / MASTERFILE drift, what the server can see, wiring (pure)|server/test/family_backup_drift.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(node "$file" 2>&1 || true)
   p=$(printf '%s' "$out" | sed -n 's/^\([0-9]\+\) passed, \([0-9]\+\) failed$/\1/p' | tail -1)
@@ -253,7 +253,7 @@ echo "── Android native (kiosk bridge, §5.20) ─────────�
 ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 GRADLEW="client/android/gradlew"
 if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
-  if (cd client/android && ./gradlew -q :app:compileDebugKotlin >/tmp/gradle.out 2>&1); then
+  if (cd client/android && ./gradlew -q :app:compileDirectDebugKotlin :app:compilePlayDebugKotlin >/tmp/gradle.out 2>&1); then
     echo "  android kotlin compile      clean"
   else
     tail -15 /tmp/gradle.out | sed 's/^/  /'
@@ -472,6 +472,7 @@ for spec in "db pool (real RLS)|packages/db/test/pool.test.mjs" \
             "guardian invite creation route (real DB)|packages/api/test/guardian_invite_create_route.test.mjs" \
             "identity lane: sign-up, children, invite confirm, materialize, call ids (0050, real DB, strict ids)|server/test/identity_chain_route.test.mjs" \
             "account recovery without email: operator code + PIN, replay, wrong family, budget (0053, real DB, strict ids)|server/test/account_recovery_route.test.mjs" \
+            "encrypted family backup: vault, chunked resumable upload, retention, immutability, restore waiting period, pause, helper, isolation (0054, real DB, strict ids)|server/test/family_backup_route.test.mjs" \
             "live chain e2e: real server, no dev-login, sign-up, send, deliver, push, call; HTTP stand-in for Google (real DB)|server/test/delivery_push_calls_e2e.test.mjs" \
             "calls route (real DB)|server/test/calls_route.test.mjs" \
             "calls route, jitsi default + livekit selectable (real DB)|server/test/calls_route_jitsi.test.mjs" \
@@ -555,6 +556,7 @@ for spec in "as app_runtime: security round 2 routes|server/test/security_round2
             "as app_runtime: parent learn route|server/test/parent_learn_route.test.mjs" \
             "as app_runtime: identity lane|server/test/identity_chain_route.test.mjs" \
             "as app_runtime: account recovery|server/test/account_recovery_route.test.mjs" \
+            "as app_runtime: encrypted family backup|server/test/family_backup_route.test.mjs" \
             "as app_runtime: snoop hardening routes|server/test/snoop_api_route.test.mjs" ; do
   name="${spec%%|*}"; file="${spec##*|}"
   out=$(DATABASE_URL="$RUNTIME_URL" ADMIN_DATABASE_URL="$ADMIN_URL" node "$file" 2>&1 || true)
@@ -640,6 +642,18 @@ if node tools/test/dev_cleartext_guard.test.mjs >/tmp/dc.out 2>&1 && node tools/
 else
   sed 's/^/  /' /tmp/dc.out
   echo "  DEV CLEARTEXT GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
+fi
+
+echo ""
+echo "── Dev-only first-run preview define ──────────────────────────"
+# Not counted into TOTAL_PASS. The dev-only first-run preview (see tools/check-dev-first-run.mjs) opens the grown-up's first run
+# over an in-memory store on an already set-up phone. Only tools/device-sync.sh may pass it, and only behind its
+# OLIVE_DEV_FIRST_RUN_PREVIEW=1 opt-in; this fails if any other file does (a store build must never carry it).
+if node tools/test/dev_first_run_guard.test.mjs >/tmp/fr.out 2>&1 && node tools/check-dev-first-run.mjs >>/tmp/fr.out 2>&1; then
+  echo "  dev first-run preview      $(grep -c 'PASS' /tmp/fr.out) passed      0 failed"
+else
+  sed 's/^/  /' /tmp/fr.out
+  echo "  DEV FIRST-RUN GUARD FAILED — see above"; PROBLEMS=$((PROBLEMS+1))
 fi
 
 echo ""

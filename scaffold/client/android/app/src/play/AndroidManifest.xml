@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- PLAY flavor: Google Play is the only way this build is updated (the In-App Updates API). It never installs a package
+         itself, so it must not declare REQUEST_INSTALL_PACKAGES (Play policy). `remove` also strips it if a plugin's own
+         manifest ever adds it, so the merged manifest of this flavor is clean whatever the dependencies do.
+         docs/RELEASING.md "Two flavors"; tools/check-flavors.mjs. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove"/>
+</manifest>

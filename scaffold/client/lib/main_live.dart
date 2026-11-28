@@ -54,7 +54,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'dev_first_run_preview.dart';
 import 'font_licences.dart';
+import 'keypad_prefs.dart';
 import 'access_shell.dart';
 import 'api_client.dart';
 import 'auth_session.dart';
@@ -378,6 +380,13 @@ Future<void> runLive({LiveTarget target = LiveTarget.unified}) async {
   // frame). See live_common.dart.
   await initFirebaseForLive();
 
+  // DEVELOPMENT BUILDS ONLY (dev_first_run_preview.dart): show the grown-up's first run over an in-memory store.
+  // A constant false in every store or release build, so this branch and the screen are removed from them.
+  if (kDevGuardianFirstRunPreview) {
+    runApp(const DevGuardianFirstRunPreviewApp());
+    return;
+  }
+
   // The dev defines decide first and read NOTHING from the device: `DeviceIdentityStore().load()`
   // and the role are never touched when OLIVE_CHILD_ID / OLIVE_GUARDIAN_ID is set, matching the
   // device-pairing spec's "dart-define, when present, keeps working exactly as today" literally.
@@ -500,10 +509,12 @@ Future<void> _bootLocalPaired(ChildPairing p) async {
       unawaited(_startKidFirstRun());
     },
   );
+  final KeypadPrefs keypadPrefs = await KeypadPrefs.load(LocalStoreKeypadPrefsRepository.over(LocalServices.current));
   runApp(OliveLive(
     initialTheme: defaultAppTheme,
     childId: p.cert.childId,
     session: null,
+    keypadPrefs: keypadPrefs,
     verifyPin: (String pin) async => lapsed() ? false : unlock.verifyBool(pin),
     phoneUnlock: PhoneUnlock(host: host, phoneOnly: p.phoneOnly, phoneOnlyWhen: lapsed),
     // No server account, no session: her home is drawn from what the pairing delivered, never from a server.
@@ -732,7 +743,11 @@ class _OnboardingBootApp extends StatelessWidget {
 class OliveLive extends StatefulWidget {
   const OliveLive({super.key, this.initialTheme = defaultAppTheme,
     required this.childId, required this.session, this.verifyPin, this.phoneUnlock,
-    this.localHome = false, this.localName, this.localAge});
+    this.localHome = false, this.localName, this.localAge, this.keypadPrefs});
+
+  /// The grown-up's "Scramble the keypad" choice, kept on this tablet (keypad_prefs.dart). Null on a connected
+  /// device that has nowhere to keep one: the plain keypad and no switch.
+  final KeypadPrefs? keypadPrefs;
 
   /// The session-bootstrap-resolved theme (`_fetchInitialTheme()`), already
   /// fail-closed to [defaultAppTheme] on any failure -- this widget never
@@ -834,6 +849,9 @@ class _OliveLiveState extends State<OliveLive> {
           phoneUnlock: widget.phoneUnlock,
           verifyPin: widget.verifyPin ?? (pin) => _verifyGuardianPin(pin, childId: widget.childId),
           verifyBiometric: _liveVerifyBiometricStub,
+          // The stand-in answers yes without checking anything, so Guardian mode must not say a biometric was used.
+          biometricIsReal: false,
+          keypadPrefs: widget.keypadPrefs,
           child: LiveChildHomeScreen(
             baseUrl: _dartDefineBaseUrl,
             childId: widget.childId,

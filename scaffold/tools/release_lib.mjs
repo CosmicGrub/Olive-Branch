@@ -174,5 +174,7 @@ export function releaseNotes({ version, date, title, section, sha, apk, sha256, 
     '',
     'Check it before installing: `sha256sum` (or `certutil -hashfile <file> SHA256`) must print the value above.',
     '',
+    `sha256: ${sha256}`,
+    '',
   ].join('\n');
 }
