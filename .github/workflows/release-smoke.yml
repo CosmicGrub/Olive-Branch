@@ -42,12 +42,24 @@ jobs:
       matrix:
         include:
           - variant: child
+            flavor: direct
             entry: lib/main_live.dart
             extra_defines: ''
           - variant: guardian
+            flavor: direct
             entry: lib/main_live_guardian.dart
             # Same define tools/device-sync.sh passes for the guardian shell. (There is no separate "screenshot"
             # define in the client; OLIVE_DEV_LOGIN is the only dev define the device build adds.)
+            extra_defines: '--dart-define=OLIVE_DEV_LOGIN=1'
+          # The Play flavor (no REQUEST_INSTALL_PACKAGES, no self-install) must also assemble and launch: it is the build a store
+          # upload is made from, and a release that only the direct flavor survives is not a release.
+          - variant: child-play
+            flavor: play
+            entry: lib/main_live.dart
+            extra_defines: ''
+          - variant: guardian-play
+            flavor: play
+            entry: lib/main_live_guardian.dart
             extra_defines: '--dart-define=OLIVE_DEV_LOGIN=1'
     env:
       API_LEVEL: '34'
@@ -80,11 +92,11 @@ jobs:
         working-directory: scaffold/client
         run: |
           flutter pub get
-          flutter build apk --release --target-platform android-x64 -t ${{ matrix.entry }} \
+          flutter build apk --release --flavor ${{ matrix.flavor }} --target-platform android-x64 -t ${{ matrix.entry }} \
             --dart-define=OLIVE_API_BASE_URL=http://10.0.2.2:8123 ${{ matrix.extra_defines }} \
             --android-project-arg=olive.allowDebugSignedRelease=true
           mkdir -p "$RUNNER_TEMP/smoke"
-          cp build/app/outputs/flutter-apk/app-release.apk "$RUNNER_TEMP/smoke/${{ matrix.variant }}.apk"
+          cp build/app/outputs/flutter-apk/app-${{ matrix.flavor }}-release.apk "$RUNNER_TEMP/smoke/${{ matrix.variant }}.apk"
 
       - name: Enable KVM
         run: |

@@ -72,6 +72,25 @@ export function generate() {
   // NaN cannot be written in JSON; the one case that uses it spells it as a string and the Dart runner maps it back.
   for (const m of out.merge) if (m.incoming && Number.isNaN(m.incoming.chosenAtMs)) m.incoming = { ...m.incoming, chosenAtMs: 'NaN' };
 
+  // The prototype's "two answers came close together" rule (mod-guardian.js PUT /v1/colour-of-day): which writes
+  // deserve the sentence "the later one is kept on both devices". It never decides the winner; mergeDay does.
+  const T = 1_000_000, MIN10 = C.SUPERSEDE_WINDOW_MS;
+  const supersedes = [
+    ['no earlier answer', null, kid(D, 'sea', T)],
+    ['different colour 3 minutes later', kid(D, 'sea', T), kid(D, 'sunny', T + 180_000)],
+    ['different colour just inside ten minutes', kid(D, 'sea', T), kid(D, 'sunny', T + MIN10 - 1)],
+    ['different colour exactly ten minutes later', kid(D, 'sea', T), kid(D, 'sunny', T + MIN10)],
+    ['different colour an hour later', kid(D, 'sea', T), kid(D, 'sunny', T + 3_600_000)],
+    ['same colour again soon', kid(D, 'sea', T), kid(D, 'sea', T + 60_000)],
+    ['older answer arrives late, an hour apart', kid(D, 'sea', T + 3_600_000), kid(D, 'sunny', T)],
+    ['older answer arrives late, same colour', kid(D, 'sea', T + 3_600_000), kid(D, 'sea', T)],
+    ['different colour at the very same instant', kid(D, 'sea', T), kid(D, 'sunny', T)],
+    ['a colour day is not a close answer', mum(D, 'mint', T), kid(D, 'sea', T + 1000)],
+    ['a colour day over her answer is not a close answer', kid(D, 'sea', T), mum(D, 'mint', T + 1000)],
+    ['another day', kid('2026-11-06', 'sea', T), kid(D, 'sunny', T + 1000)],
+  ];
+  out.supersede = supersedes.map(([name, existing, incoming]) => ({ name, existing, incoming, expect: C.answersSuperseded(existing, incoming) }));
+
   const days = [kid('2026-11-05', 'grass', 10), kid('2026-11-06', 'storm', 20), kid('2026-11-06', 'sky', 30), kid('2026-11-07', 'sea', 40)];
   out.days = days;
   out.currentDay = [[], days, days.slice(0, 2), [days[1], days[2]], [mum('2026-11-07', 'mint', 1), kid('2026-11-07', 'sea', 5)]]

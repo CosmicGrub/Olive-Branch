@@ -53,10 +53,10 @@ fi
 build() { # $1 entry, $2 name, rest = extra dart-defines
   local entry="$1" name="$2"; shift 2
   echo "== build $name"
-  flutter build apk --release --target-platform android-arm64 -t "lib/$entry.dart" \
+  flutter build apk --release --flavor direct --target-platform android-arm64 -t "lib/$entry.dart" \
     --dart-define=OLIVE_API_BASE_URL="$URL" --dart-define=OLIVE_ALLOW_SCREENSHOTS=true --dart-define=OLIVE_ALLOW_DEV_CLEARTEXT=true ${FCM_ARGS[@]+"${FCM_ARGS[@]}"} ${SIM_ARGS[@]+"${SIM_ARGS[@]}"} "$@" \
     --android-project-arg=olive.allowDebugSignedRelease=true >"$OUT/$name.log" 2>&1 || { tail -20 "$OUT/$name.log"; exit 1; }
-  cp build/app/outputs/flutter-apk/app-release.apk "$OUT/$name.apk"
+  cp build/app/outputs/flutter-apk/app-direct-release.apk "$OUT/$name.apk"
 }
 push() { # $1 serial, $2 apk
   echo "== install $2 -> $1"

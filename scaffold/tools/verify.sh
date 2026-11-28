@@ -253,7 +253,7 @@ echo "── Android native (kiosk bridge, §5.20) ─────────�
 ANDROID_SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 GRADLEW="client/android/gradlew"
 if [ -n "$ANDROID_SDK" ] && [ -d "$ANDROID_SDK" ] && [ -x "$GRADLEW" ]; then
-  if (cd client/android && ./gradlew -q :app:compileDebugKotlin >/tmp/gradle.out 2>&1); then
+  if (cd client/android && ./gradlew -q :app:compileDirectDebugKotlin :app:compilePlayDebugKotlin >/tmp/gradle.out 2>&1); then
     echo "  android kotlin compile      clean"
   else
     tail -15 /tmp/gradle.out | sed 's/^/  /'
