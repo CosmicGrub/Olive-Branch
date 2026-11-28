@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
@@ -16,8 +17,8 @@ import 'package:olive_client/update_controller.dart';
 import 'package:olive_client/update_download.dart';
 import 'package:olive_client/update_github.dart';
 import 'package:olive_client/update_manifest.dart';
-import 'package:olive_client/update_platform.dart';
 import 'package:olive_client/update_policy.dart';
+import 'package:olive_client/update_screens.dart';
 import 'package:olive_client/update_store.dart';
 import 'package:olive_client/update_transport.dart';
 
@@ -59,7 +60,7 @@ Map<String, Object?> rel(
         'size': bytes.length,
         'state': 'uploaded',
         'browser_download_url': downloadUrl ?? 'https://github.com/CosmicGrub/Olive-Branch/releases/download/$t/$name',
-        if (digest != null) 'digest': digest,
+        'digest': ?digest,
       },
       <String, Object?>{'name': 'SHA256SUMS', 'size': 90, 'state': 'uploaded'},
     ],
@@ -505,7 +506,7 @@ void main() {
     test('a file longer or shorter than the release said is refused', () async {
       feed(<Object?>[r('0.53.0')]);
       serve(Uint8List.fromList(<int>[...apkA, 1, 2, 3]), '0.53.0');
-      AppUpdater u = make();
+      final AppUpdater u = make();
       await u.start();
       await u.checkNow();
       await u.downloadNow();
@@ -610,6 +611,91 @@ void main() {
       expect(u.enabled, isFalse);
       await u.checkNow();
       expect(net.getLog, isEmpty);
+    });
+  });
+
+
+  // ---------------------------------------------------------------------------------------------------------------
+  group('what a grown-up sees', () {
+    Future<(AppUpdater, FakeTransport, Directory)> prepare(WidgetTester t, {List<Object?>? feedWith, UpdateRefusal? error, bool manual = true}) async {
+      late AppUpdater u;
+      late FakeTransport net;
+      late Directory dir;
+      await t.runAsync(() async {
+        dir = await Directory.systemTemp.createTemp('olive_gh_ui_');
+        net = FakeTransport();
+        if (feedWith != null) net.manifests[kApi] = jsonBytes(feedWith);
+        if (error != null) net.manifestErrors[kApi] = error;
+        u = AppUpdater(
+          environment: FixedEnvironment(wifiPhone()),
+          config: UpdateConfig(trust: UpdateTrust(const <String, List<int>>{}), githubEnabled: true),
+          repository: MemoryUpdateStateRepository(),
+          transport: net,
+          githubTransport: net,
+          staging: UpdateStaging(Directory('${dir.path}${Platform.pathSeparator}olive_updates')),
+          direct: FakeInstaller(),
+          safety: UpdateSafety(),
+          clock: () => kNow,
+          sleep: (Duration d) async {},
+        );
+        await u.start();
+        await u.checkNow(manual: manual);
+      });
+      addTearDown(u.dispose);
+      addTearDown(() async {
+        try {
+          await dir.delete(recursive: true);
+        } catch (_) {}
+      });
+      return (u, net, dir);
+    }
+
+    Future<void> show(WidgetTester t, Widget w) async {
+      t.view.physicalSize = const Size(420, 1800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(MaterialApp(home: w));
+      await t.pump();
+    }
+
+    testWidgets('the banner says "Update available: X.Y.Z"; the page shows its notes, those in between, and the honest words', (t) async {
+      final (AppUpdater u, FakeTransport _, Directory _) = await prepare(t, feedWith: <Object?>[r('0.53.0'), r('0.53.1'), r('1.0.0', prerelease: true)]);
+      await show(t, UpdateScope(updater: u, child: const Scaffold(body: UpdateBanner())));
+      expect(find.text('Update available: 1.0.0'), findsOneWidget);
+      await show(t, AppUpdatesScreen(updater: u, now: () => kNow));
+      expect(find.byKey(const Key('updateVersionLine')), findsOneWidget);
+      expect(find.text('Calmer messages 1.0.0'), findsOneWidget);
+      expect(find.text('• Messages open faster'), findsWidgets);
+      expect(find.byKey(const Key('updatePreviewNote')), findsOneWidget);
+      expect(find.byKey(const Key('updateMissed')), findsOneWidget);
+      expect(find.text('Olive 0.53.1'), findsOneWidget);
+      expect(find.text('Olive 0.53.0'), findsOneWidget);
+      expect(find.text('Update now'), findsOneWidget);
+      expect(find.text('Later'), findsOneWidget);
+      expect(find.byKey(const Key('updateGithubHonesty')), findsOneWidget);
+      expect(find.textContaining('as trustworthy as that GitHub account'), findsOneWidget);
+      expect(find.textContaining('same way'), findsOneWidget);
+      expect(find.byKey(const Key('updateSourceField')), findsNothing, reason: 'the signed-manifest source box is not for this source');
+    });
+
+    testWidgets('up to date: "Check for updates" is the button, and nothing is announced', (t) async {
+      final (AppUpdater u, FakeTransport _, Directory _) = await prepare(t, feedWith: <Object?>[r('0.51.0')]);
+      await show(t, UpdateScope(updater: u, child: const Scaffold(body: UpdateBanner())));
+      expect(find.byType(Card), findsNothing);
+      await show(t, AppUpdatesScreen(updater: u, now: () => kNow));
+      expect(find.text('Olive is up to date'), findsOneWidget);
+      expect(find.text('Check for updates'), findsOneWidget);
+    });
+
+    testWidgets('a check the button asked for that could not finish says so plainly; a quiet one says nothing', (t) async {
+      final (AppUpdater u, FakeTransport _, Directory _) = await prepare(t, error: const UpdateRefusal(UpdateRefusalCode.offline));
+      await show(t, AppUpdatesScreen(updater: u, now: () => kNow));
+      expect(find.text('Could not check right now. Nothing was changed.'), findsOneWidget);
+      final (AppUpdater q, FakeTransport _, Directory _) = await prepare(t, error: const UpdateRefusal(UpdateRefusalCode.offline), manual: false);
+      await show(t, AppUpdatesScreen(updater: q, now: () => kNow));
+      expect(find.byKey(const Key('updateFailure')), findsNothing);
+      await show(t, UpdateScope(updater: q, child: const Scaffold(body: UpdateBanner())));
+      expect(find.byType(Card), findsNothing);
     });
   });
 

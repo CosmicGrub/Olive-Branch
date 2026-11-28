@@ -1,4 +1,5 @@
 // OLIVE BRANCH — what the updater remembers, kept on THIS device in the sealed device area `updates` (catalogued in
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // local_services.dart, MASTERFILE 8.16.4). Verified headless (test/update_store_test.dart). MASTERFILE 7.24.
 //
 // It holds: when the last check was and how it ended (a word, never an address or an error text), the newest manifest

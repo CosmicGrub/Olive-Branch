@@ -36,10 +36,14 @@ void main() {
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     await t.pumpWidget(MaterialApp(
-      home: UpdateScope(updater: u, child: child ?? AppUpdatesScreen(updater: u, now: () => kNow)),
+      // The scope sits above the Navigator, as in the app, so a page pushed from a card can still reach the updater.
+      builder: (BuildContext context, Widget? page) => UpdateScope(updater: u, child: page!),
+      home: child ?? AppUpdatesScreen(updater: u, now: () => kNow),
     ));
     await t.pump();
   }
+
+  AppUpdater? current;
 
   /// A started updater brought to [then] with real I/O.
   Future<AppUpdater> prepared(WidgetTester t, {Future<void> Function(AppUpdater u)? then, Rig? r}) async {
@@ -55,17 +59,17 @@ void main() {
     return u;
   }
 
-  AppUpdater? current;
-
   /// Lets the real file work of the controller finish (it is real I/O, so it runs inside runAsync), then redraws. Waits
   /// until the updater is no longer busy, so a slow disk makes a test slower, never flaky.
   Future<void> settle(WidgetTester t) async {
-    await t.runAsync(() async {
-      for (int i = 0, quiet = 0; i < 400 && quiet < 2; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-        quiet = (current?.busy ?? false) ? 0 : quiet + 1;
-      }
-    });
+    // The controller's file work is real I/O whose continuations run in the test's fake-async zone, so the zone is
+    // pumped between every real wait; otherwise a chain of awaits would never advance.
+    int quiet = 0;
+    for (int i = 0; i < 400 && quiet < 3; i++) {
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await t.pump(const Duration(milliseconds: 25));
+      quiet = (current?.busy ?? false) ? 0 : quiet + 1;
+    }
     await t.pump();
   }
 
@@ -264,7 +268,7 @@ void main() {
       await t.runAsync(() => u.checkNow());
       await pumpScreen(t, u);
       expect(find.text('An update is ready'), findsOneWidget);
-      expect(find.textContaining('may be offline'), findsOneWidget);
+      expect(find.textContaining('may have no connection'), findsOneWidget);
     });
 
     testWidgets('the install did not finish: says nothing changed and offers it again', (t) async {

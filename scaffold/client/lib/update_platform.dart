@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the updater's seam to Android: what the phone says about itself, the "direct" installer (the system
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // PackageInstaller behind a MethodChannel) and the "play" updater (Google Play In-App Updates). Mirrors
 // android/app/src/{main,direct,play}/kotlin/com/olivebranch/olive_client/UpdateBridge.kt and UpdateEnvironment.kt; the
 // channel and method names below are contract-checked against those files (test/update_platform_test.dart).

@@ -1,4 +1,5 @@
 // OLIVE BRANCH — the app updater: finds an update, helps a grown-up download it, and hands it to Android to install.
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // Verified headless (test/update_controller_test.dart: a fake transport, a fake installer and a fake phone, with every
 // hostile case). MASTERFILE 7.24.
 //
@@ -130,15 +131,14 @@ class AppUpdater extends ChangeNotifier {
     required this._config,
     required UpdateStateRepository repository,
     required this._transport,
-    UpdateTransport? githubTransport,
+    this._githubTransport,
     this._staging,
     this._direct,
     this._play,
     UpdateSafety? safety,
     DateTime Function()? clock,
     this._sleep,
-  })  : _githubTransport = githubTransport,
-        _envSource = environment,
+  })  : _envSource = environment,
         _repo = repository,
         _safety = safety ?? UpdateSafety(),
         _clock = clock ?? DateTime.now;
@@ -527,7 +527,10 @@ class AppUpdater extends ChangeNotifier {
           lastAttemptMs: now,
           lastResult: ignorable ? 'ok' : (why?.code == UpdateRefusalCode.offline ? 'offline' : 'refused:${why?.code.name ?? 'none'}'),
           lastCheckMs: ignorable ? now : _state.lastCheckMs));
-      final UpdatePhase back = (before == UpdatePhase.checking || before == UpdatePhase.off || before == UpdatePhase.failed)
+      final UpdatePhase back = (before == UpdatePhase.checking ||
+              before == UpdatePhase.off ||
+              before == UpdatePhase.failed ||
+              before == UpdatePhase.idle)
           ? (ignorable ? UpdatePhase.upToDate : UpdatePhase.idle)
           : before;
       _set(back, failure: ignorable ? null : why?.code);
@@ -942,7 +945,8 @@ class AppUpdater extends ChangeNotifier {
       notifyListeners();
       return null;
     }
-    final String? why = updateUrlProblem(v, allowLoopbackHttp: _config.allowLoopbackHttp);
+    final String? why = updateUrlProblem(v, allowLoopbackHttp: _config.allowLoopbackHttp) ??
+        ((Uri.tryParse(v)?.hasQuery ?? false) ? 'a query string (it could carry a secret)' : null);
     if (why != null) return why;
     await _save(_state.copyWith(manifestUrl: v));
     notifyListeners();

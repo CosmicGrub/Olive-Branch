@@ -411,8 +411,8 @@ void main() {
 
     test('a connection that keeps dropping while queued for Wi-Fi waits instead of failing, and finishes later', () async {
       final AppUpdater u = await found();
-      rig.transport.files[kPrimary] = FileBehavior(apk, dropAfter: kChunk + 100, dropTimes: 9999);
-      rig.transport.files[kMirror] = FileBehavior(apk, dropAfter: kChunk + 100, dropTimes: 9999);
+      rig.transport.files[kPrimary] = FileBehavior(apk, dropAfter: kChunk ~/ 2, dropTimes: 9999);
+      rig.transport.files[kMirror] = FileBehavior(apk, dropAfter: kChunk ~/ 2, dropTimes: 9999);
       await u.downloadOnWifi();
       expect(u.phase, UpdatePhase.waitingForWifi);
       rig.transport.files[kPrimary] = FileBehavior(apk);

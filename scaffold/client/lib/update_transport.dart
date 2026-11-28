@@ -1,4 +1,5 @@
 // OLIVE BRANCH — how the updater reaches the network, and what it knows about the phone it runs on. Verified
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // headless (test/update_transport_test.dart: a real local HTTP server for ranges, redirects, caps and cleartext).
 // MASTERFILE 7.24.
 //

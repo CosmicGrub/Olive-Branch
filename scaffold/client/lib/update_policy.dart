@@ -1,4 +1,5 @@
 // OLIVE BRANCH — what a verified manifest MEANS for the app that is installed: is it for this app and this channel,
+// UNVERIFIED on a device; verified by CI headless (client/test).
 // is it fresh, is it newer, may it be taken, which file is for this phone's chip, is this build still supported. Pure
 // functions; no network, no storage. Verified headless (test/update_policy_test.dart, and the vectors in
 // test/update_manifest_test.dart). MASTERFILE 7.24.
