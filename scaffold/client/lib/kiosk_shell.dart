@@ -38,6 +38,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'guardian_escalation_screen.dart';
+import 'keypad_prefs.dart';
 import 'call_presence.dart' show KioskSurfaceSignal;
 import 'call_screen.dart';
 import 'kiosk_lock_colors.dart';
@@ -59,7 +60,16 @@ class KioskShell extends StatefulWidget {
     this.phoneUnlock,
     this.childName = 'your child',
     this.callerName = 'there',
+    this.biometricIsReal = true,
+    this.keypadPrefs,
   });
+
+  /// False when [verifyBiometric] is only a stand-in that answers yes (the live entry's, until a real one is
+  /// wired). Guardian mode then never claims a biometric check that did not happen.
+  final bool biometricIsReal;
+
+  /// The grown-up's "Scramble the keypad" choice (keypad_prefs.dart). Null = the plain keypad, no switch.
+  final KeypadPrefs? keypadPrefs;
 
   /// The unlocked child surface — typically a ChildHome.
   final Widget child;
@@ -93,6 +103,10 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   late final KioskChannel _channel;
   StreamSubscription<String>? _sub;
   lock.LockState _stateValue = lock.initialState(lock.LockMode.none);
+
+  /// What the grown-up used to reach Guardian mode (shown truthfully in its banner).
+  EscalationProof _proof = const EscalationProof(pin: true);
+  bool get _scramble => widget.keypadPrefs?.scramble ?? false;
 
   // Every change of the lock state also publishes WHICH surface is showing, so an incoming ring can tell
   // whether a grown-up is in Guardian mode (incoming_call.dart: a ring never covers a grown-up). A setter, so no
@@ -171,14 +185,14 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
 
   /// True only after the adult gate returned a code or the phone's verified answer that [_proves] accepts.
   Future<bool> _grownUpProves(BuildContext context) async {
-    final code = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock);
+    final code = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock, scramble: _scramble);
     if (code == null || !mounted) return false;
     return _proves(code);
   }
 
   Future<void> _attemptBreakGlass() async {
     // The grown-up already tapped "I'm the grown-up" on the locked-out screen: straight to the keypad.
-    final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm, phone: widget.phoneUnlock);
+    final code = await askAdultPin(context, digits: _digits, startOpen: true, confirmLabel: _confirm, phone: widget.phoneUnlock, scramble: _scramble);
     if (code == null || !mounted) return;
     if (await _proves(code) && mounted) {
       setState(() => _state = lock.breakGlass(_state, DateTime.now()).state);
@@ -192,13 +206,19 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
   /// there watching (§8.3's own framing) never learns which factor failed.
   Future<void> _attemptEscalation() async {
     // The shield is reachable by a child: she gets the calm card first, never a keypad.
-    final pin = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock);
+    final pin = await askAdultPin(context, digits: _digits, confirmLabel: _confirm, phone: widget.phoneUnlock, scramble: _scramble);
     if (pin == null || !mounted) return;
     final pinOk = await _proves(pin);
     if (!mounted) return;
     final biometricOk = pinOk ? await widget.verifyBiometric() : false;
     if (!mounted) return;
     final result = lock.escalate(_state, pinOk, biometricOk, DateTime.now());
+    // Remember what was REALLY used: a typed code or the phone's answer, and a biometric only if one truly ran.
+    _proof = EscalationProof(
+      pin: pinOk && pin != kPhoneProof,
+      phone: pinOk && pin == kPhoneProof,
+      biometric: pinOk && biometricOk && widget.biometricIsReal,
+    );
     setState(() => _state = result.state);
     if (result.denied != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -236,7 +256,7 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
       ]);
     }
     if (lock.canRender(_state, lock.Surface.pinGate, now)) {
-      return AdultGate(digits: _digits, confirmLabel: _confirm, onPin: _onPinComplete, phone: widget.phoneUnlock);
+      return AdultGate(digits: _digits, confirmLabel: _confirm, onPin: _onPinComplete, phone: widget.phoneUnlock, scramble: _scramble);
     }
     if (lock.canRender(_state, lock.Surface.lockedOut, now)) {
       return _LockedOutScreen(
@@ -251,6 +271,8 @@ class _KioskShellState extends State<KioskShell> with WidgetsBindingObserver {
         escalatedUntil: _state.escalatedUntil,
         onExitKiosk: _exitKiosk,
         childName: widget.childName,
+        proof: _proof,
+        keypadPrefs: widget.keypadPrefs,
         // The grown-up is at her tablet and has proved it: they can run her welcome again (guided_child.dart).
         onShowWelcome: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => ChildWelcomeReplay(name: widget.childName == 'your child' ? null : widget.childName))),

@@ -33,7 +33,10 @@ import 'dart:typed_data';
 
 import 'package:bonsoir/bonsoir.dart';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'device_keys.dart' show b64, unb64;
+import 'lan_bind.dart' show isNonLanInterface;
 import 'pairing_limits.dart';
 import 'pairing_picture.dart' show kPictureTagBytes;
 import 'pairing_protocol.dart';
@@ -214,17 +217,100 @@ class LanPairingHost {
   }
 }
 
+/// A network interface by name and number, as the platform lists them.
+class LanInterface {
+  const LanInterface(this.name, this.index);
+  final String name;
+  final int index;
+}
+
+/// Where to dial a host that discovery (or a scanned picture) gave us, worked out safely.
+class ConnectTarget {
+  const ConnectTarget(this.dialAddress, this.urlHost, {this.scoped = false});
+
+  /// The address to open the socket to (a link-local IPv6 address carries its interface NUMBER here).
+  final InternetAddress dialAddress;
+
+  /// The host for the request line and Host header: never carries a scope.
+  final String urlHost;
+
+  /// True when the address is link-local IPv6 and [dialAddress] had to be given an interface.
+  final bool scoped;
+}
+
+/// ROOT CAUSE of "the tablet scans and disconnects but cannot connect" (see test/lan_scoped_host_test.dart): the platform's
+/// resolver returns a link-local IPv6 address with its interface ("fe80::...%wlan0", the way Java prints it). Dart's Uri turned
+/// that into "...%25wlan0", the lookup failed, and the transport answered null, silently, every time. This reads what a resolver
+/// returns and says how to dial it, or null when it must not be dialled:
+///   - only a LAN address is ever dialled (private, unique-local, link-local; loopback too, which cannot leave the device),
+///     so a hostile advertisement or scanned picture cannot send the tablet's handshake to a public address;
+///   - a name that is not an address is refused (nothing here resolves a name an advertisement chose);
+///   - a link-local IPv6 address needs its interface: a NAME is looked up in [interfaces], a number is taken as is, a missing
+///     one is not guessed, and a cellular or tunnel interface is never used.
+/// Never throws.
+ConnectTarget? connectTargetFor(String host, {List<LanInterface>? interfaces}) {
+  try {
+    final String h = host.trim().replaceAll('%25', '%');
+    if (h.isEmpty || h.length > 80) return null;
+    final List<String> parts = h.split('%');
+    if (parts.length > 2) return null;
+    final InternetAddress? a = InternetAddress.tryParse(parts[0]);
+    if (a == null || !isLanAddress(a, allowLoopback: true)) return null;
+    final bool linkLocal = a.type == InternetAddressType.IPv6 && a.rawAddress[0] == 0xfe && (a.rawAddress[1] & 0xc0) == 0x80;
+    final String? scope = parts.length == 2 ? parts[1] : null;
+    if (!linkLocal) return ConnectTarget(a, a.address);
+    if (scope == null || scope.isEmpty) return null; // a link-local address means nothing without its interface
+    int? index = int.tryParse(scope);
+    if (index == null) {
+      if (isNonLanInterface(scope)) return null;
+      for (final LanInterface i in interfaces ?? const <LanInterface>[]) {
+        if (i.name == scope) index = i.index;
+      }
+    } else if (index <= 0) {
+      return null;
+    }
+    if (index == null) return null;
+    final InternetAddress? dial = InternetAddress.tryParse('${a.address}%$index');
+    if (dial == null) return null;
+    return ConnectTarget(dial, a.address, scoped: true);
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<List<LanInterface>> _platformInterfaces() async {
+  try {
+    final List<NetworkInterface> l = await NetworkInterface.list(includeLinkLocal: true, includeLoopback: false);
+    return <LanInterface>[for (final NetworkInterface i in l) LanInterface(i.name, i.index)];
+  } catch (_) {
+    return const <LanInterface>[];
+  }
+}
+
 class LanPairingTransport implements PairingTransport {
-  LanPairingTransport(this.host, this.port, {this.timeout = const Duration(seconds: 6)});
+  LanPairingTransport(this.host, this.port, {this.timeout = const Duration(seconds: 6), this.interfaces});
   final String host;
   final int port;
   final Duration timeout;
 
+  /// Tests: the interfaces to place a link-local host on. Null = ask the platform.
+  final List<LanInterface>? interfaces;
+
   @override
   Future<Map<String, dynamic>?> send(Map<String, dynamic> message) async {
+    final ConnectTarget? target = connectTargetFor(host, interfaces: interfaces ?? await _platformInterfaces());
+    if (target == null) {
+      // Not an address this device will dial. No address is logged (the app never writes where it is).
+      debugPrint('[olive.pairing] that window link was not one a pairing may use');
+      return null;
+    }
     final HttpClient c = HttpClient()..connectionTimeout = timeout;
+    if (target.scoped) {
+      // A link-local IPv6 address is dialled on its interface; the request itself never carries the scope.
+      c.connectionFactory = (Uri url, String? proxyHost, int? proxyPort) => Socket.startConnect(target.dialAddress, port);
+    }
     try {
-      final HttpClientRequest req = await c.postUrl(Uri(scheme: 'http', host: host, port: port, path: '/pair')).timeout(timeout);
+      final HttpClientRequest req = await c.postUrl(Uri(scheme: 'http', host: target.urlHost, port: port, path: '/pair')).timeout(timeout);
       req.headers.contentType = ContentType.json;
       req.write(jsonEncode(message));
       final HttpClientResponse res = await req.close().timeout(timeout);
@@ -234,7 +320,8 @@ class LanPairingTransport implements PairingTransport {
       }
       final Object? decoded = jsonDecode(await utf8.decoder.bind(res).join());
       return decoded is Map<String, dynamic> ? decoded : null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[olive.pairing] could not reach the window: ${e.runtimeType}');
       return null;
     } finally {
       c.close(force: true);

@@ -272,9 +272,10 @@ void main() {
       expect(paired, isEmpty, reason: 'a right pick alone is not an approval: no certificate yet');
       expect(w.state, WindowState.awaitingApproval);
       expect(await w.approve(), isTrue);
-      expect(paired, hasLength(1));
+      expect(paired, isEmpty, reason: 'the tablet is recorded when it is handed its credential, not when the grown-up taps Yes');
       final PairingResult r = await f;
       expect(r.ok, isTrue);
+      expect(paired, hasLength(1));
     });
 
     test('a wrong pick or "None of these" on a default window: nothing issued, the child device gets nothing', () async {

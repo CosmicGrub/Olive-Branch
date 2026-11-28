@@ -16,12 +16,19 @@
 // no name) for the grown-up to pick on the phone, then waits for the one-tap yes there. A wrong PIN, another
 // family's window or picture, a refusal, a timeout or a camera that will not start all end at the same calm card
 // (CalmTryAgainCard): no number, no count, no reason.
+//
+// HER TABLET (the one button): behind "I'm the grown-up" the first thing, big, is "Connect to a phone": the tablet shows SIX
+// NUMBERS (and its own picture) and waits; the grown-up types the numbers on their phone (connect_child_screen.dart). No PIN is
+// typed on the tablet. It finds the grown-up's open window by itself when there is one nearby (the grown-up picks a picture
+// when there are several). The numbers are this tablet's own secret for one window (the key exchange's password, never sent,
+// pairing_protocol.dart), chosen by the platform's random source, fresh each time this screen is opened. The PIN way is below.
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import 'adult_gate.dart';
+import 'connect_simulation.dart';
 import 'device_keys.dart';
 import 'kiosk_lock_colors.dart';
 import 'lan_pairing_transport.dart';
@@ -59,7 +66,7 @@ const Map<String, IconData> kSasIcons = <String, IconData>{
   'bell': Icons.notifications_rounded,
 };
 
-enum _Stage { card, options, keypad, working, tryAgain, scanning, hello }
+enum _Stage { card, options, keypad, working, tryAgain, scanning, hello, code }
 
 class ChildConnectScreen extends StatefulWidget {
   const ChildConnectScreen({
@@ -76,7 +83,20 @@ class ChildConnectScreen extends StatefulWidget {
     this.scannerBuilder = defaultScannerBuilder,
     this.claimedFamilyId,
     this.helloFor = const Duration(minutes: 10),
+    this.simulate = kSimulateConnect,
+    this.codeSettle = const Duration(seconds: 2),
+    this.codeRetryEvery = const Duration(seconds: 1),
   });
+
+  /// DEV-ONLY (the dev-only simulate define, see connect_simulation.dart): offers "Simulate a phone" so one device can show this
+  /// flow with a simulated grown-up's phone. Always false in a normal build.
+  final bool simulate;
+
+  /// How long the tablet waits for the nearby windows to settle before it picks the only one by itself.
+  final Duration codeSettle;
+
+  /// How long after a wrong code the tablet asks again (the grown-up types the code again on the phone).
+  final Duration codeRetryEvery;
 
   final DeviceKeyRepository deviceKeys;
 
@@ -125,9 +145,18 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
   Uint8List? _pinnedFp;
   Timer? _helloTimer;
 
+  // The CODE way ("Connect to a phone"): this tablet's six numbers for this attempt, the retry count, a simulated phone (dev only).
+  String? _code;
+  Timer? _codeTimer;
+  int _codeTries = 0;
+  bool _codeRunning = false;
+  SimulatedPhone? _simPhone;
+
   @override
   void dispose() {
     _helloTimer?.cancel();
+    _codeTimer?.cancel();
+    _simPhone?.dispose();
     _stopFinder();
     super.dispose();
   }
@@ -141,6 +170,12 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
 
   void _reset() {
     _helloTimer?.cancel();
+    _codeTimer?.cancel();
+    _code = null;
+    _codeTries = 0;
+    _codeRunning = false;
+    _simPhone?.dispose();
+    _simPhone = null;
     _adultPic = null;
     _ownPic = null;
     _pinnedFp = null;
@@ -164,13 +199,16 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     _finder = f;
     try {
       await f.start();
-    } catch (_) {
-      return; // nothing nearby can be found; the list simply stays empty
+    } catch (e) {
+      // Nothing nearby can be found; the list simply stays empty (the child sees nothing). Said in the log, with no address.
+      debugPrint('[olive.pairing] looking for a window nearby could not start: ${e.runtimeType}');
+      return;
     }
     _foundSub = f.found.listen((NearbyWindow w) {
       if (!mounted) return;
       setState(() => _nearby[w.key] = w);
       unawaited(_maybeAutoPick(w));
+      _considerOnlyWindow();
     });
     _goneSub = f.gone.listen((String k) {
       if (mounted) setState(() => _nearby.remove(k));
@@ -190,6 +228,10 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     if (tag == null || salt == null || _chosen != null) return;
     if (!await tagMatches(salt, (w.handle ?? w.sid)!, tag)) return;
     if (!mounted || _chosen != null) return;
+    if (_stage == _Stage.code) {
+      unawaited(_startCode(w));
+      return;
+    }
     if (_adultPic != null) _pinnedFp = await _adultPic!.fingerprint();
     if (!mounted) return;
     setState(() {
@@ -202,6 +244,117 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     for (final NearbyWindow w in _nearby.values.toList()) {
       await _maybeAutoPick(w);
     }
+  }
+
+  /// "Connect to a phone": show six numbers and this tablet's picture, then wait for the grown-up's phone.
+  Future<void> _openCode({bool simulated = false}) async {
+    _codeTimer?.cancel();
+    final String code = newPairingCode();
+    PairingPicture? pic;
+    final PairingPictureRepository? repo = widget.pictures;
+    if (repo != null) {
+      try {
+        final DeviceKey key = await DeviceKey.loadOrCreate(widget.deviceKeys);
+        pic = await PairingPictureService(repo).own(key, PictureRole.child);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    SimulatedPhone? sim;
+    if (simulated && widget.simulate) sim = await SimulatedPhone.open();
+    if (!mounted) {
+      sim?.dispose();
+      return;
+    }
+    setState(() {
+      _code = code;
+      _ownPic = pic;
+      _adultPic = null;
+      _chosen = null;
+      _codeTries = 0;
+      _codeRunning = false;
+      _simPhone = sim;
+      _stage = _Stage.code;
+    });
+    if (sim != null) {
+      // The simulated grown-up's window is "nearby" at once; it types the numbers it sees a moment later.
+      _nearby['simulated'] = NearbyWindow(handle: sim.window.discoveryHandle, host: 'simulated', port: 0);
+      sim.typeCode(code);
+      unawaited(_startCode(_nearby['simulated']!));
+      return;
+    }
+    await _ensureFinder();
+    await _recheckNearby();
+    // With one window nearby and nothing else to go on, that is the grown-up's: take it once the list has settled.
+    _codeTimer = Timer(widget.codeSettle, _considerOnlyWindow);
+  }
+
+  void _considerOnlyWindow() {
+    if (!mounted || _stage != _Stage.code || _chosen != null || _codeRunning || _nearby.length != 1) return;
+    if (_codeTimer?.isActive == true) return; // still settling
+    unawaited(_startCode(_nearby.values.single));
+  }
+
+  Future<void> _startCode(NearbyWindow w) async {
+    final String? code = _code;
+    if (code == null || _codeRunning) return;
+    _codeRunning = true;
+    setState(() => _chosen = w);
+    await _run(target: w, password: code, viaCode: true);
+    _codeRunning = false;
+  }
+
+  /// The numbers in two groups of three ("482 913"): easier to read across a table and to type.
+  static String _grouped(String c) => c.length == kPairingCodeDigits ? '${c.substring(0, 3)} ${c.substring(3)}' : c;
+
+  Widget _codeCard() {
+    final String code = _code ?? '';
+    final PairingPicture? pic = _ownPic;
+    // More than one window nearby and none chosen: the grown-up picks the picture the phone is showing.
+    final bool choose = _chosen == null && _nearby.length > 1;
+    return PictureLayout(
+      picture: (double side) => pic == null
+          ? Icon(Icons.phone_android_rounded, size: side * 0.4, color: KioskLockColors.secondaryText)
+          : KeyedSubtree(key: const Key('childCodePicture'), child: PictureTile(data: pic.payload, size: side)),
+      steps: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        const Icon(Icons.escalator_warning_rounded, size: 40, color: KioskLockColors.tertiaryText),
+        const SizedBox(height: 8),
+        Semantics(
+          label: 'Six numbers for the grown-up to type on their phone: ${code.split('').join(' ')}',
+          excludeSemantics: true,
+          child: Text(_grouped(code),
+              key: const Key('childCodeDigits'),
+              style: const TextStyle(color: KioskLockColors.primaryText, fontSize: 56, fontWeight: FontWeight.w800, letterSpacing: 4)),
+        ),
+        const SizedBox(height: 8),
+        const Text('Type these numbers on the grown-up\'s phone.',
+            key: Key('childCodeHint'), textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 16)),
+        if (_simPhone != null)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('Simulated phone (test build) is doing the grown-up\'s part.',
+                key: Key('childSimBanner'), textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.tertiaryText, fontSize: 13)),
+          ),
+        const SizedBox(height: 12),
+        if (choose)
+          Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: <Widget>[
+            for (final NearbyWindow w in _nearby.values)
+              InkResponse(
+                key: Key('childConnectPick_${w.key}'),
+                onTap: () => unawaited(_startCode(w)),
+                child: Padding(padding: const EdgeInsets.all(8), child: GlyphTile(glyph: windowGlyph((w.handle ?? w.sid)!), size: 88)),
+              ),
+          ])
+        else
+          const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.4)),
+        const SizedBox(height: 8),
+        IconButton(
+          key: const Key('childCodeBack'),
+          iconSize: 32,
+          onPressed: () => setState(() { _reset(); _stage = _Stage.options; }),
+          icon: const Icon(Icons.arrow_back_rounded, color: KioskLockColors.tertiaryText),
+        ),
+      ]),
+    );
   }
 
   Future<void> _openHello() async {
@@ -228,8 +381,9 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     await _recheckNearby();
   }
 
-  Future<void> _run({required NearbyWindow target, required String password, bool viaQr = false, Uint8List? fp}) async {
-    setState(() { _stage = _Stage.working; _match = null; });
+  Future<void> _run({required NearbyWindow target, required String password, bool viaQr = false, Uint8List? fp, bool viaCode = false}) async {
+    // The code way keeps showing the numbers until the grown-up has typed them and the phone has answered.
+    setState(() { if (!viaCode) _stage = _Stage.working; _match = null; });
     final DeviceKey key;
     try {
       key = await DeviceKey.loadOrCreate(widget.deviceKeys);
@@ -240,7 +394,7 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     }
     final ChildPairingClient client = ChildPairingClient(
       childKey: key,
-      transport: widget.transportFor(target.host, target.port),
+      transport: _simPhone != null && target.host == 'simulated' ? LoopbackPairingTransport(_simPhone!.window) : widget.transportFor(target.host, target.port),
       deviceName: widget.deviceName,
       pollEvery: widget.pollEvery,
     );
@@ -261,11 +415,22 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
       expectedAdultFingerprint: fp ?? _pinnedFp,
       expectedFamilyId: widget.claimedFamilyId,
       expectedFamilyKey: claimedKey,
+      waitForCode: viaCode,
       onMatched: (PairingMatch m) {
-        if (mounted) setState(() => _match = m);
+        if (mounted) setState(() { _match = m; _stage = _Stage.working; });
       },
     );
     if (!mounted) return;
+    if (viaCode && !r.ok && r.failure == PairingFailure.notMatched && _codeTries < 3 && _code != null) {
+      // The grown-up mistyped the numbers (the phone keeps count and asks them again): ask the same window again, quietly.
+      _codeTries++;
+      setState(() { _stage = _Stage.code; _match = null; });
+      _codeTimer?.cancel();
+      _codeTimer = Timer(widget.codeRetryEvery, () {
+        if (mounted && _stage == _Stage.code) unawaited(_run(target: target, password: password, viaCode: true));
+      });
+      return;
+    }
     if (r.ok) {
       _stopFinder();
       final Uint8List? fk = r.pairing!.familyKey;
@@ -371,6 +536,8 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
         return CalmTryAgainCard(onOk: () => setState(() { _reset(); _stage = _Stage.card; }));
       case _Stage.options:
         return _frame(_options());
+      case _Stage.code:
+        return Scaffold(backgroundColor: KioskLockColors.background, body: SafeArea(child: _codeCard()));
     }
   }
 
@@ -403,8 +570,28 @@ class _ChildConnectScreenState extends State<ChildConnectScreen> {
     return Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
       const Icon(Icons.phone_android_rounded, key: Key('childConnectWhich'), size: 56, color: KioskLockColors.secondaryText),
       const SizedBox(height: 6),
-      const Text("Open \"Connect a child's device\" on your phone, then tap the same picture here.",
+      const Text("Open \"Her tablet\" in More on your phone, then tap the same picture here.",
           textAlign: TextAlign.center, style: TextStyle(color: KioskLockColors.secondaryText, fontSize: 14)),
+      const SizedBox(height: 16),
+      SizedBox(
+        width: 320,
+        height: 64,
+        child: FilledButton.icon(
+          key: const Key('childConnectToPhone'),
+          onPressed: _openCode,
+          icon: const Icon(Icons.phone_android_rounded),
+          label: const Text('Connect to a phone', style: TextStyle(fontSize: 20)),
+        ),
+      ),
+      if (widget.simulate)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: OutlinedButton(
+            key: const Key('childConnectSimulate'),
+            onPressed: () => unawaited(_openCode(simulated: true)),
+            child: const Text('Simulate a phone (test build)'),
+          ),
+        ),
       const SizedBox(height: 16),
       if (pictureMode || _nearby.isEmpty)
         const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.4)))

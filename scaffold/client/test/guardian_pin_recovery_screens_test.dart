@@ -8,6 +8,7 @@ import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/local_pin_recovery.dart';
 import 'package:olive_client/guardian_pin_recovery_screens.dart';
 import 'package:olive_client/local_pin_screens.dart';
+import 'pin_keypad_helpers.dart';
 
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 20; i++) {
@@ -123,9 +124,17 @@ void main() {
     feed!(grant);
     await _settle(t);
     expect(find.byKey(const Key('forgotApproved')), findsOneWidget);
-    await t.enterText(find.byKey(const Key('localPinNew')), '8260');
-    await t.enterText(find.byKey(const Key('localPinConfirm')), '8260');
-    await t.tap(find.byKey(const Key('localPinSave')));
+    await t.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    await t.pump();
+    await typeOnKeypad(t, '8260');
+    await t.tap(find.byKey(const Key('localPinNext')));
+    await t.pump();
+    await typeOnKeypad(t, '8260');
+    await t.runAsync(() async {
+      await t.tap(find.byKey(const Key('localPinSave')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
     await _settle(t);
     expect((await t.runAsync(() => a.pin.verify('8260')))!.ok, isTrue);
     expect((await t.runAsync(() => a.pin.verify('4829')))!.ok, isFalse);

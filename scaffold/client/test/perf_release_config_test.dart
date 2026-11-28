@@ -37,9 +37,12 @@ void main() {
       expect(gradle, contains('else -> null'));
     });
 
-    test('a task-graph check refuses assembleRelease/bundleRelease/packageRelease with a clear message', () {
+    test('a task-graph check refuses assemble/bundle/package Release, flavored or not, with a clear message', () {
       expect(gradle, contains('gradle.taskGraph.whenReady'));
-      expect(gradle, contains('"assembleRelease", "bundleRelease", "packageRelease"'));
+      // With the direct and play flavors the tasks are assembleDirectRelease, bundlePlayRelease and so on: the pattern must
+      // still cover them, or the guard would silently stop firing (tools/check-flavors.mjs evaluates it on sample names).
+      expect(gradle, contains('Regex("^(assemble|bundle|package)(Direct|Play)?Release'));
+      expect(gradle, contains('releasePackagingTask.matches(it.name)'));
       expect(gradle, contains('Release build refused: android/key.properties is missing'));
     });
 
@@ -61,12 +64,12 @@ void main() {
       final String build = doc.substring(doc.indexOf('## 3. Build'));
       final RegExpMatch? m = RegExp(r'```bash\n([\s\S]*?)\n```').firstMatch(build);
       expect(m, isNotNull);
-      expect(m!.group(1), contains('flutter build apk --release --split-per-abi --target=lib/main_live.dart'));
+      expect(m!.group(1), contains('flutter build apk --release --flavor direct --split-per-abi --target=lib/main_live.dart'));
     });
 
     test('an app bundle is documented for a store upload', () {
       expect(doc, contains('flutter build appbundle --release'));
-      expect(doc, contains('app-arm64-v8a-release.apk'));
+      expect(doc, contains('app-direct-release.apk'));
     });
   });
 

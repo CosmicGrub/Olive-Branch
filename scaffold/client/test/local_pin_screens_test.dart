@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:olive_client/local_pin.dart';
 import 'package:olive_client/local_pin_screens.dart';
 
+import 'pin_keypad_helpers.dart';
+
 class _Clock {
   DateTime now = DateTime.utc(2026, 11, 8, 12);
   DateTime call() => now;
@@ -23,21 +25,42 @@ void main() {
   LocalPinService service([_Clock? c]) =>
       LocalPinService(MemoryLocalPinRepository(), now: (c ?? _Clock()).call, iterations: 500);
 
-  group('the setup form', () {
+  group('the setup form (the ordinary keypad, typed twice)', () {
     Future<void> pumpForm(WidgetTester t, LocalPinService s, VoidCallback onSaved) async {
+      await t.binding.setSurfaceSize(const Size(420, 1400));
+      addTearDown(() => t.binding.setSurfaceSize(null));
       await t.pumpWidget(MaterialApp(
           home: Scaffold(body: SingleChildScrollView(child: LocalPinSetupForm(service: s, onSaved: onSaved)))));
     }
 
-    testWidgets('a short PIN is refused in the account PIN\'s own words', (t) async {
+    Future<void> next(WidgetTester t) async {
+      await t.tap(find.byKey(const Key('localPinNext')));
+      await t.pump();
+    }
+
+    Future<void> save(WidgetTester t) async {
+      await t.runAsync(() async {
+        await t.tap(find.byKey(const Key('localPinSave')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await t.pump();
+    }
+
+    testWidgets('it uses the ordinary keypad and says what a good PIN is, in plain words', (t) async {
+      await pumpForm(t, service(), () {});
+      expect(keypadDigitOrder(t), <String>['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+      expect(find.text('Choose your PIN'), findsOneWidget);
+      expect(find.textContaining('4 to 8 digits'), findsOneWidget);
+      expect(find.textContaining('birthday'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing, reason: 'no text box: the keypad is the only way in');
+    });
+
+    testWidgets('a short PIN cannot be submitted: Next stays off until four digits are in', (t) async {
       bool saved = false;
       final LocalPinService s = service();
       await pumpForm(t, s, () => saved = true);
-      await t.enterText(find.byKey(const Key('localPinNew')), '12');
-      await t.enterText(find.byKey(const Key('localPinConfirm')), '12');
-      await t.tap(find.byKey(const Key('localPinSave')));
-      await t.pump();
-      expect(find.text('Enter a 4-8 digit PIN.'), findsOneWidget);
+      await typeOnKeypad(t, '258');
+      expect(t.widget<FilledButton>(find.byKey(const Key('localPinNext'))).onPressed, isNull);
       expect(saved, isFalse);
       expect(await s.isSet(), isFalse);
     });
@@ -47,63 +70,95 @@ void main() {
         bool saved = false;
         final LocalPinService s = service();
         await pumpForm(t, s, () => saved = true);
-        await t.enterText(find.byKey(const Key('localPinNew')), easy);
-        await t.enterText(find.byKey(const Key('localPinConfirm')), easy);
-        await t.tap(find.byKey(const Key('localPinSave')));
-        await t.pump();
+        await typeOnKeypad(t, easy);
+        await next(t);
         expect(find.text(kEasyGuessPinMessage), findsOneWidget, reason: easy);
+        expect(find.text('Type it once more to confirm'), findsNothing, reason: '$easy never reaches confirm');
         expect(saved, isFalse, reason: easy);
         expect(await s.isSet(), isFalse, reason: easy);
       }
     });
 
-    testWidgets('two different PINs are refused', (t) async {
+    testWidgets('a date-like or patterned PIN gets ONE gentle warning and may be kept', (t) async {
       bool saved = false;
       final LocalPinService s = service();
       await pumpForm(t, s, () => saved = true);
-      await t.enterText(find.byKey(const Key('localPinNew')), '2580');
-      await t.enterText(find.byKey(const Key('localPinConfirm')), '2581');
-      await t.tap(find.byKey(const Key('localPinSave')));
+      await typeOnKeypad(t, '0827'); // looks like a birthday
+      await next(t);
+      expect(find.byKey(const Key('localPinGuessable')), findsOneWidget);
+      expect(find.text(kGuessablePinMessage), findsOneWidget);
+      expect(await s.isSet(), isFalse, reason: 'the warning stores nothing');
+      // Choosing another goes back to a fresh keypad.
+      await t.tap(find.byKey(const Key('localPinChooseAnother')));
       await t.pump();
-      expect(find.text("The two PINs don't match."), findsOneWidget);
+      expect(find.text('Choose your PIN'), findsOneWidget);
+      // Keeping it is the grown-up's call.
+      await typeOnKeypad(t, '0827');
+      await next(t);
+      await t.tap(find.byKey(const Key('localPinUseAnyway')));
+      await t.pump();
+      expect(find.text('Type it once more to confirm'), findsOneWidget);
+      await typeOnKeypad(t, '0827');
+      await save(t);
+      expect(saved, isTrue);
+      expect(await t.runAsync(s.isSet), isTrue);
+    });
+
+    testWidgets('an ordinary PIN gets no warning at all', (t) async {
+      await pumpForm(t, service(), () {});
+      await typeOnKeypad(t, '4829');
+      await next(t);
+      expect(find.byKey(const Key('localPinGuessable')), findsNothing);
+      expect(find.text('Type it once more to confirm'), findsOneWidget);
+    });
+
+    testWidgets('two different PINs are refused and the grown-up starts again, nothing stored', (t) async {
+      bool saved = false;
+      final LocalPinService s = service();
+      await pumpForm(t, s, () => saved = true);
+      await typeOnKeypad(t, '4829');
+      await next(t);
+      await typeOnKeypad(t, '4828');
+      await save(t);
+      expect(find.textContaining("The two PINs don't match"), findsOneWidget);
+      expect(find.text('Choose your PIN'), findsOneWidget, reason: 'back at the first step with an empty keypad');
       expect(saved, isFalse);
       expect(await s.isSet(), isFalse);
     });
 
-    testWidgets('letters cannot be typed into the PIN field', (t) async {
-      await pumpForm(t, service(), () {});
-      await t.enterText(find.byKey(const Key('localPinNew')), 'ab12cd34');
-      expect(fieldText(t, const Key('localPinNew')), '1234');
+    testWidgets('Start over drops what was typed', (t) async {
+      final LocalPinService s = service();
+      await pumpForm(t, s, () {});
+      await typeOnKeypad(t, '4829');
+      await next(t);
+      await t.tap(find.byKey(const Key('localPinStartOver')));
+      await t.pump();
+      expect(find.text('Choose your PIN'), findsOneWidget);
+      expect(pinDots(t).filled, 0);
     });
 
-    testWidgets('a good PIN is stored (as a hash), the fields are cleared, and onSaved fires', (t) async {
+    testWidgets('a good PIN is stored (as a hash only), and onSaved fires', (t) async {
       bool saved = false;
       final LocalPinService s = service();
-      await t.runAsync(() async {
-        await pumpForm(t, s, () => saved = true);
-        await t.enterText(find.byKey(const Key('localPinNew')), '4821');
-        await t.enterText(find.byKey(const Key('localPinConfirm')), '4821');
-        await t.tap(find.byKey(const Key('localPinSave')));
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-      });
-      await t.pump();
+      await pumpForm(t, s, () => saved = true);
+      await typeOnKeypad(t, '4829');
+      await next(t);
+      await typeOnKeypad(t, '4829');
+      await save(t);
       expect(saved, isTrue);
       expect(await t.runAsync(s.isSet), isTrue);
-      expect(fieldText(t, const Key('localPinNew')), '');
+      expect((await t.runAsync(() => s.verify('4829')))!.ok, isTrue);
       expect(find.byKey(const Key('localPinError')), findsNothing);
     });
 
     testWidgets('a store that cannot be written says so plainly and does NOT call onSaved', (t) async {
       bool saved = false;
       final LocalPinService s = LocalPinService(_FailingRepo(), iterations: 500);
-      await t.runAsync(() async {
-        await pumpForm(t, s, () => saved = true);
-        await t.enterText(find.byKey(const Key('localPinNew')), '4821');
-        await t.enterText(find.byKey(const Key('localPinConfirm')), '4821');
-        await t.tap(find.byKey(const Key('localPinSave')));
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-      });
-      await t.pump();
+      await pumpForm(t, s, () => saved = true);
+      await typeOnKeypad(t, '4829');
+      await next(t);
+      await typeOnKeypad(t, '4829');
+      await save(t);
       expect(saved, isFalse);
       expect(find.text('Could not keep your PIN on this device. Please try again.'), findsOneWidget);
       expect(find.textContaining('disk full'), findsNothing, reason: 'no raw error text');
@@ -114,13 +169,17 @@ void main() {
     testWidgets('says it is for this device only and works with no connection; saving continues', (t) async {
       bool done = false;
       final LocalPinService s = service();
+      await t.binding.setSurfaceSize(const Size(420, 1400));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      await t.pumpWidget(MaterialApp(home: LocalPinSetupScreen(service: s, onDone: () => done = true)));
+      expect(find.text('Choose your PIN'), findsWidgets);
+      expect(find.textContaining('only for this device'), findsOneWidget);
+      expect(find.textContaining('works with no connection'), findsOneWidget);
+      await typeOnKeypad(t, '4829');
+      await t.tap(find.byKey(const Key('localPinNext')));
+      await t.pump();
+      await typeOnKeypad(t, '4829');
       await t.runAsync(() async {
-        await t.pumpWidget(MaterialApp(home: LocalPinSetupScreen(service: s, onDone: () => done = true)));
-        expect(find.text('Choose a PIN for this device'), findsOneWidget);
-        expect(find.textContaining('only for this device'), findsOneWidget);
-        expect(find.textContaining('works with no connection'), findsOneWidget);
-        await t.enterText(find.byKey(const Key('localPinNew')), '2468');
-        await t.enterText(find.byKey(const Key('localPinConfirm')), '2468');
         await t.tap(find.byKey(const Key('localPinSave')));
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });

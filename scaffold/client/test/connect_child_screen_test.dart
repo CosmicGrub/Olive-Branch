@@ -51,6 +51,13 @@ Future<void> _act(WidgetTester t, Future<void> Function() gesture) async {
 
 
 
+/// A paired-tablet list that cannot be written (as when the stored list is unreadable).
+class _UnwritableKids extends MemoryPairedKidsRepository {
+  @override
+  Future<void> add(PairedKid kid) async => throw const PairedKidsUnreadable();
+}
+
+
 Future<void> _settle(WidgetTester t) async {
   for (int i = 0; i < 40; i++) {
     await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
@@ -61,12 +68,15 @@ Future<void> _settle(WidgetTester t) async {
 
 void main() {
   testWidgets('adult screen: wrong PIN is refused; right PIN opens a window; approval names the device; done only after delivery', (t) async {
+    await t.binding.setSurfaceSize(const Size(800, 2600)); // the first screen is a long list; keep all of it built
+    addTearDown(() => t.binding.setSurfaceSize(null));
     final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1);
     await t.runAsync(() => pin.setPin('4829'));
     AdultWindow? opened;
     final MemoryPairedKidsRepository kids = MemoryPairedKidsRepository();
     await t.pumpWidget(MaterialApp(
         home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
       pin: pin,
       deviceKeys: MemoryDeviceKeyRepository(),
       kids: kids,
@@ -81,8 +91,8 @@ void main() {
     )));
 
     // The instructions describe what actually happens: a nameless picture to tap, not letters to read out.
-    expect(find.textContaining('This phone will then show a picture'), findsOneWidget);
-    expect(find.textContaining('tap the same picture'), findsOneWidget);
+    expect(find.byKey(const Key('connectIntroLine')), findsOneWidget);
+    expect(find.textContaining('Tap the matching picture on her tablet', skipOffstage: false), findsOneWidget);
     expect(find.textContaining('letters'), findsNothing);
     await t.enterText(find.byKey(const Key('connectPinField')), '1111');
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
@@ -90,12 +100,14 @@ void main() {
     expect(opened, isNull, reason: 'a wrong PIN opens nothing');
 
     await t.enterText(find.byKey(const Key('connectPinField')), '4829');
+    await t.tap(find.byKey(const Key('connectMoreWays')));
+    await t.pumpAndSettle();
     await t.tap(find.byKey(const Key('connectOfferQr')));
     await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
     expect(find.byKey(const Key('connectWaiting')), findsOneWidget);
     expect(find.byKey(const Key('connectQr')), findsOneWidget, reason: 'the optional picture is offered');
     expect(find.byKey(const Key('connectLabel')), findsNothing, reason: 'no letters to read out: the child picks a picture');
-    expect(find.textContaining('tap the picture shown here'), findsOneWidget);
+    expect(find.textContaining('Tap the picture shown here'), findsOneWidget);
     expect(find.textContaining('letters'), findsNothing);
     expect(opened!.label, isIn(<String>['Player one', 'Player two']));
     expect(opened!.qrPayload(), isNotNull);
@@ -122,6 +134,43 @@ void main() {
     expect(r.ok, isTrue);
     expect(find.byKey(const Key('connectDone')), findsOneWidget);
     expect((await kids.load()).single.deviceName, 'Tablet');
+  });
+
+  testWidgets('a tablet paired while the phone cannot add it to its list: the done screen says so', (t) async {
+    final LocalPinService pin = LocalPinService(MemoryLocalPinRepository(), iterations: 1);
+    await t.runAsync(() => pin.setPin('4829'));
+    AdultWindow? opened;
+    await t.pumpWidget(MaterialApp(
+        home: ConnectChildScreen(
+        initialMethod: ConnectMethod.pin,
+      pin: pin,
+      deviceKeys: MemoryDeviceKeyRepository(),
+      kids: _UnwritableKids(),
+      adultName: 'Mom',
+      childName: 'Ivy',
+      makeUnlockVerifier: _cheap,
+      localAddress: () async => '192.0.2.5',
+      startHost: (AdultWindow w) async {
+        opened = w;
+        return _FakeHost();
+      },
+    )));
+    await t.enterText(find.byKey(const Key('connectPinField')), '4829');
+    await _act(t, () => t.tap(find.byKey(const Key('connectOpen'))));
+    final DeviceKey ck = await t.runAsync(() => DeviceKey.loadOrCreate(MemoryDeviceKeyRepository())) as DeviceKey;
+    final Future<PairingResult> childRun = ChildPairingClient(
+            childKey: ck, transport: LoopbackPairingTransport(opened!), deviceName: 'Tablet', pollEvery: const Duration(milliseconds: 20))
+        .pair(sid: opened!.sid, password: '4829');
+    await _settle(t);
+    await t.tap(find.byKey(Key('connectMatch_${opened!.matchChoices!.correct}')));
+    await t.pump();
+    await _act(t, () => t.tap(find.byKey(const Key('connectApprove'))));
+    await _settle(t);
+    await childRun;
+    await _settle(t);
+    expect(find.byKey(const Key('connectDone')), findsOneWidget);
+    expect(find.byKey(const Key('connectMessage')), findsOneWidget, reason: 'the grown-up is told, on the done screen');
+    expect(find.text(kKidsNotSavedMessage), findsOneWidget);
   });
 
   testWidgets('child screen: only a card until the grown-up taps; no keypad, digits or error words', (t) async {

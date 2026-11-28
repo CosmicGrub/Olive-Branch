@@ -41,6 +41,11 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
   List<HistoryEntry> _history = <HistoryEntry>[];
   bool _historyIntact = true;
 
+  /// What the read of the list could not show: entries stored but unreadable, or the whole list. Never a reason to
+  /// say "no device" (that sentence is only for a list read in full and empty).
+  int _skipped = 0;
+  bool _unreadable = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,10 +54,16 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
 
   Future<void> _load() async {
     List<PairedKid> l;
+    int skipped = 0;
+    bool unreadable = false;
     try {
-      l = await widget.kids.load();
+      final PairedKidsLoad r = await widget.kids.loadChecked();
+      l = r.kids;
+      skipped = r.skipped;
+      unreadable = r.unreadable;
     } catch (_) {
       l = <PairedKid>[];
+      unreadable = true;
     }
     final TrustBook? t = widget.trust;
     Map<String, TrustedDevice> trusted = <String, TrustedDevice>{};
@@ -68,6 +79,8 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
     if (mounted) {
       setState(() {
         _list = l;
+        _skipped = skipped;
+        _unreadable = unreadable;
         _trusted = trusted;
         _history = history;
         _historyIntact = intact;
@@ -216,13 +229,23 @@ class _ConnectedDevicesScreenState extends State<ConnectedDevicesScreen> {
   Widget build(BuildContext context) {
     final List<PairedKid>? l = _list;
     return Scaffold(
-      appBar: AppBar(title: Text("${widget.childName}'s connected devices")),
+      appBar: AppBar(title: Text("${widget.childName}'s tablets")),
       body: SafeArea(
         child: l == null
             ? const Center(child: CircularProgressIndicator())
+            : (l.isEmpty && (_unreadable || _skipped > 0))
+                ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
+                    _unreadable
+                        ? 'This list could not be read just now. Nothing was removed. Try again in a moment.'
+                        : '$_skipped ${_skipped == 1 ? 'entry' : 'entries'} on this list could not be read. They are left as they are.',
+                    key: const Key('connectedUnreadable'))))
             : l.isEmpty
                 ? const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No device is connected to this phone yet.', key: Key('connectedEmpty'))))
                 : ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+                    if (_skipped > 0)
+                      Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(
+                          '$_skipped ${_skipped == 1 ? 'entry' : 'entries'} on this list could not be read. They are left as they are.',
+                          key: const Key('connectedSkipped'))),
                     for (final PairedKid k in l)
                       Card(
                         child: Padding(

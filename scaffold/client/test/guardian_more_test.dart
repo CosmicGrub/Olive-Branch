@@ -181,6 +181,8 @@ void main() {
         'REAL FamilyAgreementScreen, no longer the honest-stub snackbar',
         (t) async {
       await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.ensureVisible(find.text('Guardian setup'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Guardian setup'));
       await t.pumpAndSettle();
       expect(find.byType(GuardianSetupScreen), findsOneWidget);
@@ -196,6 +198,8 @@ void main() {
     testWidgets('with no live backend wired into this preview build, the real '
         'screen shows a real error, never a faked schedule', (t) async {
       await pump(t, const GuardianMoreScreen(childName: 'Ivy', childAge: 9));
+      await t.ensureVisible(find.text('Guardian setup'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Guardian setup'));
       await t.pumpAndSettle();
       await t.tap(find.text('Review the family agreement'));

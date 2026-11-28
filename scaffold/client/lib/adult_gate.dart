@@ -6,8 +6,9 @@
 // adult input the pin". A child is never shown, asked to create, or able to look at a guardian-style PIN screen.
 // So the surface she can reach is a calm, picture-first CARD: a grown-up and a phone, the words "A grown-up does
 // this", nothing to type, no digits, no error, no count, no timer (P1-P11, §2.1). Only when a grown-up
-// DELIBERATELY taps "I'm the grown-up" does an adult-only keypad open (shuffled from the platform CSPRNG
-// because a child may be watching, §8.3). A wrong code simply resets the keypad; nothing is ever explained to
+// DELIBERATELY taps "I'm the grown-up" does an adult-only keypad open (the ordinary 1 2 3 / 4 5 6 / 7 8 9 / 0
+// pad; a grown-up may choose to have it scrambled from the platform CSPRNG because a child may be watching, §8.3,
+// keypad_prefs.dart). A wrong code simply resets the keypad; nothing is ever explained to
 // the child. The keypad ([PinGate]) is built ONLY from here: test/adult_gate_source_test.dart fails if any
 // other file imports pin_gate.dart.
 //
@@ -49,7 +50,11 @@ class AdultGate extends StatefulWidget {
     this.onClose,
     this.confirmLabel,
     this.phone,
+    this.scramble = false,
   });
+
+  /// "Scramble the keypad": a grown-up's choice (keypad_prefs.dart), off unless chosen.
+  final bool scramble;
 
   /// The PIN length the keypad collects.
   final int digits;
@@ -141,10 +146,17 @@ class _AdultGateState extends State<AdultGate> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextButton(
-                  key: const Key('adultGateDisconnect'),
-                  onPressed: () => setState(() { _purpose = UnlockPurpose.forget; _stage = AdultGateStage.phone; }),
-                  child: const Text('Disconnect this tablet', style: TextStyle(color: KioskLockColors.quaternaryText, fontSize: 13)),
+                // Big and plain like the other two (a grown-up should not have to hunt for it); it still only SHOWS a picture
+                // the grown-up's phone must answer, so a child tapping it changes nothing.
+                SizedBox(
+                  width: 260,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    key: const Key('adultGateDisconnect'),
+                    onPressed: () => setState(() { _purpose = UnlockPurpose.forget; _stage = AdultGateStage.phone; }),
+                    icon: const Icon(Icons.link_off_rounded),
+                    label: const Text('Disconnect this tablet', style: TextStyle(fontSize: 17)),
+                  ),
                 ),
               ]),
             ),
@@ -165,7 +177,7 @@ class _AdultGateState extends State<AdultGate> {
     }
     if (_stage == AdultGateStage.keypad) {
       return Stack(children: <Widget>[
-        PinGate(digits: widget.digits, onComplete: widget.onPin, confirmLabel: widget.confirmLabel),
+        PinGate(digits: widget.digits, onComplete: widget.onPin, confirmLabel: widget.confirmLabel, shuffle: widget.scramble),
         _backButton(_back),
       ]);
     }
@@ -266,12 +278,13 @@ class CalmTryAgainCard extends StatelessWidget {
 /// Pushes the gate as a route and returns the typed code, or null when it was closed. [startOpen] skips the
 /// card when the grown-up already chose to be here.
 Future<String?> askAdultPin(BuildContext context,
-        {required int digits, bool startOpen = false, String? confirmLabel, PhoneUnlock? phone}) =>
+        {required int digits, bool startOpen = false, String? confirmLabel, PhoneUnlock? phone, bool scramble = false}) =>
     Navigator.of(context).push<String>(MaterialPageRoute<String>(
       builder: (BuildContext ctx) => AdultGate(
         digits: digits,
         confirmLabel: confirmLabel,
         phone: phone,
+        scramble: scramble,
         startOpen: startOpen,
         onPin: Navigator.of(ctx).pop,
         onClose: () => Navigator.of(ctx).pop(),

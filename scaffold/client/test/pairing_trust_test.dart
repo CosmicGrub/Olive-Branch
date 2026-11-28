@@ -74,7 +74,7 @@ void main() {
       expect((await b.devices()).single.needsStillYours(c.t.millisecondsSinceEpoch), isFalse);
     });
 
-    test('stop refuses the key from then on, leaves other devices alone, and cannot be re-added silently', () async {
+    test('stop refuses the key from then on and leaves other devices alone; only a deliberate add brings it back, as one record', () async {
       final (TrustBook b, _, _) = await _book();
       await b.add(certId: 'c1', deviceKey: _k(1), deviceName: 'One', role: PairedRole.child, addedBy: 'Sam');
       await b.add(certId: 'c2', deviceKey: _k(2), deviceName: 'Two', role: PairedRole.child, addedBy: 'Sam');
@@ -82,7 +82,9 @@ void main() {
       expect(await b.isRefused(_k(1)), isTrue);
       expect(await b.observe('c1', _k(1)), isNull);
       expect(await b.observe('c2', _k(2)), TrustStatus.active, reason: 'the other device is still connected');
-      expect(await b.add(certId: 'c3', deviceKey: _k(1), deviceName: 'One again', role: PairedRole.child, addedBy: 'Sam'), isNull);
+      expect(await b.add(certId: 'c3', deviceKey: _k(1), deviceName: 'One again', role: PairedRole.child, addedBy: 'Sam'), isNotNull);
+      expect(await b.isRefused(_k(1)), isFalse);
+      expect((await b.devices()).map((TrustedDevice d) => d.certId).toSet(), <String>{'c2', 'c3'});
       expect(await b.stop('missing'), isFalse);
     });
   });

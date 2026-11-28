@@ -6,6 +6,20 @@ Direction in force: **offline-first and on-device**. Online features (network ca
 
 Every gap between the planned family features and the shipped code is in [GAP-REGISTER.md](GAP-REGISTER.md); this file says what is done and what comes next.
 
+## Status at the 0.52.0 cut (2026-11-21), read this first
+
+This section supersedes the snapshot above wherever they differ; the sections below were written at 2026-11-14 and have not all been refreshed.
+
+**Merged since the snapshot (main, through PR #239):** the child's home by age band and offline parity waves, adult safety, the PIN-primary pairing with its hardening and the CPace draft-21 key exchange, the persistent pairing picture, the signed family ledger, the sealed care profile, the care-guide engine (gated, no medical content shipped), the server lanes for a first family (sign-up by invite, children, the second grown-up confirmed by the inviter, the delivery worker, receipts, readiness, the push sender, honest calls), the client lanes that use them (receive path, family account, push and call client, account recovery without email, the child's message player), the dev-only cleartext switch for device builds, the housekeeping tools, the release-build launch smoke test, and the server half of encrypted family backup.
+
+**Open pull requests (not merged, not claimed by the cut):** #237 data-loss harness, #238 village welcome in the app (draft), #241 delivery heartbeat and round-robin sweep, #242 care and calls safety structure, #243 release hygiene and docs parity, #244 optional self-hosted update files, #245 durable child outbox, #247 and #249 CI reliability, #248 connect clarity, #250 update release tooling, #251 lost phone and recovery paths, #253 child-surface calm, #254 tablet updated through the grown-up's phone. #176 (iOS) stays parked.
+
+**Next, in order:**
+1. Land the open lanes one at a time on genuinely green CI (totals refreshed from CI's computed number after each merge), starting with the oldest open PR; #240 (the quiet-hours midnight fix) has merged and `main` is green.
+2. Device proof on the Fold and tablet: pairing across the new wire version, the dev-only cleartext switch, then sign-up, a message sent, delivered, shown on the tablet and its opened receipt. Nothing server-connected is device-verified yet.
+3. Build what is missing: compose-and-send and the day-part editor, the backup client and restore, the in-app update client, wiring of screenshot sharing and family sync, onboarding that records how the family runs plus a simple mode, then the family-mesh transports (no-router link, optional encrypted relay mailbox, travel and data-saver modes).
+4. Owner actions: Firebase project for push, self-hosted Jitsi for calls, an offline signing key and release host for updates, the go-ahead to move the live stack, and the open decisions listed in this folder.
+5. Held back on purpose: no medical content before clinician review; iOS only on the owner's say-so.
 ## In flight
 
 - **A guided first run** (this branch, `docs/planning/ONBOARDING-SCRIPT.md`, MASTERFILE 8.5.14): a scripted, slow-walking first run for the grown-up and a gentle welcome on her tablet, extensible by registering one entry, with a dev-only simulation seam. Built and tested headless; not run on a device. The normal PIN keypad is a separate lane: the PIN step here is a slot that lane's form fills.
@@ -18,7 +32,7 @@ Offline product waves: family structure and age bands (#139), colour of the day,
 
 Design parity: tokens (#151), component library (#156), JetBrains Mono (#163), parity harness (#161).
 
-Adult gate and pairing: adult gate and PIN-primary pairing (#167), phone unlock and Forget this tablet (#170), play admission (#171), pairing leak fixes (nameless discovery, no child error screen, per-source attempt budget, #196), the persistent pairing picture with Match, Settle in and Keep watch (#197).
+Adult gate and pairing: adult gate and PIN-primary pairing (#167), phone unlock and Forget this tablet (#170), play admission (#171), pairing leak fixes (nameless discovery, no child error screen, per-source attempt budget, #196), the persistent pairing picture with Match, Settle in and Keep watch (#197), Her tablet (one banner and one tile, one screen whose buttons adapt to the tablet's state; the six-number way to connect; disconnect from both sides and connect again; the root cause of the Wi-Fi half silently never connecting, a scoped link-local address; a dev-only simulate seam; see MASTERFILE 8.5.11).
 
 Play together: play envelope, shared game contract, calm session end and resume (#173), play wiring into every game (#182).
 
@@ -73,7 +87,7 @@ Parked online items (need credentials or hosting): calls over the internet, push
 ## Gates before real families rely on any of this
 
 1. External cryptographic review of the custom key exchange, the Match derivation and (when built) the ledger.
-2. A real two-device run of pairing, the picture in both directions, Match, unlock and a forgotten tablet.
+2. A real two-device run of pairing, the picture in both directions, Match, unlock and a forgotten tablet, and of every Her tablet way (six numbers, scan, PIN), disconnect from each side and connecting again: this is the run that confirms the scoped-address fix on the Fold and the tablet.
 3. Clinician review of each care guide (and a first-aid instructor for choking and CPR), guide by guide.
 4. Counsel on the care-note exception and the limits agreement.
 5. The ten-family simulation with zero isolation misses.

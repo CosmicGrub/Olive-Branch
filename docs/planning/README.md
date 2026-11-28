@@ -16,6 +16,8 @@ This folder is the project's planning record, kept in the repository so it is ve
 | [QR-VETTING-BRAINSTORM.md](QR-VETTING-BRAINSTORM.md) | The owner-facing brainstorm: welcoming devices and people, the About Mia profile and the care guides, adopted decisions. (The reshaped version is on open PR #198.) |
 | [EXTERNAL-CRYPTO-REVIEW-BRIEF.md](EXTERNAL-CRYPTO-REVIEW-BRIEF.md) | The brief for an outside cryptographer to review the pairing key exchange. Predates PRs #196 and #197; refresh before sending. |
 | [TWO-DEVICE-PAIRING-TEST-PLAN.md](TWO-DEVICE-PAIRING-TEST-PLAN.md) | The run sheet for the first real two-device pairing test. Its discovery step predates PR #196; update before running. |
+| [ONBOARDING-SCOPE.md](ONBOARDING-SCOPE.md) | Scope of the guided first run (adult on the phone, child on the tablet): steps, hand-offs, v1 and later, acceptance, device-test plan, extension plan. Mockup: onboarding-mockups.html. Not built. |
+| [ONBOARDING-EXTENSION-LEDGER.md](ONBOARDING-EXTENSION-LEDGER.md) | Features merged since the onboarding baseline with no onboarding entry; extend the onboarding when more than four wait. |
 | [FAMILY-SYNC-DESIGN.md](FAMILY-SYNC-DESIGN.md) | Design; the first slice (emergency card, copy-and-paste update) is built but not reachable from any menu: how guardian devices share data as sealed, signed event logs over several roads (same Wi-Fi, mailbox, hand-carried file), conflicts, notifications, threat model and build order. |
 | [ONBOARDING-SCRIPT.md](ONBOARDING-SCRIPT.md) | The guided first run as one script: the grown-up half and her tablet half, screen by screen, with the exact words, icon labels, controls, saving, resume, accessibility, tone checks, and the three-step procedure for adding to it later. |
 

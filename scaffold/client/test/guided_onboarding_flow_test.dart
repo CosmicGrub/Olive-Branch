@@ -32,7 +32,8 @@ void main() {
         child: const Text('Save the fake PIN'),
       );
 
-  Future<void> pump(WidgetTester t, {Size size = const Size(412, 1400), double text = 1.0, GuidedPinStepBuilder? pin}) async {
+  Future<void> pump(WidgetTester t,
+      {Size size = const Size(412, 1400), double text = 1.0, GuidedPinStepBuilder? pin, LocalFamily? resume}) async {
     await t.binding.setSurfaceSize(size);
     addTearDown(() => t.binding.setSurfaceSize(null));
     await t.pumpWidget(MaterialApp(
@@ -45,6 +46,7 @@ void main() {
         guideStore: store,
         pinStepBuilder: pin ?? fakePinStep,
         onFinished: finished.add,
+        resumeFamily: resume,
       ),
     ));
     await t.pumpAndSettle();
@@ -153,7 +155,7 @@ void main() {
     await pump(t);
     await toPin(t);
     expect(finished, isEmpty);
-    expect(await services.families.load(), isNull, reason: 'nothing personal is kept before the PIN');
+    expect((await services.families.load())?.childName, 'Ivy', reason: 'the family is kept when the questions end, before the PIN');
     await t.runAsync(() async {
       await t.tap(find.byKey(const Key('fakePinSave')));
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -174,12 +176,21 @@ void main() {
     expect(finished, isEmpty);
   });
 
-  testWidgets('killed and relaunched before the PIN: it starts again at About you (the welcome was seen); nothing personal was kept', (t) async {
+  testWidgets('killed and relaunched before the PIN: it starts again at About you (the welcome was seen); nothing had been kept yet', (t) async {
     await store.save(const GuidedProgress(adultStep: 'a.her'));
     await pump(t);
     expect(title(t), 'About you');
     expect(find.text('Step 2 of 9'), findsOneWidget);
     expect(t.widget<TextField>(find.byKey(const Key('goName'))).controller!.text, isEmpty);
+  });
+
+  testWidgets('killed on the PIN step with the family already kept: relaunch opens on the PIN step', (t) async {
+    await store.save(const GuidedProgress(adultStep: 'a.pin'));
+    final LocalFamily family = LocalFamily.fromAnswers(
+        guardianName: 'Sam', guardianLabel: 'Mom', guardianKind: kindForGuardianLabel('Mom'), childName: 'Ivy', age: 7, homeZone: kHomeZoneDevice);
+    await services.families.save(family);
+    await pump(t, resume: family);
+    expect(find.byKey(const Key('fakePinSave')), findsOneWidget);
   });
 
   testWidgets('killed on the welcome: relaunch opens on the welcome', (t) async {

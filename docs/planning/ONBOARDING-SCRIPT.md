@@ -21,7 +21,7 @@ Owner request, 2026-11-21: script a child-proof first run and a matching grown-u
 
 - Slow-walk: nothing is timed. A grown-up who walks away comes back to the same screen.
 - **"I need a minute"** on every grown-up screen opens a calm card (`x.pause`) that saves the place and waits. "I am ready" comes back to the same step. Nothing is lost and nothing is counting.
-- After the app is killed: a relaunch opens the guided first run at the saved step. Steps before the PIN has been saved start again at "About you" (nothing personal is kept before the PIN, on purpose). Steps after it resume at the saved step, including the tour stop.
+- After the app is killed: a relaunch opens the guided first run at the saved step. The family is kept on the phone when the questions end, so a phone stopped at the PIN step reopens on the PIN step with nothing asked twice; steps before that start again at "About you". Steps after the PIN resume at the saved step, including the tour stop.
 
 ## Kinds of step (what the controls do)
 

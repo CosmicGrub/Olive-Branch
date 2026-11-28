@@ -111,6 +111,10 @@ check('notes', 'cites the commit it was built from', notes.includes('a'.repeat(1
 check('notes', 'carries the CHANGELOG lead and headings', notes.includes('lead one.') && notes.includes('- Added'), true);
 check('notes', 'links the CHANGELOG at the tag', notes.includes('/blob/v1.2.3/CHANGELOG.md'), true);
 check('notes', 'states the version code', notes.includes('version code `10203`'), true);
+const noteLines = notes.split('\n');
+const machineLines = noteLines.filter((l) => /^sha256: [0-9a-f]{64}$/.test(l));
+check('notes', 'carries ONE machine-readable "sha256: <hex>" line (the in-app updater reads it)', machineLines.length === 1 && machineLines[0] === `sha256: ${'b'.repeat(64)}`, true);
+check('notes', 'the machine line is outside the file table', !noteLines.some((l) => l.startsWith('|') && l.includes('sha256:')), true);
 const withUrl = releaseNotes({ version: '1.2.3', date: 'd', title: 't', section: 'x', sha: 'c'.repeat(40), apk: 'a.apk', sha256: 'd'.repeat(64), size: 1, baseUrl: 'https://api.example.com' });
 check('notes', 'with a base URL it says which one, and not "no server address"', withUrl.includes('https://api.example.com') && !/built with \*\*no server address\*\*/.test(withUrl), true);
 

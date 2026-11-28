@@ -100,6 +100,8 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
   String _actorLocalTime = '';
   String? _dayPart;
   bool? _reachable;
+  // Whether the server lists a tablet for her: null when that list could not be read (never guessed).
+  bool? _serverTablet;
   List<RibbonBand> _childBands = const [];
   List<RibbonBand> _actorBands = const [];
 
@@ -116,6 +118,16 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
           userId: widget.guardianId, client: widget.httpClient);
       final now = await api.fetchNow(widget.childId);
       final ribbon = await api.fetchRibbon(widget.childId);
+      // Supplementary and NOT fatal: the state line's "is her tablet connected" also asks the server, but a failure
+      // here leaves it unknown (the line then says nothing about a tablet) rather than trapping the screen.
+      bool? serverTablet;
+      try {
+        final paired = await api.fetchPairedDevices(widget.childId);
+        final devices = (paired['devices'] as List<dynamic>? ?? const <dynamic>[]).cast<Map<String, dynamic>>();
+        serverTablet = devices.any((d) => d['role'] == 'child' && d['revokedAt'] == null);
+      } catch (_) {
+        serverTablet = null;
+      }
       if (widget.httpClient == null) api.close();
       if (!mounted) return;
       final dayParts = (ribbon['dayParts'] as List).cast<Map<String, dynamic>>();
@@ -135,6 +147,7 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
         // defensive casting.
         _dayPart = now['dayPart'] as String?;
         _reachable = now['reachable'] as bool?;
+        _serverTablet = serverTablet;
         // /ribbon — real, new this pass. childName has no GET /v1/me analog
         // for a guardian caller (that route returns the CALLER's own name).
         _childName = (ribbon['childName'] as String?) ?? 'her';
@@ -208,6 +221,7 @@ class _LiveGuardianHomeScreenState extends State<LiveGuardianHomeScreen> {
             availabilityHttpClient: widget.httpClient,
             dayPart: _dayPart,
             reachable: _reachable,
+            serverTabletPresent: _serverTablet,
           )),
         ])));
     }

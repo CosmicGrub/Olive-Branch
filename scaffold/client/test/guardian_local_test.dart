@@ -133,7 +133,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byType(LocalPinSetupScreen), findsOneWidget);
       expect(find.byType(GuardianSetupScreen), findsNothing);
-      expect(find.text('Choose a PIN for this device'), findsOneWidget);
+      expect(find.text('Choose your PIN'), findsWidgets);
     });
 
     testWidgets('entry: serverPinSetup is the server-PIN setup exactly as before', (t) async {
@@ -327,8 +327,10 @@ void main() {
     Future<ConnectChildScreen> openConnect(WidgetTester t, GuardianLocalController ctl) async {
       LocalServices.install(LocalServices.memory(childId: 'kid-1', isLive: true, demoSeeds: false));
       await pumpMore(t, ctl: ctl);
-      await t.scrollUntilVisible(find.text("Connect a child's device"), 300, scrollable: find.byType(Scrollable).first);
-      await t.tap(find.text("Connect a child's device"));
+      await t.scrollUntilVisible(find.byKey(const Key('moreHerTablet')), 300, scrollable: find.byType(Scrollable).first);
+      await t.tap(find.byKey(const Key('moreHerTablet')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('herTabletConnect')));
       await t.pumpAndSettle();
       return t.widget<ConnectChildScreen>(find.byType(ConnectChildScreen));
     }
@@ -418,8 +420,8 @@ void main() {
       await pumpMore(t, ctl: withConnect);
       await openSettings(t);
       await t.ensureVisible(find.byKey(const Key('settingsRow_connect')));
-      expect(find.text('Connect this device'), findsOneWidget);
-      expect(find.text('Optional. Share your family with your other devices'), findsOneWidget);
+      expect(find.text('Join your family account'), findsOneWidget);
+      expect(find.text('Optional. Use a code from another device to share your family'), findsOneWidget);
       await t.tap(find.byKey(const Key('settingsRow_connect')));
       await t.pump();
       expect(opened, 1);

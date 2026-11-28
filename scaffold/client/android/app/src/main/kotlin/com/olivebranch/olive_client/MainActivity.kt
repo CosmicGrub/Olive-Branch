@@ -123,6 +123,11 @@ class MainActivity : FlutterActivity() {
         // scope.
         WearSyncBridge.register(this, MethodChannel(messenger, WearSyncBridge.METHOD_CHANNEL))
 
+        // The app updater's native half (MASTERFILE 7.24). Each distribution flavor supplies its own UpdateBridge with
+        // this same shape: src/direct (PackageInstaller, system confirmation) or src/play (Google Play In-App Updates,
+        // no self-install code). Only a grown-up's screen ever calls it; the child's shell never does.
+        UpdateBridge.register(this, MethodChannel(messenger, UpdateBridge.CHANNEL))
+
         // Real WebAuthn/passkey ceremony (§7.1, §8.1, §11). See
         // WebAuthnBridge.kt's own header for the API-level tension and the
         // discoverable-credential requirement this bridge is built around.
@@ -171,8 +176,15 @@ class MainActivity : FlutterActivity() {
         lastKnownMode = current
     }
 
+    // Play's In-App Update consent screen answers here (play flavor); a no-op in the direct flavor.
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        UpdateBridge.onActivityResult(requestCode, resultCode)
+    }
+
     override fun onResume() {
         super.onResume()
+        UpdateBridge.onResume(this)
         // §16.2 #6, revised 2026-08-24 for real child PiP — see KioskBridge
         // .stillExpectingCallHandoff()'s own doc comment for exactly why
         // this peeks rather than consumes now. stillExpectingCallHandoff()

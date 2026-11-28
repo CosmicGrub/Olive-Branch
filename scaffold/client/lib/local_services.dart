@@ -290,7 +290,8 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
       area: 'adultunlock', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
       what: 'On a child\'s device: a salted slow hash of the grown-up\'s PIN, only so a grown-up can '
           'type it there to leave or unlock the app, and the count of wrong tries toward a 15 minute '
-          'lock. The PIN itself is never kept and a child cannot create or change it. Sealed on the device.'),
+          'lock. The PIN itself is never kept and a child cannot create or change it. It also holds one yes or no: '
+          'whether a grown-up chose to scramble the number keypad. Sealed on the device.'),
   LocalDataEntry(
       area: 'pairedkids', scope: LocalScope.guardian, encrypted: true, maxBytes: 16 * 1024,
       what: 'On a grown-up\'s device: the child devices it approved (a certificate id, a device name and '
@@ -333,6 +334,14 @@ const List<LocalDataEntry> localDataCatalogue = <LocalDataEntry>[
           'to it (an id, never her name). Never a PIN, an invite code or a sign-in key: those are not kept here '
           '(the sign-in key lives only in the phone\'s secure storage). Sealed on the device. Nothing here is '
           'needed to use Olive on this phone, and a device wipe removes it.'),
+  LocalDataEntry(
+      area: 'updates', scope: LocalScope.device, encrypted: true, maxBytes: 8 * 1024,
+      what: 'App updates, on a grown-up\'s phone: when Olive last looked for an update and how it went (one word), '
+          'the newest update notice it has accepted (its number and date, so an older one is never taken), a grown-up\'s '
+          'choices (check each day, Wi-Fi only, an update source or channel they typed), a "Later" they chose, an install '
+          'handed to Android and not yet confirmed, and the plain-words notes of an update that just finished until a '
+          'grown-up has read them once. Never a key, a file path, a child or a family detail. Sealed on the device; '
+          'nothing here is uploaded; a device wipe removes it.'),
   LocalDataEntry(
       area: 'guidedtour', scope: LocalScope.device, encrypted: true, maxBytes: 4 * 1024,
       what: 'Where the guided first run has got to on this device: the version of the welcome tour it last '
