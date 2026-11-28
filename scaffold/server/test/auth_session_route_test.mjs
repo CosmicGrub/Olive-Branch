@@ -124,7 +124,7 @@ function fakeQuery(sql, params = []) {
       paired_at: new Date(), revoked_at: null, last_seen_at: null, credential_hash: credentialHash });
     return [{ id }];
   }
-  if (/SELECT id, role, target_id, revoked_at, credential_hash\s+FROM paired_device WHERE id::text = \$1/i.test(sql)) {
+  if (/SELECT id, role, target_id, revoked_at, credential_hash[\s\S]*FROM paired_device WHERE id::text = \$1/i.test(sql)) {
     const d = [...devices.values()].find((x) => x.id === params[0]);
     return d ? [{ id: d.id, role: d.role, target_id: d.target_id, revoked_at: d.revoked_at,
                   credential_hash: d.credential_hash }] : [];
@@ -141,6 +141,13 @@ function fakeQuery(sql, params = []) {
   if (/^\s*SELECT revoked_at FROM paired_device WHERE id = \$1\s*$/i.test(sql)) {
     const d = devices.get(params[0]);
     return d ? [{ revoked_at: d.revoked_at }] : [];
+  }
+  // Lost-device standing (migration 0056): nothing in this fake is ever paused, so the lazy cut-off rewrites nothing
+  // and the standing read answers from revoked_at alone. The real behaviour is proven against Postgres.
+  if (/UPDATE paired_device SET revoked_at = lost_revoke_due_at/i.test(sql)) return [];
+  if (/SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = \$1/i.test(sql)) {
+    const d = devices.get(params[0]);
+    return d ? [{ revoked_at: d.revoked_at, paused_at: null, lost_revoke_due_at: null }] : [];
   }
   throw new Error(`fake query: unexpected sql: ${sql}`);
 }

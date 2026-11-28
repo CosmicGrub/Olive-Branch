@@ -242,6 +242,13 @@ function fakeQuery(sql, params = []) {
     return children.has(childId) ? [{ years: 8 }] : [];
   }
 
+  // Lost-device standing (migration 0056): nothing in this fake is ever paused, so the lazy cut-off rewrites nothing
+  // and the standing read answers from revoked_at alone. The real behaviour is proven against Postgres.
+  if (/UPDATE paired_device SET revoked_at = lost_revoke_due_at/i.test(sql)) return [];
+  if (/SELECT revoked_at, paused_at, lost_revoke_due_at FROM paired_device WHERE id = \$1/i.test(sql)) {
+    const d = devices.get(params[0]);
+    return d ? [{ revoked_at: d.revoked_at, paused_at: null, lost_revoke_due_at: null }] : [];
+  }
   throw new Error(`fake query: unexpected sql: ${sql}`);
 }
 

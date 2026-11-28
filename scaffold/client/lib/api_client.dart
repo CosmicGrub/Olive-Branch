@@ -477,6 +477,13 @@ class OliveApi {
   static const authRecoveryStart = '/v1/auth/recovery/start';
   static const authRecoveryStatus = '/v1/auth/recovery/status';
   static const authRecoveryCancel = '/v1/auth/recovery/cancel';
+
+  // Lost or stolen device (migration 0056, MASTERFILE: paired_device standing). Declared so the client and server
+  // route lists cannot drift; no screen calls these yet.
+  static const myDevices = '/v1/me/devices';
+  static const myDeviceMarkLost = '/v1/me/devices/:deviceId/mark-lost';
+  static const myDeviceFound = '/v1/me/devices/:deviceId/found';
+  static const myDeviceConfirmLost = '/v1/me/devices/:deviceId/confirm-lost';
   static const authRecoveryFinish = '/v1/auth/recovery/finish';
   static const authHelperAccept = '/v1/auth/helper/accept';
   static const authHelperRequests = '/v1/auth/helper/requests';
